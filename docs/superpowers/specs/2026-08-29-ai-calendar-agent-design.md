@@ -207,7 +207,8 @@ not executed.
 
 `CreateEvent` covers fixed commitments such as a dentist appointment, which are not tasks and
 are never re-placed by the scheduler. A `*_ref` is either an internal ID or a title fragment
-resolved by the disambiguation rules in section 8.
+resolved by the disambiguation rules in section 8. `window_hint` is an optional date or focus
+window reference; a hint that cannot be resolved is discarded and ordinary placement applies.
 
 ## 8. AI subsystem
 
@@ -363,9 +364,10 @@ produced by one user turn or one job run share a `batch_id`. Undo replays invers
 across a whole batch, so "undo that re-plan" reverses the entire re-plan rather than one block.
 Calendar corrections flow through the same outbox as any other write.
 
-The Activity view lists batches with undo controls and shows a daily digest of what the AI did
-unattended. Given that autonomy is full, this feed is the only place oversight can live, which
-makes it a Phase 3 requirement rather than a later addition.
+The Activity view lists batches with undo controls. Because autonomy is full, this feed is the
+only place oversight can live, so it ships in Phase 3 alongside the first calendar writes
+rather than later. The daily digest arrives in Phase 4, when the nightly job introduces the
+first actions taken while the user is not present.
 
 ## 13. Error handling and degraded mode
 
@@ -447,16 +449,22 @@ opening.
 - **Phase 0, foundation, no AI.** Project skeleton, SQLite schema, Alembic, Google OAuth,
   calendar read, manual task CRUD in the web UI, localhost hardening from section 15,
   `import-linter` contract.
-- **Phase 1, capture.** Capture bar, intent compiler, `RuleBasedProvider`, parsed chips,
-  `CreateTask` and `CreateEvent` and `Query` intents.
+- **Phase 1, capture.** Capture bar, intent compiler, `RuleBasedProvider`, parsed chips, and
+  the `CreateTask`, `CreateEvent`, `UpdateTask`, `CompleteTask`, `DropTask`, and `Clarify`
+  intents.
 - **Phase 2, prioritize, still no scheduling.** Scoring function, Today view, Backlog view,
-  pin override. **Kill criterion gate applies here.**
+  `Query` and `PinTask` intents. **Kill criterion gate applies here.**
 - **Phase 3, schedule.** Focus windows, Windows view, placement algorithm, outbox, calendar
   writes, mutation log, undo, Activity view.
 - **Phase 4, intelligence.** Reranker with logged reasons, `nightly_plan`,
   `day_drift_reconcile`, daily digest, remaining intents.
 - **Phase 5, hardening.** Quota governor, degraded mode UI, sync token reconciliation,
   token health check, nightly model contract test.
+
+**The first implementation plan covers Phases 0 through 2 only**, ending at the kill criterion
+gate. Phases 3 through 5 are planned after that gate passes. Planning them now would presume
+the outcome the gate exists to test, and would produce a plan too large to execute with review
+checkpoints that mean anything.
 
 ## 18. Risks
 
@@ -479,5 +487,7 @@ scoring over an indexed candidate filter. No caching layer, no queue broker, no 
 no pagination beyond a simple limit, no horizontal anything. An implementation that adds
 infrastructure for throughput has misread this document.
 
-Also deferred out of v1: energy-pattern and completion-history learning in the reranker,
-recurring tasks, multi-timezone travel, and any form of remote access.
+Also deferred out of v1: energy-pattern and completion-history learning in the reranker. It
+needs months of data before it can say anything, and it would make output unexplainable at
+exactly the point the user is still deciding whether to trust the system. Remaining non-goals
+are listed in section 2.
