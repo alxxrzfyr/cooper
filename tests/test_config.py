@@ -29,3 +29,35 @@ def test_secret_value_is_not_exposed_by_repr() -> None:
     settings = Settings(shared_secret=TEST_SHARED_SECRET)
 
     assert TEST_SHARED_SECRET not in repr(settings)
+
+
+def test_a_blank_token_encryption_key_is_treated_as_absent() -> None:
+    # A blank assignment in .env previously overrode the default and surfaced as a 500 on
+    # the first calendar request. Absent is a supported state; broken is not.
+    settings = Settings(shared_secret=TEST_SHARED_SECRET, token_encryption_key="")
+
+    assert settings.token_encryption_key is None
+    assert settings.calendar_storage_ready is False
+
+
+def test_an_invalid_token_encryption_key_fails_at_startup() -> None:
+    with pytest.raises(ValidationError, match="Fernet"):
+        Settings(shared_secret=TEST_SHARED_SECRET, token_encryption_key="not-a-key")
+
+
+def test_a_valid_token_encryption_key_is_accepted() -> None:
+    from cadence.adapters.token_cipher import TokenCipher
+
+    settings = Settings(
+        shared_secret=TEST_SHARED_SECRET,
+        token_encryption_key=TokenCipher.generate_key(),
+    )
+
+    assert settings.calendar_storage_ready is True
+
+
+def test_no_encryption_key_is_committed_as_a_default() -> None:
+    # A default encryption key in source protects nothing and invites reuse across installs.
+    # Asserted against the field default rather than a constructed Settings, because a real
+    # .env would legitimately supply one.
+    assert Settings.model_fields["token_encryption_key"].default is None

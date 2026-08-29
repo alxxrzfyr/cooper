@@ -1,6 +1,7 @@
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr
+from cryptography.fernet import Fernet
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cadence.core.placement import PlacementRules
@@ -56,10 +57,35 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://127.0.0.1:8000/api/auth/callback"
     write_calendar_id: str = "primary"
     busy_calendar_ids: str = "primary"
-    # Fernet key protecting the refresh token at rest. Generated during setup.
-    token_encryption_key: SecretStr = SecretStr(
-        "8Zk0Yl4y3fJq9mP2wR7tS1vX6bN5cH8dK3gL0aQ4eU=",
-    )
+    # Fernet key protecting the refresh token at rest. Deliberately has no default: a
+    # committed default encryption key protects nothing, and a blank one must fail loudly
+    # rather than surface as a 500 on first use. Absent means calendar storage is disabled.
+    token_encryption_key: SecretStr | None = None
+
+    @field_validator("token_encryption_key", mode="after")
+    @classmethod
+    def _validate_fernet_key(cls, value: SecretStr | None) -> SecretStr | None:
+        """Reject an unusable key at startup instead of at first credential write."""
+        if value is None:
+            return None
+        raw = value.get_secret_value()
+        if not raw:
+            # An empty assignment in .env is treated as absent rather than as a broken key.
+            return None
+        try:
+            Fernet(raw.encode())
+        except (ValueError, TypeError) as error:
+            raise ValueError(
+                "CADENCE_TOKEN_ENCRYPTION_KEY is not a valid Fernet key. Generate one with: "
+                'python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())"'
+            ) from error
+        return value
+
+    @property
+    def calendar_storage_ready(self) -> bool:
+        """Whether a credential can be stored safely."""
+        return self.token_encryption_key is not None
 
     # --- jobs, seconds unless stated ---
     outbox_drain_interval: int = 30

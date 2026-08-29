@@ -153,9 +153,14 @@ ScheduleDep = Annotated[ScheduleService, Depends(get_schedule_service)]
 
 def get_auth_service(session: SessionDep, request: Request) -> AuthService:
     settings = request.app.state.settings
-    cipher = TokenCipher(settings.token_encryption_key.get_secret_value())
+    # Without an encryption key there is nowhere safe to put a refresh token, so the store
+    # is absent rather than improvised. AuthService reports that as "not configured".
+    store = None
+    if settings.token_encryption_key is not None:
+        cipher = TokenCipher(settings.token_encryption_key.get_secret_value())
+        store = CredentialStore(session, cipher)
     return AuthService(
-        store=CredentialStore(session, cipher),
+        store=store,
         oauth=request.app.state.oauth_client,
         transport=request.app.state.http_transport,
         clock=SystemClock(),

@@ -14,8 +14,8 @@ export type Tone = "ok" | "warn" | "bad";
 const NAV: ReadonlyArray<{ id: ViewName; label: string; available: boolean }> = [
   { id: "today", label: "Today", available: true },
   { id: "backlog", label: "Backlog", available: true },
-  { id: "windows", label: "Windows", available: false },
-  { id: "activity", label: "Activity", available: false },
+  { id: "windows", label: "Windows", available: true },
+  { id: "activity", label: "Activity", available: true },
   { id: "states", label: "States", available: true },
 ];
 

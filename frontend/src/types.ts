@@ -101,3 +101,126 @@ export class ApiError extends Error {
     return this.status === 409;
   }
 }
+
+// --- scheduling ---
+
+export interface FocusWindow {
+  id: string;
+  weekday: number;
+  weekday_name: string;
+  start_local: string;
+  end_local: string;
+  timezone: string;
+  daily_block_cap: number;
+  active: boolean;
+  minutes: number;
+}
+
+export interface Block {
+  id: string;
+  task_id: string;
+  task_title: string | null;
+  start_utc: string;
+  end_utc: string;
+  minutes: number;
+  state: string;
+  google_event_id: string | null;
+}
+
+export interface Unplaced {
+  task_id: string;
+  reason: string;
+}
+
+export interface Placement {
+  blocks: Block[];
+  unplaced: Unplaced[];
+  scheduled_minutes: number;
+}
+
+export interface ScheduleApplied {
+  batch_id: string;
+  placed: Block[];
+  released: number;
+  unplaced: Unplaced[];
+  scheduled_minutes: number;
+}
+
+export interface BlocksEnvelope {
+  blocks: Block[];
+}
+
+// --- activity ---
+
+export interface Mutation {
+  id: string;
+  op: string;
+  entity_type: string;
+  entity_id: string;
+  label: string;
+  undone: boolean;
+}
+
+export interface Batch {
+  batch_id: string;
+  ts: string;
+  actor: "user" | "ai";
+  intent_kind: string;
+  size: number;
+  undone: boolean;
+  mutations: Mutation[];
+}
+
+export interface Digest {
+  date: string;
+  ai_batches: number;
+  user_batches: number;
+  blocks_scheduled: number;
+  blocks_released: number;
+  tasks_touched: number;
+}
+
+export interface Activity {
+  digest: Digest;
+  batches: Batch[];
+}
+
+export interface UndoBatch {
+  batch_id: string;
+  reversed_count: number;
+  already_undone: boolean;
+  calendar_corrections: number;
+}
+
+// --- google ---
+
+export interface AuthStatus {
+  connected: boolean;
+  configured: boolean;
+  account_email: string | null;
+  scope: string | null;
+  obtained_at: string | null;
+  last_refreshed_at: string | null;
+  last_error: string | null;
+  healthy: boolean;
+  hint: string | null;
+}
+
+export interface AuthStart {
+  authorization_url: string;
+  scope: string;
+}
+
+export interface NewWindow {
+  weekdays: number[];
+  start_local: string;
+  end_local: string;
+  daily_block_cap?: number;
+}
+
+/** Human-readable explanation of why a task could not be placed. */
+export const UNPLACED_REASONS: Record<string, string> = {
+  no_effort_estimate: "needs an effort estimate",
+  larger_than_any_window_space: "too large for a single block",
+  no_room_left: "no room left in your windows",
+};

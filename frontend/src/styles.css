@@ -650,7 +650,9 @@ button {
 
 .timeline__grid {
   display: grid;
-  grid-template-columns: 8.5rem repeat(11, minmax(3.25rem, 1fr));
+  /* Column count comes from the component so the grid can never disagree with the number
+     of hours rendered. A mismatch silently wraps the row and misaligns every lane. */
+  grid-template-columns: 8.5rem repeat(var(--timeline-hours, 12), minmax(3.25rem, 1fr));
   min-width: 44rem;
 }
 

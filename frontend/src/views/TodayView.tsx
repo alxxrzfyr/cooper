@@ -9,7 +9,9 @@ import {
   TaskTitleCell,
   formatEffort,
 } from "../components/TaskBits";
-import type { Plan, RankedTask } from "../types";
+import { Timeline } from "../components/Timeline";
+import type { Block, FocusWindow, Plan, RankedTask } from "../types";
+import { UNPLACED_REASONS } from "../types";
 
 const LONG_DATE: Intl.DateTimeFormatOptions = {
   weekday: "short",
@@ -26,14 +28,20 @@ function totalEffort(entries: RankedTask[]): string {
 export function TodayView({
   plan,
   today,
+  windows,
+  blocks,
   onComplete,
   onTogglePin,
+  onSchedule,
   busy,
 }: {
   plan: Plan;
   today: string;
+  windows: FocusWindow[];
+  blocks: Block[];
   onComplete: (taskId: string) => void;
   onTogglePin: (task: RankedTask) => void;
+  onSchedule: () => void;
   busy: boolean;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -54,6 +62,19 @@ export function TodayView({
             {slipped.length > 0 && ` · ${slipped.length} slipped`}
           </p>
         </div>
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={busy || plan.shortlist.length === 0 || windows.length === 0}
+          onClick={onSchedule}
+          title={
+            windows.length === 0
+              ? "Declare a focus window first: the scheduler may only write inside one."
+              : "Place the shortlist into your declared windows"
+          }
+        >
+          Schedule shortlist
+        </button>
       </header>
 
       {leader ? (
@@ -186,6 +207,16 @@ export function TodayView({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="section" aria-labelledby="timeline-label">
+        <span className="section__label" id="timeline-label">
+          Timeline
+          <span className="table__meta">
+            Shaded lanes are declared windows. Nothing can be placed outside them.
+          </span>
+        </span>
+        <Timeline windows={windows} blocks={blocks} today={new Date()} />
       </section>
 
       {plan.blocked.length > 0 && (

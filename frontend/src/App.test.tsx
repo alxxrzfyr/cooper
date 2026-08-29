@@ -3,7 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App";
-import type { CaptureResult, Plan, RankedTask, Task } from "./types";
+import type {
+  Activity,
+  AuthStatus,
+  Block,
+  CaptureResult,
+  FocusWindow,
+  Plan,
+  RankedTask,
+  ScheduleApplied,
+  Task,
+} from "./types";
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -77,11 +87,105 @@ function captureResult(overrides: Partial<CaptureResult> = {}): CaptureResult {
   };
 }
 
+function focusWindow(overrides: Partial<FocusWindow> = {}): FocusWindow {
+  return {
+    id: "win-1",
+    weekday: 0,
+    weekday_name: "Mon",
+    start_local: "09:00:00",
+    end_local: "12:00:00",
+    timezone: "Asia/Singapore",
+    daily_block_cap: 2,
+    active: true,
+    minutes: 180,
+    ...overrides,
+  };
+}
+
+function block(overrides: Partial<Block> = {}): Block {
+  return {
+    id: "block-1",
+    task_id: "task-1",
+    task_title: "write the quarterly report",
+    start_utc: "2026-08-31T01:00:00Z",
+    end_utc: "2026-08-31T02:00:00Z",
+    minutes: 60,
+    state: "planned",
+    google_event_id: null,
+    ...overrides,
+  };
+}
+
+function authStatus(overrides: Partial<AuthStatus> = {}): AuthStatus {
+  return {
+    connected: false,
+    configured: false,
+    account_email: null,
+    scope: null,
+    obtained_at: null,
+    last_refreshed_at: null,
+    last_error: null,
+    healthy: false,
+    hint: "Google OAuth is not configured.",
+    ...overrides,
+  };
+}
+
+function activityFeed(overrides: Partial<Activity> = {}): Activity {
+  return {
+    digest: {
+      date: "2026-08-29",
+      ai_batches: 1,
+      user_batches: 2,
+      blocks_scheduled: 3,
+      blocks_released: 1,
+      tasks_touched: 4,
+    },
+    batches: [
+      {
+        batch_id: "batch-1",
+        ts: "2026-08-29T09:00:00Z",
+        actor: "ai",
+        intent_kind: "Schedule",
+        size: 1,
+        undone: false,
+        mutations: [
+          {
+            id: "mut-1",
+            op: "schedule",
+            entity_type: "block",
+            entity_id: "block-1",
+            label: "scheduled write the quarterly report at Mon 09:00",
+            undone: false,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function applied(overrides: Partial<ScheduleApplied> = {}): ScheduleApplied {
+  return {
+    batch_id: "batch-9",
+    placed: [block()],
+    released: 0,
+    unplaced: [],
+    scheduled_minutes: 60,
+    ...overrides,
+  };
+}
+
 interface Routes {
   plan?: Plan;
   degraded?: boolean;
   capture?: CaptureResult | { status: number; detail: string; candidates?: string[] };
   failPlan?: boolean;
+  windows?: FocusWindow[];
+  blocks?: Block[];
+  auth?: AuthStatus;
+  activity?: Activity;
+  applied?: ScheduleApplied;
 }
 
 function stubFetch(routes: Routes) {
@@ -108,6 +212,27 @@ function stubFetch(routes: Routes) {
     }
     if (url.includes("/api/capture/status")) {
       return json({ provider: "rule_based", degraded: routes.degraded ?? false });
+    }
+    if (url.includes("/api/windows")) {
+      if ((init?.method ?? "GET") === "GET") {
+        return json(routes.windows ?? []);
+      }
+      return json(focusWindow(), init?.method === "POST" ? 201 : 200);
+    }
+    if (url.includes("/api/schedule/blocks")) {
+      return json({ blocks: routes.blocks ?? [] });
+    }
+    if (url.includes("/api/schedule/apply")) {
+      return json(routes.applied ?? applied());
+    }
+    if (url.includes("/api/auth/status")) {
+      return json(routes.auth ?? authStatus());
+    }
+    if (url.includes("/api/auth/start")) {
+      return json({ authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?x=1", scope: "s" });
+    }
+    if (url.includes("/api/activity")) {
+      return json(routes.activity ?? activityFeed());
     }
     if (url.includes("/undo")) {
       return json(captureResult({ intent: "Undo", task: task({ title: "restored" }) }));
@@ -156,14 +281,14 @@ describe("application shell", () => {
     expect(within(nav).getByRole("button", { name: /^Backlog$/ })).toBeInTheDocument();
   });
 
-  test("Phase 3 views are present but explicitly unavailable", async () => {
+  test("every view is reachable", async () => {
     stubFetch({});
     render(<App />);
 
     const nav = screen.getByRole("navigation", { name: "Views" });
-    const windows = within(nav).getByRole("button", { name: /Windows/ });
-    expect(windows).toBeDisabled();
-    expect(within(windows).getByText("Later")).toBeInTheDocument();
+    for (const name of ["Today", "Backlog", "Windows", "Activity", "States"]) {
+      expect(within(nav).getByRole("button", { name })).toBeEnabled();
+    }
   });
 
   test("shows the ranked shortlist from the backend", async () => {
@@ -443,5 +568,237 @@ describe("keyboard access", () => {
     await user.keyboard("{Meta>}k{/Meta}");
 
     expect(input).toHaveFocus();
+  });
+});
+
+
+describe("scheduling", () => {
+  test("scheduling is blocked until a window exists, and says why", async () => {
+    stubFetch({ windows: [] });
+    render(<App />);
+
+    const button = await screen.findByRole("button", { name: "Schedule shortlist" });
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", expect.stringContaining("focus window"));
+  });
+
+  test("with a window declared the shortlist can be scheduled", async () => {
+    const calls = stubFetch({ windows: [focusWindow()] });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Schedule shortlist" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("/api/schedule/apply"))).toBe(true),
+    );
+    expect(await screen.findByText(/Scheduled 1 block/)).toBeInTheDocument();
+  });
+
+  test("a placement that fits nothing reports it rather than claiming success", async () => {
+    stubFetch({
+      windows: [focusWindow()],
+      applied: applied({
+        placed: [],
+        scheduled_minutes: 0,
+        unplaced: [{ task_id: "task-1", reason: "no_effort_estimate" }],
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Schedule shortlist" }));
+
+    expect(await screen.findByText(/Nothing could be placed/)).toBeInTheDocument();
+  });
+
+  test("the timeline explains itself when no window covers today", async () => {
+    stubFetch({ windows: [] });
+    render(<App />);
+
+    expect(await screen.findByText(/No focus window is declared/)).toBeInTheDocument();
+  });
+
+  test("the timeline shows a declared lane and its cap", async () => {
+    // Weekday 0 is Monday; declare every weekday so the lane appears whatever day it is.
+    const everyDay = [0, 1, 2, 3, 4, 5, 6].map((day) =>
+      focusWindow({ id: `w${day}`, weekday: day }),
+    );
+    stubFetch({ windows: everyDay, blocks: [block()] });
+    render(<App />);
+
+    expect(await screen.findByText(/window$/)).toBeInTheDocument();
+    expect(screen.getByText(/cap 2/)).toBeInTheDocument();
+  });
+});
+
+describe("windows editor", () => {
+  test("the empty state tells you to start narrow", async () => {
+    stubFetch({ windows: [] });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Windows" }));
+
+    expect(await screen.findByText("No windows declared")).toBeInTheDocument();
+    expect(screen.getByText(/Start narrow/)).toBeInTheDocument();
+  });
+
+  test("the grid states the boundary in plain words", async () => {
+    stubFetch({ windows: [focusWindow()] });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Windows" }));
+
+    expect(await screen.findByText(/only place work inside these hours/)).toBeInTheDocument();
+  });
+
+  test("declaring a window posts the selected days", async () => {
+    const calls = stubFetch({ windows: [] });
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Windows" }));
+
+    await user.click(await screen.findByRole("button", { name: "Add window" }));
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) => call.url.includes("/api/windows") && call.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect((post?.body as { weekdays: number[] }).weekdays).toEqual([0, 1, 2, 3, 4]);
+    });
+  });
+
+  test("a declared window is listed with its hours and cap", async () => {
+    stubFetch({ windows: [focusWindow()] });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Windows" }));
+
+    const table = await screen.findByRole("table", { name: /Declared focus windows/ });
+    expect(within(table).getByText("Mon")).toBeInTheDocument();
+    expect(within(table).getByText("09:00 – 12:00")).toBeInTheDocument();
+  });
+
+  test("a window can be removed", async () => {
+    const calls = stubFetch({ windows: [focusWindow()] });
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Windows" }));
+
+    await user.click(await screen.findByRole("button", { name: "remove" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === "DELETE")).toBe(true),
+    );
+  });
+});
+
+describe("activity feed", () => {
+  test("the digest reports what happened today", async () => {
+    stubFetch({});
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Activity" }));
+
+    expect(await screen.findByText("blocks scheduled")).toBeInTheDocument();
+    expect(screen.getByText("AI actions")).toBeInTheDocument();
+  });
+
+  test("an AI batch is visibly attributed to the scheduler", async () => {
+    stubFetch({});
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Activity" }));
+
+    expect(await screen.findByText("AI scheduler")).toBeInTheDocument();
+    expect(screen.getByText(/scheduled write the quarterly report/)).toBeInTheDocument();
+  });
+
+  test("a batch can be undone as a unit", async () => {
+    const calls = stubFetch({});
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Activity" }));
+
+    await user.click(await screen.findByRole("button", { name: "Undo batch" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("/api/activity/batch-1/undo"))).toBe(true),
+    );
+  });
+
+  test("an already undone batch offers no undo control", async () => {
+    const feed = activityFeed();
+    feed.batches[0].undone = true;
+    stubFetch({ activity: feed });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Activity" }));
+
+    expect(await screen.findByText("undone")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo batch" })).not.toBeInTheDocument();
+  });
+
+  test("an empty history explains what to do", async () => {
+    stubFetch({ activity: activityFeed({ batches: [] }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Activity" }));
+
+    expect(await screen.findByText("Nothing has happened yet")).toBeInTheDocument();
+  });
+});
+
+describe("google calendar status", () => {
+  test("an unconfigured calendar is reported without alarm", async () => {
+    stubFetch({ auth: authStatus({ configured: false }) });
+    render(<App />);
+
+    expect(await screen.findByText("Not configured")).toBeInTheDocument();
+  });
+
+  test("a configured but unconnected calendar offers to connect", async () => {
+    stubFetch({
+      auth: authStatus({ configured: true, connected: false, hint: "Not connected yet." }),
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Calendar not connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  });
+
+  test("an expired credential is reported as needing attention", async () => {
+    stubFetch({
+      auth: authStatus({
+        configured: true,
+        connected: true,
+        healthy: false,
+        hint: "This authorization is more than seven days old.",
+      }),
+    });
+    render(<App />);
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some((alert) => alert.textContent?.includes("needs attention"))).toBe(true);
+    expect(screen.getByText("Re-auth needed")).toBeInTheDocument();
+  });
+
+  test("a healthy connection reports connected", async () => {
+    stubFetch({
+      auth: authStatus({ configured: true, connected: true, healthy: true, hint: null }),
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Healthy")).toBeInTheDocument();
   });
 });

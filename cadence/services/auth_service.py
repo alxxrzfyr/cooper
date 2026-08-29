@@ -29,7 +29,7 @@ class AuthService:
     def __init__(
         self,
         *,
-        store: CredentialStore,
+        store: CredentialStore | None,
         oauth: GoogleOAuthClient | None,
         transport: HttpTransport,
         clock: Clock,
@@ -45,8 +45,8 @@ class AuthService:
 
     @property
     def configured(self) -> bool:
-        """Whether Google credentials exist in configuration at all."""
-        return self._oauth is not None and bool(self._client_id)
+        """Whether Google credentials and a place to store them both exist."""
+        return self._oauth is not None and bool(self._client_id) and self._store is not None
 
     def client_config(self) -> tuple[str, str]:
         if not self.configured or self._client_id is None:
@@ -58,7 +58,7 @@ class AuthService:
 
     def complete(self, code: str) -> str | None:
         """Exchange the code and store the refresh token encrypted."""
-        if self._oauth is None:
+        if self._oauth is None or self._store is None:
             raise DomainValidationError("Google OAuth is not configured")
 
         payload = self._oauth.exchange_code(code)
@@ -75,9 +75,12 @@ class AuthService:
         return email
 
     def disconnect(self) -> None:
-        self._store.clear()
+        if self._store is not None:
+            self._store.clear()
 
     def credential(self) -> GoogleCredential | None:
+        if self._store is None:
+            return None
         try:
             return self._store.load()
         except CredentialError:
@@ -85,7 +88,7 @@ class AuthService:
 
     def calendar_client(self) -> GoogleCalendarClient | None:
         """A ready-to-use client, or None when no usable credential exists."""
-        if self._oauth is None:
+        if self._oauth is None or self._store is None:
             return None
         credential = self.credential()
         if credential is None:
@@ -99,6 +102,16 @@ class AuthService:
         return GoogleCalendarClient(access_token=token, transport=self._transport)
 
     def status(self) -> dict[str, Any]:
+        if self._store is None:
+            return {
+                "connected": False,
+                "configured": False,
+                "hint": (
+                    "No token encryption key is set, so a Google credential cannot be stored "
+                    "safely. Generate one into CADENCE_TOKEN_ENCRYPTION_KEY to enable "
+                    "calendar features."
+                ),
+            }
         if not self.configured:
             return {
                 "connected": False,

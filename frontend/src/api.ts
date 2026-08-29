@@ -8,12 +8,21 @@
 
 import {
   ApiError,
+  type Activity,
+  type AuthStart,
+  type AuthStatus,
+  type BlocksEnvelope,
   type CaptureResult,
+  type FocusWindow,
   type HealthStatus,
+  type NewWindow,
+  type Placement,
   type Plan,
   type ProviderStatus,
   type RankedTask,
+  type ScheduleApplied,
   type Task,
+  type UndoBatch,
 } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000";
@@ -92,6 +101,48 @@ export const api = {
 
   undo: (mutationId: string) =>
     request<CaptureResult>(`/api/capture/${mutationId}/undo`, { method: "POST" }),
+
+  // --- scheduling ---
+
+  listWindows: () => request<FocusWindow[]>("/api/windows"),
+
+  createWindows: (payload: NewWindow) => request<FocusWindow[]>("/api/windows", body(payload)),
+
+  updateWindow: (id: string, changes: Partial<FocusWindow>) =>
+    request<FocusWindow>(`/api/windows/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
+  deleteWindow: (id: string) =>
+    request<void>(`/api/windows/${id}`, { method: "DELETE" }),
+
+  previewSchedule: (limit = 5) => request<Placement>(`/api/schedule/preview?limit=${limit}`),
+
+  applySchedule: (limit = 5) =>
+    request<ScheduleApplied>(`/api/schedule/apply?limit=${limit}`, { method: "POST" }),
+
+  blocks: (days = 1) => request<BlocksEnvelope>(`/api/schedule/blocks?days=${days}`),
+
+  drain: () => request<{ sent: number; failed: number; deferred: number; pending: number }>(
+    "/api/schedule/drain",
+    { method: "POST" },
+  ),
+
+  // --- activity ---
+
+  activity: (limit = 25) => request<Activity>(`/api/activity?limit=${limit}`),
+
+  undoBatch: (batchId: string) =>
+    request<UndoBatch>(`/api/activity/${batchId}/undo`, { method: "POST" }),
+
+  // --- google ---
+
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+
+  authStart: () => request<AuthStart>("/api/auth/start", { method: "POST" }),
+
+  authDisconnect: () => request<void>("/api/auth/disconnect", { method: "POST" }),
 };
 
 export type TaskStatusFilter = "active" | "done" | "dropped" | "active,done";

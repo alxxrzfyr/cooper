@@ -4,11 +4,19 @@ import "./styles.css";
 import { api } from "./api";
 import { CaptureBar, type CaptureFeedback } from "./components/CaptureBar";
 import { Sidebar, type SystemStatus, type ViewName } from "./components/Sidebar";
+import { ActivityView } from "./views/ActivityView";
 import { BacklogView } from "./views/BacklogView";
-import { ActivityPreview, WindowsPreview } from "./views/Previews";
 import { StateGallery } from "./views/StateGallery";
 import { TodayView } from "./views/TodayView";
-import { ApiError, type Plan, type RankedTask } from "./types";
+import { WindowsView } from "./views/WindowsView";
+import {
+  ApiError,
+  type AuthStatus,
+  type Block,
+  type FocusWindow,
+  type Plan,
+  type RankedTask,
+} from "./types";
 
 const EMPTY_PLAN: Plan = {
   generated_at: new Date().toISOString(),
@@ -27,6 +35,9 @@ function todayIso(): string {
 export default function App() {
   const [view, setView] = useState<ViewName>("today");
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [windows, setWindows] = useState<FocusWindow[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<CaptureFeedback | null>(null);
@@ -35,9 +46,18 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextPlan, status] = await Promise.all([api.today(8), api.providerStatus()]);
+      const [nextPlan, status, nextWindows, nextBlocks, authStatus] = await Promise.all([
+        api.today(8),
+        api.providerStatus(),
+        api.listWindows(),
+        api.blocks(14),
+        api.authStatus(),
+      ]);
       setPlan(nextPlan);
       setDegraded(status.degraded);
+      setWindows(nextWindows);
+      setBlocks(nextBlocks.blocks);
+      setAuth(authStatus);
       setConnectionError(null);
     } catch (error) {
       // Surfaced, never swallowed: an unreachable backend must not look like an empty plan.
@@ -57,11 +77,7 @@ export default function App() {
         await refresh();
       } catch (error) {
         if (error instanceof ApiError && error.isAmbiguous) {
-          setFeedback({
-            kind: "question",
-            message: error.message,
-            candidates: error.candidates,
-          });
+          setFeedback({ kind: "question", message: error.message, candidates: error.candidates });
         } else {
           setFeedback({
             kind: "error",
@@ -134,8 +150,34 @@ export default function App() {
     [run, today],
   );
 
-  const status: SystemStatus = useMemo(
-    () => ({
+  const onSchedule = useCallback(
+    () =>
+      void run(async () => {
+        const applied = await api.applySchedule(8);
+        const unplaced = applied.unplaced.length;
+        setFeedback({
+          kind: "undone",
+          message:
+            applied.placed.length === 0
+              ? "Nothing could be placed. Check your windows and effort estimates."
+              : `Scheduled ${applied.placed.length} block${applied.placed.length === 1 ? "" : "s"}` +
+                ` (${applied.scheduled_minutes}m)` +
+                (unplaced > 0 ? `, ${unplaced} did not fit` : ""),
+        });
+      }),
+    [run],
+  );
+
+  const status: SystemStatus = useMemo(() => {
+    const calendar = !auth?.configured
+      ? { label: "Not configured", tone: "warn" as const }
+      : !auth.connected
+        ? { label: "Not connected", tone: "warn" as const }
+        : auth.healthy
+          ? { label: "Connected", tone: "ok" as const }
+          : { label: "Needs attention", tone: "bad" as const };
+
+    return {
       ai: connectionError
         ? { label: "Unknown", tone: "bad" as const }
         : degraded === null
@@ -143,11 +185,14 @@ export default function App() {
           : degraded
             ? { label: "Offline parser", tone: "warn" as const }
             : { label: "Normal", tone: "ok" as const },
-      calendar: { label: "Phase 3", tone: "warn" as const },
-      credentials: { label: "Not connected", tone: "warn" as const },
-    }),
-    [connectionError, degraded],
-  );
+      calendar,
+      credentials: auth?.connected
+        ? auth.healthy
+          ? { label: "Healthy", tone: "ok" as const }
+          : { label: "Re-auth needed", tone: "bad" as const }
+        : { label: "None stored", tone: "warn" as const },
+    };
+  }, [auth, connectionError, degraded]);
 
   const activePlan = plan ?? EMPTY_PLAN;
 
@@ -188,9 +233,42 @@ export default function App() {
               <div className="banner__text">
                 <span className="banner__title">Offline parsing</span>
                 <div>
-                  No model is configured, so capture uses the rule-based parser. Ranking is
-                  unaffected because it never needed a model.
+                  No model is configured, so capture uses the rule-based parser. Ranking and
+                  scheduling are unaffected because neither needed a model.
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {auth?.connected === false && auth.configured && !connectionError && (
+          <div className="view" style={{ paddingBottom: 0 }}>
+            <div className="banner">
+              <div className="banner__text">
+                <span className="banner__title">Calendar not connected</span>
+                <div>{auth.hint ?? "Connect Google Calendar to project blocks into it."}</div>
+              </div>
+              <button
+                type="button"
+                className="button"
+                onClick={() =>
+                  void api.authStart().then((start) => {
+                    window.location.href = start.authorization_url;
+                  })
+                }
+              >
+                Connect
+              </button>
+            </div>
+          </div>
+        )}
+
+        {auth?.connected && !auth.healthy && auth.hint && !connectionError && (
+          <div className="view" style={{ paddingBottom: 0 }}>
+            <div className="banner banner--bad" role="alert">
+              <div className="banner__text">
+                <span className="banner__title">Calendar needs attention</span>
+                <div>{auth.hint}</div>
               </div>
             </div>
           </div>
@@ -200,8 +278,11 @@ export default function App() {
           <TodayView
             plan={activePlan}
             today={today}
+            windows={windows}
+            blocks={blocks}
             onComplete={onComplete}
             onTogglePin={onTogglePin}
+            onSchedule={onSchedule}
             busy={busy}
           />
         )}
@@ -215,8 +296,8 @@ export default function App() {
             busy={busy}
           />
         )}
-        {view === "windows" && <WindowsPreview />}
-        {view === "activity" && <ActivityPreview />}
+        {view === "windows" && <WindowsView onChanged={() => void refresh()} />}
+        {view === "activity" && <ActivityView onChanged={() => void refresh()} />}
         {view === "states" && <StateGallery />}
       </main>
     </div>
