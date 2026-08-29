@@ -262,17 +262,21 @@ export function Calendar({
         <span className="largetitle__sub">
           {view.calendar.connected
             ? `Synced with ${view.calendar.email ?? "Google"}`
-            : "On this device · connect Google in Setup"}
+            : "On this device · connect Google in Settings"}
         </span>
       </h1>
 
       <div className="calbar">
-        <div className="segmented" role="group" aria-label="Calendar range">
+        <div
+          className="segmented segmented--inline"
+          role="group"
+          aria-label="Calendar range"
+        >
           {MODES.map((option) => (
             <button
               type="button"
               key={option}
-              className={`segmented__item ${mode === option ? "is-on" : ""}`}
+              className="segment"
               aria-pressed={mode === option}
               onClick={() => choose(option)}
             >

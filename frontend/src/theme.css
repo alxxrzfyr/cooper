@@ -21,8 +21,8 @@
   --c-work-line: #0b6bd3;
   --c-organizations: #a85508;
   --c-organizations-line: #a85508;
-  --c-personal: #1c7a4b;
-  --c-personal-line: #1c7a4b;
+  --c-personal: #0f7285;
+  --c-personal-line: #0f7285;
   --accent-press: #0060df;
   --accent-wash: rgba(10, 132, 255, 0.12);
   --green: #34c759;
@@ -40,6 +40,14 @@
   /* The material the bars are made of. */
   --bar: rgba(249, 249, 251, 0.72);
   --tint: #e8e8ed;
+
+  /* What a colour means, app-wide. Green is gained or finished, red is removed or refused,
+     blue is an answer, amber wants a look. The four category colours deliberately avoid all
+     four, which is why personal is teal rather than green. */
+  --tone-good: var(--green);
+  --tone-bad: var(--red);
+  --tone-answer: var(--accent);
+  --tone-attention: var(--amber);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.07);
@@ -214,13 +222,44 @@ select {
 }
 
 .topbar__action,
+/*
+ * "Undo" on its own is a question, not an answer, so it names the thing it will reverse. It also
+ * only exists when there is something to reverse, rather than sitting in the rail looking like a
+ * section you never visit.
+ */
 .rail__undo {
-  border-radius: var(--pill);
-  padding: 6px 13px;
-  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--accent-wash);
+  text-align: left;
   font-weight: 600;
   color: var(--accent);
   transition: background 0.15s ease;
+}
+
+.rail__undo:disabled {
+  opacity: 0.5;
+}
+
+.undo__verb {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.undo__what {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--dim);
 }
 
 .topbar__action:hover:not(:disabled),
@@ -442,6 +481,36 @@ select {
 .chat {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Manual or AI, above the thread rather than in the composer, where it would compete with the
+   send button for the narrowest part of a phone screen. */
+.modebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  box-shadow: inset 0 -0.5px 0 var(--hair);
+}
+
+.modebar .segmented {
+  width: 168px;
+  flex: none;
+  margin: 0;
+}
+
+.modebar__hint {
+  font-size: 11.5px;
+  color: var(--faint);
+  min-width: 0;
+}
+
+.thread {
+  flex: 1;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -452,7 +521,7 @@ select {
   gap: 8px;
 }
 
-.chat > * {
+.thread > * {
   width: min(760px, 100%);
   margin-inline: auto;
 }
@@ -526,9 +595,54 @@ select {
   word-break: break-word;
 }
 
-.bubble--them {
+/* Cooper's side, coloured by what he did. A tint rather than a fill, so the words stay
+   readable in both themes and the colour is a signal rather than a shout. */
+.bubble--plain {
   background: var(--sunken);
+}
+
+.bubble--good {
+  background: color-mix(in srgb, var(--tone-good) 20%, var(--sunken));
+}
+
+.bubble--bad {
+  background: color-mix(in srgb, var(--tone-bad) 18%, var(--sunken));
+}
+
+.bubble--answer {
+  background: color-mix(in srgb, var(--tone-answer) 16%, var(--sunken));
+}
+
+.bubble--attention {
+  background: color-mix(in srgb, var(--tone-attention) 22%, var(--sunken));
+}
+
+.bubble--plain,
+.bubble--good,
+.bubble--bad,
+.bubble--answer,
+.bubble--attention {
   color: var(--text);
+}
+
+/* The facts Cooper took from the sentence, inside the bubble. This used to be a separate white
+   card with a blue edge under the reply, which read as a second message. */
+.bubble__meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  opacity: 0.72;
+}
+
+.bubble__lines {
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0.82;
 }
 
 .bubble--you {
@@ -562,22 +676,18 @@ select {
   border-bottom-left-radius: 12px;
 }
 
-.bubble--them.bubble--tail::before {
+.bubble:not(.bubble--you).bubble--tail::before {
   left: -7px;
   width: 19px;
   background: inherit;
   border-bottom-right-radius: 16px 15px;
 }
 
-.bubble--them.bubble--tail::after {
+.bubble:not(.bubble--you).bubble--tail::after {
   left: -19px;
   width: 19px;
   background: var(--bg);
   border-bottom-right-radius: 12px;
-}
-
-.bubble--warn {
-  background: color-mix(in srgb, var(--amber) 20%, var(--sunken));
 }
 
 .bubble--thinking {
@@ -612,42 +722,6 @@ select {
   30% {
     opacity: 1;
   }
-}
-
-/* The card showing what the otter understood, so a wrong parse is obvious. */
-.understood {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--card);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-sm);
-  padding: 9px 13px;
-  border-left: 3px solid var(--accent);
-}
-
-.understood__title {
-  font-weight: 700;
-  font-size: 14.5px;
-}
-
-.understood__bits {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-.slots {
-  margin: 0;
-  padding: 9px 13px;
-  list-style: none;
-  background: var(--card);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-sm);
-  font-size: 13.5px;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
 }
 
 /* ================================================================== opening */
@@ -1133,35 +1207,6 @@ select {
   width: 76px;
 }
 
-/* An iOS segmented control: one sunken track, the choice raised out of it. */
-.segmented {
-  display: flex;
-  gap: 2px;
-  margin: 10px 14px;
-  padding: 2px;
-  background: var(--sunken);
-  border-radius: 9px;
-}
-
-.segment {
-  flex: 1;
-  padding: 7px 10px;
-  border-radius: 7px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text);
-  transition: background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
-}
-
-.segment[aria-pressed="true"] {
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
-}
-
-.segment:active {
-  transform: scale(0.97);
-}
-
 .daypick {
   display: flex;
   gap: 5px;
@@ -1386,33 +1431,57 @@ select {
   margin: 0 0 12px;
 }
 
-/* An iOS segmented control: the whole set of choices stays visible. */
+/*
+ * One segmented control, used by Settings, the calendar range and the chat mode switch. State is
+ * carried by aria-pressed rather than a class, so the styling cannot disagree with what a screen
+ * reader is told.
+ */
 .segmented {
-  display: inline-flex;
-  padding: 2px;
+  display: flex;
   gap: 2px;
-  background: var(--fill);
-  border-radius: 10px;
+  margin: 10px 14px;
+  padding: 2px;
+  background: var(--sunken);
+  border-radius: 9px;
 }
 
-.segmented__item {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--dim);
-  font: inherit;
-  font-size: 13px;
+.segment {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
   font-weight: 600;
-  padding: 5px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background var(--fast), color var(--fast);
+  color: var(--text);
+  transition: background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
 }
 
-.segmented__item.is-on {
+.segment[aria-pressed="true"] {
   background: var(--card);
-  color: var(--text);
   box-shadow: var(--shadow-sm);
+}
+
+.segment:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.segment:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/*
+ * The calendar and Settings want the same control at different widths: on a page background it
+ * hugs its content, inside a card it fills the row.
+ */
+.segmented--inline {
+  display: inline-flex;
+  margin: 0;
+}
+
+.segmented--inline .segment {
+  flex: none;
+  padding: 5px 14px;
+  font-size: 13px;
 }
 
 .calnav {
