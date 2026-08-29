@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./theme.css";
 import { api } from "./api";
+import { Calendar } from "./Calendar";
 import { Chat, loadTurns, saveTurns, type Turn } from "./Chat";
 import { Mascot } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
-import { ApiError, type Item, type Reply, type View } from "./types";
+import { ApiError, type Reply, type View } from "./types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -18,21 +19,6 @@ function urgency(score: number): string {
   if (score >= 0.6) return "do this first";
   if (score >= 0.35) return "worth doing today";
   return "can wait";
-}
-
-/** Group booked work by local day, so Plan reads as a schedule rather than a list. */
-function byDay(items: Item[]): Array<[string, Item[]]> {
-  const groups = new Map<string, Item[]>();
-  for (const item of items) {
-    if (!item.start_at) continue;
-    const label = new Date(item.start_at).toLocaleDateString(undefined, {
-      weekday: "long",
-      day: "numeric",
-      month: "short",
-    });
-    groups.set(label, [...(groups.get(label) ?? []), item]);
-  }
-  return [...groups];
 }
 
 export default function App() {
@@ -248,40 +234,27 @@ export default function App() {
               </section>
             )}
 
-            {scheduled.length > 0 &&
-              byDay(scheduled).map(([label, items]) => (
-                <section className="group" key={label}>
-                  <div className="daygroup">
-                    {label}
-                    <span className="group__note">
-                      {view?.calendar.connected ? "in Google" : "on this device"}
-                    </span>
-                  </div>
-                  <div className="inset">
-                    {items.map((item) => (
-                      <Row
-                        key={item.id}
-                        item={item}
-                        today={view?.today ?? ""}
-                        busy={busy}
-                        onComplete={() => void act(() => api.act(item.id, "complete"))}
-                        onDrop={() => void act(() => api.act(item.id, "drop"))}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-
-            {shortlist.length === 0 && scheduled.length === 0 && (
+            {shortlist.length === 0 && (
               <section className="empty">
                 <Mascot name="empty_state_windows" size="lg" shape="squircle" decorative />
-                <h2 className="empty__title">Nothing here yet</h2>
+                <h2 className="empty__title">Nothing to do</h2>
                 <p className="empty__text">
-                  Say something in Chat and it will show up here, ranked and ready to book.
+                  {scheduled.length > 0
+                    ? "Everything is booked. Have a look at the Calendar."
+                    : "Say something in Chat and it will show up here, ranked and ready to book."}
                 </p>
               </section>
             )}
           </div>
+        )}
+
+        {tab === "calendar" && view && (
+          <Calendar
+            view={view}
+            busy={busy}
+            onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
+            onDrop={(itemId) => void act(() => api.act(itemId, "drop"))}
+          />
         )}
 
         {tab === "setup" && hours && view && (
@@ -408,11 +381,13 @@ export default function App() {
                   ) : null}
                 </div>
               </div>
-              {!view.calendar.configured && (
-                <p className="hint">
-                  Add your Google client id and secret to <code>.env</code> to switch this on.
-                </p>
-              )}
+              <p className="hint">
+                {view.calendar.connected
+                  ? "Booked work is written to Google. Your own events block scheduling."
+                  : view.calendar.configured
+                    ? "Not connected. Cadence is using its own calendar, which works on its own."
+                    : "Cadence has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
+              </p>
             </section>
 
             <section className="group">
@@ -463,16 +438,21 @@ export default function App() {
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && void say(text)}
             />
+            <button
+              type="button"
+              className="composer__send"
+              aria-label="Send"
+              disabled={busy || !text.trim()}
+              onClick={() => void say(text)}
+            >
+              <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+                <path
+                  d="M12 19V6.4l-5.3 5.3a1 1 0 0 1-1.4-1.4l7-7a1 1 0 0 1 1.4 0l7 7a1 1 0 0 1-1.4 1.4L14 6.4V19a1 1 0 0 1-2 0Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
           </div>
-          <button
-            type="button"
-            className="composer__send"
-            aria-label="Send"
-            disabled={busy || !text.trim()}
-            onClick={() => void say(text)}
-          >
-            ↑
-          </button>
         </div>
       </div>
     </div>

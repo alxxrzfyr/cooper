@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 
 import { Mascot } from "./Mascot";
 import type { Item, ReplyKind } from "./types";
@@ -16,6 +16,11 @@ export interface Turn {
 
 const STORE_KEY = "cadence.chat.v1";
 const KEEP = 60;
+
+/** Quiet longer than this earns a timestamp above the next group. */
+const STAMP_AFTER_MS = 15 * 60_000;
+/** Turns from the same side closer together than this share one group. */
+const GROUP_WITHIN_MS = 5 * 60_000;
 
 /** Which face the otter wears for a given reply. */
 function face(kind: ReplyKind | undefined): string {
@@ -53,8 +58,62 @@ export function saveTurns(turns: Turn[]): void {
   }
 }
 
-function time(at: number): string {
+function clock(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** Whole days between two moments, counted by midnights so 11pm to 1am is one day. */
+function nightsBetween(now: Date, then: Date): number {
+  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const b = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  return Math.round((a - b) / 86_400_000);
+}
+
+/** The separator text: "Today 3:04 PM", "Yesterday 9:12 AM", "Monday 8:30 PM", "Mar 3 8:30 PM". */
+function stamp(at: number): string {
+  const then = new Date(at);
+  const nights = nightsBetween(new Date(), then);
+  if (nights === 0) return `Today ${clock(at)}`;
+  if (nights === 1) return `Yesterday ${clock(at)}`;
+  if (nights > 1 && nights < 7) {
+    return `${then.toLocaleDateString(undefined, { weekday: "long" })} ${clock(at)}`;
+  }
+  const day = then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${day} ${clock(at)}`;
+}
+
+interface Group {
+  who: "you" | "otter";
+  turns: Turn[];
+  /** Timestamp to show above this group, or null to stay silent. */
+  stamp: string | null;
+}
+
+/**
+ * Collapse a flat list of turns into the runs a messages app shows: consecutive bubbles from one
+ * side sit tight together with a single tail and a single avatar, and a timestamp appears only
+ * after a real pause rather than beside every line.
+ */
+export function groupTurns(turns: Turn[]): Group[] {
+  const groups: Group[] = [];
+  let previousAt = 0;
+
+  for (const turn of turns) {
+    const paused = previousAt === 0 || turn.at - previousAt > STAMP_AFTER_MS;
+    const last = groups[groups.length - 1];
+    const continues =
+      last !== undefined &&
+      last.who === turn.who &&
+      !paused &&
+      turn.at - previousAt <= GROUP_WITHIN_MS;
+
+    if (continues) last.turns.push(turn);
+    else groups.push({ who: turn.who, turns: [turn], stamp: paused ? stamp(turn.at) : null });
+
+    previousAt = turn.at;
+  }
+
+  return groups;
 }
 
 /**
@@ -90,41 +149,70 @@ export function Chat({
     );
   }
 
+  const groups = groupTurns(turns);
+
   return (
     <div className="chat" role="log" aria-label="Conversation" aria-live="polite">
-      {turns.map((turn) =>
-        turn.who === "you" ? (
-          <div className="turn turn--you" key={turn.id}>
-            <div className="bubble bubble--you">{turn.text}</div>
-            <span className="turn__time">{time(turn.at)}</span>
-          </div>
-        ) : (
-          <div className="turn turn--otter" key={turn.id}>
-            <Mascot name={face(turn.kind)} size="sm" decorative />
-            <div className="turn__stack">
-              <div className={`bubble ${turn.kind === "note" ? "bubble--warn" : ""}`}>
-                {turn.text}
+      {groups.map((group, index) => {
+        const last = group.turns[group.turns.length - 1];
+        const closing = index === groups.length - 1 && !thinking;
+
+        return (
+          <Fragment key={group.turns[0].id}>
+            {group.stamp && <div className="stamp">{group.stamp}</div>}
+
+            <div className={`run run--${group.who}`}>
+              {group.who === "otter" && <Mascot name={face(last.kind)} size="sm" decorative />}
+
+              <div className="run__stack">
+                {group.turns.map((turn) => {
+                  const attached = Boolean(turn.item || turn.lines?.length);
+                  const tail = turn.id === last.id && !attached;
+
+                  return (
+                    <Fragment key={turn.id}>
+                      <div
+                        className={[
+                          "bubble",
+                          group.who === "you" ? "bubble--you" : "bubble--them",
+                          turn.kind === "note" ? "bubble--warn" : "",
+                          tail ? "bubble--tail" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {turn.text}
+                      </div>
+
+                      {turn.item && <Understood item={turn.item} />}
+
+                      {turn.lines && turn.lines.length > 0 && (
+                        <ul className="slots">
+                          {turn.lines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </Fragment>
+                  );
+                })}
+
+                {group.who === "you" && closing && <span className="receipt">Delivered</span>}
               </div>
-              {turn.item && <Understood item={turn.item} />}
-              {turn.lines && turn.lines.length > 0 && (
-                <ul className="slots">
-                  {turn.lines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              )}
             </div>
-          </div>
-        ),
-      )}
+          </Fragment>
+        );
+      })}
 
       {thinking && (
-        <div className="turn turn--otter">
+        <div className="run run--otter">
           <Mascot name="task_active" size="sm" decorative />
-          <div className="bubble bubble--thinking" aria-label="Thinking">
-            <span />
-            <span />
-            <span />
+          <div className="run__stack">
+            <div className="bubble bubble--them bubble--tail bubble--thinking" aria-label="Thinking">
+              <span />
+              <span />
+              <span />
+            </div>
           </div>
         </div>
       )}

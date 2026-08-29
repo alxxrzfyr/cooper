@@ -32,6 +32,14 @@ export interface Hours {
   timezone?: string;
 }
 
+/** An event read back from Google. `mine` marks ones Cadence created. */
+export interface CalendarEvent {
+  title: string;
+  start_at: string;
+  end_at: string;
+  mine: boolean;
+}
+
 export interface View {
   now: string;
   today: string;
@@ -39,6 +47,7 @@ export interface View {
   shortlist: Ranked[];
   scheduled: Item[];
   hours: Hours;
+  events: CalendarEvent[];
   undo: string | null;
   using_model: boolean;
   calendar: { configured: boolean; connected: boolean; email: string | null };

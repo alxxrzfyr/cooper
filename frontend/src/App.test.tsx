@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App";
-import type { Item, Ranked, Reply, View } from "./types";
+import type { CalendarEvent, Item, Ranked, Reply, View } from "./types";
 
 function ranked(overrides: Partial<Ranked> = {}): Ranked {
   return {
@@ -39,6 +39,7 @@ function view(overrides: Partial<View> = {}): View {
       weekdays: [0, 1, 2, 3, 4],
       max_per_day: 4,
     },
+    events: [],
     undo: null,
     using_model: false,
     calendar: { configured: false, connected: false, email: null },
@@ -341,7 +342,7 @@ describe("the list", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
 
     expect(await screen.findByText("review the budget")).toBeInTheDocument();
   });
@@ -433,7 +434,7 @@ describe("navigation", () => {
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    for (const label of ["Chat", "Plan", "Setup"]) {
+    for (const label of ["Chat", "Plan", "Calendar", "Setup"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
   });
@@ -446,13 +447,14 @@ describe("navigation", () => {
     expect((await screen.findAllByRole("navigation", { name: "Sections" })).length).toBe(2);
   });
 
-  test("the plan section counts what is waiting", async () => {
+  test("each section counts its own contents", async () => {
     const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00" };
     stub({ view: view({ shortlist: [ranked()], scheduled: [booked] }) });
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    expect(within(nav).getByRole("button", { name: /Plan/ })).toHaveTextContent("2");
+    expect(within(nav).getByRole("button", { name: /Plan/ })).toHaveTextContent("1");
+    expect(within(nav).getByRole("button", { name: /Calendar/ })).toHaveTextContent("1");
   });
 
   test("an empty plan explains where things come from", async () => {
@@ -462,7 +464,101 @@ describe("navigation", () => {
 
     await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing to do")).toBeInTheDocument();
+  });
+});
+
+describe("the calendar", () => {
+  function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+    return {
+      title: "Standup with the team",
+      start_at: "2026-08-31T01:00:00+00:00",
+      end_at: "2026-08-31T01:15:00+00:00",
+      mine: false,
+      ...overrides,
+    };
+  }
+
+  async function openCalendar() {
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
+    return user;
+  }
+
+  test("an empty calendar says how to fill it", async () => {
+    stub({});
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findByText("Nothing on the calendar")).toBeInTheDocument();
+  });
+
+  test("your own Google events show up beside booked work", async () => {
+    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    stub({ view: view({ scheduled: [booked], events: [event()] }) });
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findByText("Standup with the team")).toBeInTheDocument();
+    expect(screen.getByText("write the quarterly report")).toBeInTheDocument();
+  });
+
+  test("events Cadence created are not listed twice", async () => {
+    // Our own blocks come back from Google too. `mine` marks them so only the local copy shows.
+    const booked = { ...ranked(), id: "b1", title: "write the report", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    stub({
+      view: view({
+        scheduled: [booked],
+        events: [event({ title: "write the report", mine: true, start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" })],
+      }),
+    });
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findAllByText("write the report")).toHaveLength(1);
+  });
+
+  test("a Google event is marked as coming from Google", async () => {
+    stub({ view: view({ scheduled: [], events: [event()] }) });
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findByText("Google")).toBeInTheDocument();
+  });
+
+  test("without Google it says it is using its own calendar", async () => {
+    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00" };
+    stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findByText(/On this device/)).toBeInTheDocument();
+  });
+
+  test("a booked block can be completed from the calendar", async () => {
+    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    const calls = stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
+    const user = await openCalendar();
+
+    await user.click(await screen.findByRole("button", { name: /Mark .* done/ }));
+
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/complete"))).toBe(true));
+  });
+
+  test("the legend explains what the shading and outlines mean", async () => {
+    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00" };
+    stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
+
+    await openCalendar();
+
+    expect(await screen.findByText(/Shaded hours are yours to book/)).toBeInTheDocument();
   });
 });
 
@@ -499,9 +595,9 @@ describe("google calendar", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
 
-    expect(await screen.findByText("in Google")).toBeInTheDocument();
+    expect(await screen.findByText(/Synced with me@example.com/)).toBeInTheDocument();
   });
 });
 

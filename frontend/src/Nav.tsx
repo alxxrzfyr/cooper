@@ -1,11 +1,12 @@
 import { Brand } from "./Brand";
 import { Mascot } from "./Mascot";
 
-export type Tab = "chat" | "plan" | "setup";
+export type Tab = "chat" | "plan" | "calendar" | "setup";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: "chat", label: "Chat", glyph: "◍" },
   { id: "plan", label: "Plan", glyph: "◎" },
+  { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "setup", label: "Setup", glyph: "⚙" },
 ];
 
@@ -35,7 +36,9 @@ export function Nav({
   onUndo: () => void;
 }) {
   function count(tab: Tab): number {
-    return tab === "plan" ? todo + booked : 0;
+    if (tab === "plan") return todo;
+    if (tab === "calendar") return booked;
+    return 0;
   }
 
   return (

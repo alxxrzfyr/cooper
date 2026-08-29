@@ -320,3 +320,37 @@ class TestNoDuplication:
         body = client.post("/api/schedule", headers=HEADERS).json()["view"]
 
         assert [row["title"] for row in body["shortlist"]] == ["no estimate so cannot be booked"]
+
+
+class TestAgenda:
+    def test_the_view_carries_an_events_list(self, client: TestClient) -> None:
+        # Empty with Google off, which is the supported default rather than a special case.
+        body = client.get("/api/today", headers=HEADERS).json()
+
+        assert body["events"] == []
+
+    def test_booked_work_appears_with_its_times(self, client: TestClient) -> None:
+        say(client, "write the report, 60m")
+        client.post("/api/schedule", headers=HEADERS)
+
+        booked = client.get("/api/today", headers=HEADERS).json()["scheduled"]
+
+        assert len(booked) == 1
+        assert booked[0]["start_at"] is not None
+        assert booked[0]["end_at"] is not None
+
+    def test_a_fixed_event_keeps_the_time_you_said(self, client: TestClient) -> None:
+        say(client, "dentist thursday 3pm")
+
+        booked = client.get("/api/today", headers=HEADERS).json()["scheduled"]
+
+        assert booked[0]["kind"] == "event"
+        # 15:00 in Asia/Singapore is 07:00 UTC. The offset must survive the round trip.
+        assert booked[0]["start_at"].endswith("+00:00")
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+
+        local = dt.datetime.fromisoformat(booked[0]["start_at"]).astimezone(
+            ZoneInfo("Asia/Singapore")
+        )
+        assert local.hour == 15

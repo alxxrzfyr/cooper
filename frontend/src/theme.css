@@ -349,11 +349,16 @@ select {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  gap: 6px;
   background: var(--card);
+  border: 0.5px solid var(--hair);
   border-radius: var(--pill);
-  box-shadow: var(--shadow-sm);
-  padding: 0 16px;
+  padding: 3px 4px 3px 15px;
+}
+
+.composer__field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hair));
 }
 
 .composer__input {
@@ -361,7 +366,7 @@ select {
   min-width: 0;
   border: none;
   background: none;
-  padding: 12px 0;
+  padding: 8px 0;
   font-size: 16px; /* 16px keeps iOS from zooming on focus */
 }
 
@@ -374,16 +379,15 @@ select {
 }
 
 .composer__send {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   flex: none;
   border-radius: var(--pill);
   background: var(--accent);
   color: #fff;
-  font-size: 16px;
   display: grid;
   place-items: center;
-  transition: transform 0.14s ease, background 0.14s ease;
+  transition: transform 0.14s ease, background 0.14s ease, opacity 0.14s ease;
 }
 
 .composer__send:hover:not(:disabled) {
@@ -391,11 +395,12 @@ select {
 }
 
 .composer__send:active:not(:disabled) {
-  transform: scale(0.9);
+  transform: scale(0.88);
 }
 
 .composer__send:disabled {
-  background: var(--faint);
+  background: var(--tint);
+  color: var(--faint);
   cursor: default;
 }
 
@@ -404,13 +409,14 @@ select {
 .chat {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 16px;
+  padding: 12px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .chat > * {
@@ -418,76 +424,134 @@ select {
   margin-inline: auto;
 }
 
-.turn {
+/* The pause marker between groups, in place of a time beside every line. */
+.stamp {
+  align-self: center;
+  text-align: center;
+  font-size: 11px;
+  color: var(--faint);
+  padding: 8px 0 2px;
+}
+
+.stamp:first-child {
+  padding-top: 0;
+}
+
+/* A run of consecutive bubbles from one side: one tail, one avatar. */
+.run {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  animation: rise 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  gap: 7px;
+  animation: rise 0.24s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px) scale(0.97);
   }
 }
 
-.turn--you {
+.run--you {
   justify-content: flex-end;
 }
 
-.turn--otter {
+.run--otter {
   justify-content: flex-start;
 }
 
-.turn__stack {
+.run__stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
-  max-width: min(80%, 520px);
+  max-width: min(76%, 520px);
 }
 
-.turn__time {
+.run--you .run__stack {
+  align-items: flex-end;
+}
+
+.run--otter .run__stack {
+  align-items: flex-start;
+}
+
+.receipt {
   font-size: 10.5px;
+  letter-spacing: 0.01em;
   color: var(--faint);
-  flex: none;
-  padding-bottom: 3px;
+  padding: 2px 4px 0;
 }
 
 .bubble {
-  border-radius: var(--r-xl);
-  padding: 10px 15px;
-  font-size: 15px;
-  line-height: 1.4;
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
-  max-width: min(80%, 520px);
+  position: relative;
+  border-radius: 19px;
+  padding: 8px 14px;
+  font-size: 15.5px;
+  line-height: 1.35;
+  max-width: 100%;
   word-break: break-word;
 }
 
-.turn--otter .bubble {
-  border-bottom-left-radius: 8px;
+.bubble--them {
+  background: var(--sunken);
+  color: var(--text);
 }
 
 .bubble--you {
   background: var(--accent);
   color: #fff;
-  border-bottom-right-radius: 8px;
-  box-shadow: none;
-  font-weight: 500;
+}
+
+/* The tail on the last bubble of a run. Two shapes: one continues the bubble past its corner,
+   the second is painted in the page colour to carve the curve back out. Absolute, so a tail
+   never changes where a bubble sits. */
+.bubble--tail::before,
+.bubble--tail::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 19px;
+  pointer-events: none;
+}
+
+.bubble--you.bubble--tail::before {
+  right: -7px;
+  width: 19px;
+  background: inherit;
+  border-bottom-left-radius: 16px 15px;
+}
+
+.bubble--you.bubble--tail::after {
+  right: -19px;
+  width: 19px;
+  background: var(--bg);
+  border-bottom-left-radius: 12px;
+}
+
+.bubble--them.bubble--tail::before {
+  left: -7px;
+  width: 19px;
+  background: inherit;
+  border-bottom-right-radius: 16px 15px;
+}
+
+.bubble--them.bubble--tail::after {
+  left: -19px;
+  width: 19px;
+  background: var(--bg);
+  border-bottom-right-radius: 12px;
 }
 
 .bubble--warn {
-  background: color-mix(in srgb, var(--amber) 16%, var(--card));
+  background: color-mix(in srgb, var(--amber) 20%, var(--sunken));
 }
 
 .bubble--thinking {
   display: flex;
   gap: 5px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 13px 16px;
 }
 
 .bubble--thinking span {
@@ -1147,4 +1211,110 @@ select {
   .bubble {
     font-size: 15.5px;
   }
+}
+
+/* ================================================================= calendar
+
+   A day timeline, not a month grid. On a personal calendar the useful question is what today
+   looks like and where the gaps are, and a month of tiny boxes answers neither.
+   ------------------------------------------------------------------------- */
+
+.daygrid {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.daygrid__row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-height: 34px;
+}
+
+.daygrid__row + .daygrid__row {
+  box-shadow: inset 0 0.5px 0 var(--hair);
+}
+
+.daygrid__hour {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  padding: 9px 8px 0 0;
+  text-align: right;
+}
+
+.daygrid__slot {
+  padding: 4px 8px 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Hours you said you are willing to work. Everything else is visibly not schedulable. */
+.daygrid__slot--open {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+/* Filled: Cadence put it there. Outlined: it came from your calendar. */
+.slot--cadence {
+  background: var(--accent);
+  color: #fff;
+}
+
+.slot--google {
+  background: transparent;
+  border: 1.5px solid var(--hair);
+  color: var(--text);
+}
+
+.slot__time {
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.85;
+  flex: none;
+}
+
+.slot__title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot__from {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  flex: none;
+}
+
+.slot__actions {
+  display: flex;
+  gap: 1px;
+  flex: none;
+}
+
+.slot--cadence .iconbtn {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.slot--cadence .iconbtn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }

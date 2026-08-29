@@ -139,6 +139,27 @@ def find(session: Any, words: str) -> Item | None:
     return loose[0] if len(loose) == 1 else None
 
 
+def google_events(*, days: int = 14) -> list[dict[str, Any]]:
+    """Your real calendar, reduced to times and titles. Empty when Google is off."""
+    if not calendar.connected:
+        return []
+    try:
+        entries = calendar.busy(days=days)
+    except CalendarError:
+        # A calendar problem must never break the page. It just means less on screen.
+        return []
+    return [
+        {
+            "title": entry.title,
+            "start_at": entry.start.isoformat(),
+            "end_at": entry.end.isoformat(),
+            # `mine` marks events Cadence created, so the agenda does not show them twice.
+            "mine": entry.mine,
+        }
+        for entry in sorted(entries, key=lambda entry: entry.start)
+    ]
+
+
 def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
     """Times already committed: calendar events plus blocks we placed ourselves."""
     spans: list[tuple[dt.datetime, dt.datetime]] = []
@@ -184,6 +205,7 @@ def today_view() -> dict[str, Any]:
         ],
         "scheduled": scheduled,
         "hours": hours.as_setting(),
+        "events": google_events(),
         "undo": undo_label,
         "using_model": brain.using_model,
         "calendar": {

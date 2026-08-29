@@ -31,6 +31,19 @@ Four things, and deliberately nothing else:
 3. **Get it booked.** The top of that list lands in real time, inside hours you chose.
 4. **Change your mind.** Undo the last thing.
 
+Four screens: **Chat** (where you talk to it), **Plan** (what to do, ranked), **Calendar** (a day
+timeline of what's booked), **Setup**.
+
+Installs as a PWA and opens offline. Phone gets a bottom tab bar, desktop gets a side rail.
+
+## Its own calendar, or yours
+
+Cadence has a calendar of its own and needs nothing to work. Connect Google and two things change:
+your real events start blocking the scheduler, and booked work shows up in Google Calendar. The
+Calendar screen shows both — filled entries are ones Cadence placed, outlined ones came from you.
+
+Local is always the source of truth. Google is a mirror.
+
 ## What it is not
 
 Not a team tool. No accounts, no sharing, no projects, no boards, no reports, no streaks.
