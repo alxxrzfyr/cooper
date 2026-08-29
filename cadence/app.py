@@ -1,0 +1,579 @@
+"""Cadence: the whole web app.
+
+One file for every route, because there are only a dozen and spreading them across a layered
+architecture is what made the previous attempt hard to follow.
+
+The model proposes; this executes. `brain.py` returns a validated action and nothing else
+touches the database, so a wrong answer from Gemini can be refused rather than applied.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import datetime as dt
+import secrets
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+
+from cadence.brain import Action, Brain
+from cadence.config import Settings
+from cadence.db import Change, Item, Store, aware, new_id, now
+from cadence.google import Calendar, CalendarError
+from cadence.planner import Hours, Slot, place, rank
+
+SECRET_HEADER = "X-Cadence-Key"
+HOURS_SETTING = "hours"
+GOOGLE_SETTING = "google"
+
+settings = Settings()  # type: ignore[call-arg]
+store = Store(settings.database_url)
+brain = Brain(
+    api_key=settings.gemini_key(),
+    model=settings.gemini_model,
+    timezone=settings.timezone,
+)
+calendar = Calendar(
+    client_id=settings.google_client_id,
+    client_secret=settings.google_secret(),
+    redirect_uri=settings.google_redirect_uri,
+    encryption_key=settings.encryption(),
+    calendar_id=settings.calendar_id,
+)
+calendar.load_token((store.get_setting(GOOGLE_SETTING) or {}).get("token"))
+
+app = FastAPI(title="Cadence", docs_url=None, redoc_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.origin],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[SECRET_HEADER, "Content-Type"],
+)
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next: Any) -> Any:
+    """The whole security model: localhost, one origin, one shared key.
+
+    There is no login because there is one user on one machine. That assumption is only safe
+    while the app stays on 127.0.0.1, which is why the key is required rather than optional.
+
+    The refusal is returned rather than raised: exception handlers do not run for middleware,
+    so raising here would surface as a 500 instead of a clean 403.
+    """
+    if request.method == "OPTIONS" or request.url.path in ("/health", "/api/google/callback"):
+        return await call_next(request)
+    supplied = request.headers.get(SECRET_HEADER, "")
+    if not secrets.compare_digest(supplied, settings.key()):
+        return JSONResponse({"detail": "Wrong or missing key."}, status_code=403)
+    return await call_next(request)
+
+
+# ------------------------------------------------------------------------ shapes
+
+
+class Say(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class HoursIn(BaseModel):
+    start_hour: int = Field(ge=0, le=23)
+    end_hour: int = Field(ge=1, le=24)
+    weekdays: list[int]
+    max_per_day: int = Field(ge=1, le=10)
+
+
+class ItemIn(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    minutes: int | None = Field(default=None, ge=1, le=1440)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    notes: str | None = None
+
+
+# ------------------------------------------------------------------------ helpers
+
+
+def current_hours() -> Hours:
+    saved = store.get_setting(HOURS_SETTING)
+    if saved:
+        return Hours.from_setting({**saved, "timezone": settings.timezone})
+    return Hours(timezone=settings.timezone)
+
+
+def find(session: Any, words: str) -> Item | None:
+    """Match an item by words the user typed. Exact, then contained, then nothing.
+
+    Returning None rather than a best guess is deliberate: acting on the wrong task is worse
+    than asking.
+    """
+    needle = words.strip().lower()
+    if not needle:
+        return None
+    items = store.open_items(session)
+
+    for item in items:
+        if item.id == words or item.title.lower() == needle:
+            return item
+
+    hits = [item for item in items if needle in item.title.lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=f"“{words}” matches {len(hits)} items: "
+            + ", ".join(item.title for item in hits[:4]),
+        )
+
+    words_in_needle = [word for word in needle.split() if len(word) > 3]
+    loose = [
+        item
+        for item in items
+        if words_in_needle and all(word in item.title.lower() for word in words_in_needle)
+    ]
+    return loose[0] if len(loose) == 1 else None
+
+
+def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
+    """Times already committed: calendar events plus blocks we placed ourselves."""
+    spans: list[tuple[dt.datetime, dt.datetime]] = []
+    # A calendar problem must not stop planning. It only means less awareness of what is booked.
+    with contextlib.suppress(CalendarError):
+        spans.extend((entry.start, entry.end) for entry in calendar.busy(days=days))
+    with store.session() as session:
+        for item in store.open_items(session):
+            start, end = aware(item.start_at), aware(item.end_at)
+            if start and end:
+                spans.append((start, end))
+    return spans
+
+
+def today_view() -> dict[str, Any]:
+    at = now()
+    hours = current_hours()
+    zone = ZoneInfo(settings.timezone)
+
+    with store.session() as session:
+        items = store.open_items(session)
+        ranked = rank(items, at=at)
+        scheduled = [
+            item.to_dict()
+            for item in sorted(
+                (item for item in items if item.start_at),
+                key=lambda entry: aware(entry.start_at) or at,
+            )
+        ]
+        change = store.last_change(session)
+        undo_label = change.label if change else None
+
+    return {
+        "now": at.isoformat(),
+        "today": at.astimezone(zone).date().isoformat(),
+        "timezone": settings.timezone,
+        # Only work that still needs a slot. Anything booked belongs under "scheduled", and
+        # showing it in both places made the same task look like two.
+        "shortlist": [
+            {**entry.item.to_dict(), "score": entry.score, "why": entry.why}
+            for entry in ranked
+            if not entry.item.scheduled
+        ],
+        "scheduled": scheduled,
+        "hours": hours.as_setting(),
+        "undo": undo_label,
+        "using_model": brain.using_model,
+        "calendar": {
+            "configured": calendar.configured,
+            "connected": calendar.connected,
+            "email": (store.get_setting(GOOGLE_SETTING) or {}).get("email"),
+        },
+    }
+
+
+# ------------------------------------------------------------------------- routes
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/api/today")
+def get_today() -> dict[str, Any]:
+    return today_view()
+
+
+@app.post("/api/say")
+def say(body: Say) -> dict[str, Any]:
+    """The main entry point: one sentence in, one change out."""
+    with store.session() as session:
+        recent = [item.title for item in reversed(store.open_items(session))][:8]
+
+    action = brain.read(body.text, recent)
+    result = run(action)
+    return {**result, "source": action.source, "view": today_view()}
+
+
+def run(action: Action) -> dict[str, Any]:
+    if action.is_question:
+        return {"kind": "question", "message": action.question or "Could you rephrase that?"}
+
+    if action.verb == "show":
+        return {"kind": "shown", "message": "Here is what is next."}
+
+    if action.verb == "undo":
+        return undo_last()
+
+    if action.verb == "schedule":
+        placed = schedule_now()
+        if not placed:
+            return {
+                "kind": "note",
+                "message": "Nothing to place. Tasks need a time estimate to be scheduled.",
+            }
+        return {
+            "kind": "scheduled",
+            "message": f"Placed {len(placed)} into your hours.",
+            "chip": [f"{slot.title} · {slot.start.strftime('%a %H:%M')}" for slot in placed],
+        }
+
+    if action.verb == "add":
+        return add(action)
+
+    return change_existing(action)
+
+
+def add(action: Action) -> dict[str, Any]:
+    with store.session() as session:
+        item = Item(
+            id=new_id(),
+            kind=action.kind,
+            title=action.title or "Untitled",
+            minutes=action.minutes,
+            importance=action.importance or 3,
+            due=_as_due(action.due),
+            start_at=action.start,
+            end_at=action.end,
+            created_at=now(),
+        )
+        session.add(item)
+        session.flush()
+        store.record(session, label=f"Added “{item.title}”", item=item, before=None)
+        payload = item.to_dict()
+
+    if action.kind == "event" and action.start and action.end and calendar.connected:
+        try:
+            event_id = calendar.add_block(
+                item_id=payload["id"],
+                title=payload["title"],
+                start=action.start,
+                end=action.end,
+            )
+            with store.session() as session:
+                stored = session.get(Item, payload["id"])
+                if stored:
+                    stored.google_event_id = event_id
+        except CalendarError as error:
+            return {
+                "kind": "added",
+                "message": f"Added, but Google said: {error}",
+                "item": payload,
+            }
+
+    return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
+
+
+def change_existing(action: Action) -> dict[str, Any]:
+    with store.session() as session:
+        item = find(session, action.which or "")
+        if item is None:
+            return {
+                "kind": "question",
+                "message": f"I could not find “{action.which}”. Which one did you mean?",
+            }
+
+        before = item.to_dict()
+        if action.verb == "complete":
+            item.status = "done"
+            item.done_at = now()
+            label = f"Completed “{item.title}”"
+        elif action.verb == "drop":
+            item.status = "dropped"
+            label = f"Dropped “{item.title}”"
+        else:
+            item.pinned = 0 if item.pinned else 1
+            label = f"{'Pinned' if item.pinned else 'Unpinned'} “{item.title}”"
+
+        store.record(session, label=label, item=item, before=before)
+        payload = item.to_dict()
+        event_id = item.google_event_id if item.status != "open" else None
+
+    if event_id:
+        with contextlib.suppress(CalendarError):
+            calendar.remove_block(event_id)
+
+    return {"kind": "changed", "message": label + ".", "item": payload}
+
+
+def schedule_now() -> list[Slot]:
+    at = now()
+    hours = current_hours()
+    busy = busy_windows()
+
+    with store.session() as session:
+        ranked = rank(store.open_items(session), at=at)
+        slots = place(ranked, busy=busy, hours=hours, at=at, days=7)
+        if not slots:
+            return []
+        for slot in slots:
+            item = session.get(Item, slot.item_id)
+            if item is None:
+                continue
+            item.start_at = slot.start
+            item.end_at = slot.end
+        store.record(
+            session,
+            label=f"Scheduled {len(slots)} task{'s' if len(slots) != 1 else ''}",
+            item=None,
+            before={"scheduled": [slot.item_id for slot in slots]},
+        )
+
+    if calendar.connected:
+        for slot in slots:
+            try:
+                event_id = calendar.add_block(
+                    item_id=slot.item_id,
+                    title=slot.title,
+                    start=slot.start,
+                    end=slot.end,
+                )
+                with store.session() as session:
+                    item = session.get(Item, slot.item_id)
+                    if item:
+                        item.google_event_id = event_id
+            except CalendarError:
+                # Leave it scheduled locally. The calendar can catch up next time.
+                continue
+    return slots
+
+
+def undo_last() -> dict[str, Any]:
+    with store.session() as session:
+        change = store.last_change(session)
+        if change is None:
+            return {"kind": "note", "message": "Nothing to undo."}
+
+        before = change.before or {}
+        if change.item_id and not before:
+            # The change created the item, so undoing means removing it.
+            item = session.get(Item, change.item_id)
+            if item is not None:
+                event_id = item.google_event_id
+                session.delete(item)
+                if event_id:
+                    with contextlib.suppress(CalendarError):
+                        calendar.remove_block(event_id)
+        elif change.item_id:
+            item = session.get(Item, change.item_id)
+            if item is not None:
+                _restore(item, before)
+        elif "scheduled" in before:
+            for item_id in before["scheduled"]:
+                item = session.get(Item, item_id)
+                if item is None:
+                    continue
+                if item.google_event_id:
+                    with contextlib.suppress(CalendarError):
+                        calendar.remove_block(item.google_event_id)
+                item.start_at = None
+                item.end_at = None
+                item.google_event_id = None
+
+        change.undone = 1
+        label = change.label
+
+    return {"kind": "undone", "message": f"Undid: {label}."}
+
+
+def _restore(item: Item, before: dict[str, Any]) -> None:
+    item.title = before.get("title", item.title)
+    item.minutes = before.get("minutes")
+    item.importance = before.get("importance", 3)
+    item.status = before.get("status", "open")
+    item.pinned = 1 if before.get("pinned") else 0
+    item.done_at = None
+    item.start_at = _parse(before.get("start_at"))
+    item.end_at = _parse(before.get("end_at"))
+
+
+def _parse(value: Any) -> dt.datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _as_due(day: dt.date | None) -> dt.datetime | None:
+    """A due date means end of that day, in your timezone."""
+    if day is None:
+        return None
+    zone = ZoneInfo(settings.timezone)
+    return dt.datetime.combine(day, dt.time(23, 59), tzinfo=zone)
+
+
+# ------------------------------------------------------------- direct item routes
+
+
+@app.patch("/api/items/{item_id}")
+def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
+    with store.session() as session:
+        item = session.get(Item, item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="No such item.")
+        before = item.to_dict()
+        if body.title is not None:
+            item.title = body.title.strip() or item.title
+        if body.minutes is not None:
+            item.minutes = body.minutes
+        if body.importance is not None:
+            item.importance = body.importance
+        if body.notes is not None:
+            item.notes = body.notes
+        store.record(session, label=f"Edited “{item.title}”", item=item, before=before)
+        payload = item.to_dict()
+    return {"item": payload, "view": today_view()}
+
+
+@app.post("/api/items/{item_id}/{verb}")
+def act(item_id: str, verb: str) -> dict[str, Any]:
+    if verb not in ("complete", "drop", "pin"):
+        raise HTTPException(status_code=404, detail="Unknown action.")
+    with store.session() as session:
+        item = session.get(Item, item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="No such item.")
+        title = item.title
+    result = change_existing(Action(verb=verb, which=title))  # type: ignore[arg-type]
+    return {**result, "view": today_view()}
+
+
+@app.post("/api/schedule")
+def do_schedule() -> dict[str, Any]:
+    slots = schedule_now()
+    return {
+        "placed": [
+            {
+                "item_id": slot.item_id,
+                "title": slot.title,
+                "start": slot.start.isoformat(),
+                "end": slot.end.isoformat(),
+                "minutes": slot.minutes,
+            }
+            for slot in slots
+        ],
+        "view": today_view(),
+    }
+
+
+@app.post("/api/undo")
+def do_undo() -> dict[str, Any]:
+    return {**undo_last(), "view": today_view()}
+
+
+@app.put("/api/hours")
+def set_hours(body: HoursIn) -> dict[str, Any]:
+    if body.end_hour <= body.start_hour:
+        raise HTTPException(status_code=422, detail="Your day has to end after it starts.")
+    if not body.weekdays:
+        raise HTTPException(status_code=422, detail="Pick at least one day.")
+    if any(day < 0 or day > 6 for day in body.weekdays):
+        raise HTTPException(status_code=422, detail="Days must be 0 (Monday) to 6 (Sunday).")
+    store.set_setting(
+        HOURS_SETTING,
+        {
+            "start_hour": body.start_hour,
+            "end_hour": body.end_hour,
+            "weekdays": sorted(set(body.weekdays)),
+            "max_per_day": body.max_per_day,
+        },
+    )
+    return {"view": today_view()}
+
+
+@app.get("/api/changes")
+def changes() -> dict[str, Any]:
+    with store.session() as session:
+        rows = list(
+            session.scalars(select(Change).order_by(Change.at.desc(), Change.id.desc()).limit(20))
+        )
+        return {
+            "changes": [
+                {
+                    "id": row.id,
+                    "at": (aware(row.at) or now()).isoformat(),
+                    "label": row.label,
+                    "undone": bool(row.undone),
+                }
+                for row in rows
+            ]
+        }
+
+
+# ------------------------------------------------------------------ google oauth
+
+
+@app.post("/api/google/connect")
+def connect() -> dict[str, str]:
+    state = secrets.token_urlsafe(16)
+    app.state.oauth_state = state
+    try:
+        return {"url": calendar.consent_url(state)}
+    except CalendarError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/google/callback")
+def callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    expected = getattr(app.state, "oauth_state", None)
+    if error:
+        return _page("Not connected", f"Google said: {error}")
+    if not code:
+        return _page("Nothing to do", "Google sent no authorization code.")
+    if not expected or state != expected:
+        # Without this any page could finish an authorization on your behalf.
+        return _page("Wrong origin", "That callback did not come from Cadence.")
+
+    app.state.oauth_state = None
+    try:
+        token, email = calendar.exchange(code)
+        store.set_setting(GOOGLE_SETTING, {"token": calendar.seal_token(token), "email": email})
+        calendar.load_token(calendar.seal_token(token))
+    except CalendarError as failure:
+        return _page("Could not connect", str(failure))
+    return _page("Calendar connected", f"Cadence can now use {email or 'your calendar'}.")
+
+
+@app.post("/api/google/disconnect")
+def disconnect() -> dict[str, Any]:
+    store.set_setting(GOOGLE_SETTING, {})
+    calendar.load_token(None)
+    return {"view": today_view()}
+
+
+def _page(title: str, message: str) -> HTMLResponse:
+    return HTMLResponse(
+        f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Cadence</title><style>
+body{{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Rounded',system-ui,sans-serif;
+background:#F5F5F7;color:#1D1D1F;display:grid;place-items:center;height:100vh;margin:0}}
+main{{max-width:30rem;background:#fff;padding:2rem;border-radius:20px;
+box-shadow:0 12px 40px rgba(0,0,0,.08);text-align:center}}
+h1{{font-size:1.35rem;margin:0 0 .5rem}}p{{color:#6E6E73;margin:0;line-height:1.5}}
+</style></head><body><main><h1>{title}</h1><p>{message}</p></main></body></html>"""
+    )

@@ -1,305 +1,326 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import "./styles.css";
+import "./theme.css";
 import { api } from "./api";
-import { CaptureBar, type CaptureFeedback } from "./components/CaptureBar";
-import { Sidebar, type SystemStatus, type ViewName } from "./components/Sidebar";
-import { ActivityView } from "./views/ActivityView";
-import { BacklogView } from "./views/BacklogView";
-import { StateGallery } from "./views/StateGallery";
-import { TodayView } from "./views/TodayView";
-import { WindowsView } from "./views/WindowsView";
-import {
-  ApiError,
-  type AuthStatus,
-  type Block,
-  type FocusWindow,
-  type Plan,
-  type RankedTask,
-} from "./types";
+import { HoursSheet } from "./HoursSheet";
+import { Mascot } from "./Mascot";
+import { Row } from "./Row";
+import { ApiError, type Reply, type ReplyKind, type View } from "./types";
 
-const EMPTY_PLAN: Plan = {
-  generated_at: new Date().toISOString(),
-  shortlist: [],
-  backlog: [],
-  blocked: [],
-  degraded: false,
-};
+/** What the reply strip is showing. Errors and questions are replies too, not exceptions. */
+type Shown = { kind: ReplyKind; message: string; chip?: string[] };
 
-function todayIso(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
+const EXAMPLES = [
+  "write the quarterly report, 90m, important, due friday",
+  "dentist thursday 3pm",
+  "plan my day",
+];
+
+/** Word for the score, so the number is not the only explanation. */
+function urgency(score: number): string {
+  if (score >= 0.6) return "do this first";
+  if (score >= 0.35) return "worth doing today";
+  return "can wait";
 }
 
 export default function App() {
-  const [view, setView] = useState<ViewName>("today");
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [windows, setWindows] = useState<FocusWindow[]>([]);
-  const [blocks, setBlocks] = useState<Block[]>([]);
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [degraded, setDegraded] = useState<boolean | null>(null);
-  const [feedback, setFeedback] = useState<CaptureFeedback | null>(null);
+  const [view, setView] = useState<View | null>(null);
+  const [reply, setReply] = useState<Shown | null>(null);
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const today = todayIso();
+  const [failure, setFailure] = useState<string | null>(null);
+  const [hoursOpen, setHoursOpen] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const [nextPlan, status, nextWindows, nextBlocks, authStatus] = await Promise.all([
-        api.today(8),
-        api.providerStatus(),
-        api.listWindows(),
-        api.blocks(14),
-        api.authStatus(),
-      ]);
-      setPlan(nextPlan);
-      setDegraded(status.degraded);
-      setWindows(nextWindows);
-      setBlocks(nextBlocks.blocks);
-      setAuth(authStatus);
-      setConnectionError(null);
+      setView(await api.today());
+      setFailure(null);
     } catch (error) {
-      // Surfaced, never swallowed: an unreachable backend must not look like an empty plan.
-      setConnectionError(error instanceof Error ? error.message : "Cannot reach the backend");
+      setFailure(error instanceof Error ? error.message : "Cannot reach Cadence.");
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        input.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
 
   const run = useCallback(
-    async (action: () => Promise<void>) => {
+    async (work: () => Promise<Reply | { view: View }>) => {
       setBusy(true);
       try {
-        await action();
-        await refresh();
+        const result = await work();
+        if ("kind" in result) setReply(result);
+        setView(result.view);
+        setFailure(null);
       } catch (error) {
-        if (error instanceof ApiError && error.isAmbiguous) {
-          setFeedback({ kind: "question", message: error.message, candidates: error.candidates });
+        if (error instanceof ApiError) {
+          // A 409 means the words matched more than one thing, which is a question, not a fault.
+          setReply({ kind: error.status === 409 ? "question" : "note", message: error.message });
         } else {
-          setFeedback({
-            kind: "error",
-            message: error instanceof Error ? error.message : "Something went wrong",
-          });
+          setFailure(error instanceof Error ? error.message : "Something went wrong.");
         }
       } finally {
         setBusy(false);
       }
     },
-    [refresh],
+    [],
   );
 
-  const onCapture = useCallback(
-    (utterance: string) =>
-      void run(async () => {
-        const result = await api.capture(utterance);
-        if (result.question) {
-          setFeedback({
-            kind: "question",
-            message: result.question,
-            candidates: result.candidates,
-          });
-        } else if (result.chip) {
-          setFeedback({ kind: "parsed", result });
-        } else {
-          setFeedback(null);
-        }
-        setDegraded(result.degraded);
-      }),
-    [run],
-  );
+  function send(sentence?: string) {
+    const said = (sentence ?? text).trim();
+    if (!said || busy) return;
+    setText("");
+    void run(() => api.say(said));
+  }
 
-  const onUndo = useCallback(
-    (mutationId: string) =>
-      void run(async () => {
-        const result = await api.undo(mutationId);
-        setFeedback({
-          kind: "undone",
-          message: result.task ? `Restored “${result.task.title}”` : "Change reversed",
-        });
-      }),
-    [run],
-  );
-
-  const onRename = useCallback(
-    (taskId: string, title: string) =>
-      void run(async () => {
-        const task = await api.updateTask(taskId, { title });
-        setFeedback({ kind: "undone", message: `Renamed to “${task.title}”` });
-      }),
-    [run],
-  );
-
-  const onComplete = useCallback(
-    (taskId: string) => void run(async () => void (await api.completeTask(taskId))),
-    [run],
-  );
-
-  const onDrop = useCallback(
-    (taskId: string) => void run(async () => void (await api.dropTask(taskId))),
-    [run],
-  );
-
-  const onTogglePin = useCallback(
-    (entry: RankedTask) =>
-      void run(async () => {
-        await api.pinTask(entry.task.id, entry.is_pinned ? null : today);
-      }),
-    [run, today],
-  );
-
-  const onSchedule = useCallback(
-    () =>
-      void run(async () => {
-        const applied = await api.applySchedule(8);
-        const unplaced = applied.unplaced.length;
-        setFeedback({
-          kind: "undone",
-          message:
-            applied.placed.length === 0
-              ? "Nothing could be placed. Check your windows and effort estimates."
-              : `Scheduled ${applied.placed.length} block${applied.placed.length === 1 ? "" : "s"}` +
-                ` (${applied.scheduled_minutes}m)` +
-                (unplaced > 0 ? `, ${unplaced} did not fit` : ""),
-        });
-      }),
-    [run],
-  );
-
-  const status: SystemStatus = useMemo(() => {
-    const calendar = !auth?.configured
-      ? { label: "Not configured", tone: "warn" as const }
-      : !auth.connected
-        ? { label: "Not connected", tone: "warn" as const }
-        : auth.healthy
-          ? { label: "Connected", tone: "ok" as const }
-          : { label: "Needs attention", tone: "bad" as const };
-
-    return {
-      ai: connectionError
-        ? { label: "Unknown", tone: "bad" as const }
-        : degraded === null
-          ? { label: "Checking", tone: "warn" as const }
-          : degraded
-            ? { label: "Offline parser", tone: "warn" as const }
-            : { label: "Normal", tone: "ok" as const },
-      calendar,
-      credentials: auth?.connected
-        ? auth.healthy
-          ? { label: "Healthy", tone: "ok" as const }
-          : { label: "Re-auth needed", tone: "bad" as const }
-        : { label: "None stored", tone: "warn" as const },
-    };
-  }, [auth, connectionError, degraded]);
-
-  const activePlan = plan ?? EMPTY_PLAN;
+  const shortlist = view?.shortlist ?? [];
+  const scheduled = view?.scheduled ?? [];
+  const top = shortlist[0];
+  const totalMinutes = shortlist.reduce((sum, item) => sum + (item.minutes ?? 0), 0);
 
   return (
-    <div className="app">
-      <Sidebar current={view} onNavigate={setView} status={status} />
-
-      <main className="main">
-        <CaptureBar
-          onSubmit={onCapture}
-          onUndo={onUndo}
-          onRename={onRename}
-          feedback={feedback}
-          busy={busy}
-        />
-
-        {connectionError && (
-          <div className="view" style={{ paddingBottom: 0 }}>
-            <div className="banner banner--bad" role="alert">
-              <div className="banner__text">
-                <span className="banner__title">Backend unreachable</span>
-                <div>
-                  {connectionError}. Start it with{" "}
-                  <code>uv run uvicorn cadence.main:app --host 127.0.0.1</code> and confirm{" "}
-                  <code>VITE_CADENCE_SHARED_SECRET</code> matches your <code>.env</code>.
-                </div>
-              </div>
-              <button type="button" className="button" onClick={() => void refresh()}>
-                Retry
-              </button>
-            </div>
-          </div>
+    <div className="shell">
+      <header className="topbar">
+        <img className="topbar__mark" src="/assets/brand/cadence_logo.webp" alt="Cadence" />
+        <div className="topbar__spacer" />
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setHoursOpen(true)}>
+          Hours
+        </button>
+        {view?.undo && (
+          <button
+            type="button"
+            className="btn btn--quiet btn--sm"
+            disabled={busy}
+            onClick={() => void run(() => api.undo())}
+          >
+            Undo
+          </button>
         )}
+      </header>
 
-        {degraded && !connectionError && (
-          <div className="view" style={{ paddingBottom: 0 }}>
-            <div className="banner">
-              <div className="banner__text">
-                <span className="banner__title">Offline parsing</span>
-                <div>
-                  No model is configured, so capture uses the rule-based parser. Ranking and
-                  scheduling are unaffected because neither needed a model.
-                </div>
-              </div>
-            </div>
+      {failure && (
+        <div className="banner banner--bad" role="alert">
+          <div className="banner__body">
+            <span className="banner__title">Cadence is not running</span>
+            <span className="banner__text">
+              {failure}. Start it with <code>uv run uvicorn cadence.app:app --host 127.0.0.1</code>.
+            </span>
           </div>
-        )}
+          <button type="button" className="btn btn--sm" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
 
-        {auth?.connected === false && auth.configured && !connectionError && (
-          <div className="view" style={{ paddingBottom: 0 }}>
-            <div className="banner">
-              <div className="banner__text">
-                <span className="banner__title">Calendar not connected</span>
-                <div>{auth.hint ?? "Connect Google Calendar to project blocks into it."}</div>
-              </div>
+      {view && !view.calendar.connected && view.calendar.configured && (
+        <div className="banner banner--warn">
+          <Mascot name="credential_expired_state" className="banner__art" decorative />
+          <div className="banner__body">
+            <span className="banner__title">Google Calendar is off</span>
+            <span className="banner__text">Connect it and scheduled work shows up there too.</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn--sm btn--accent"
+            onClick={() => void api.connect().then(({ url }) => (window.location.href = url))}
+          >
+            Connect
+          </button>
+        </div>
+      )}
+
+      {top ? (
+        <section className="hero">
+          <Mascot name="task_active" className="hero__mascot" decorative />
+          <div className="hero__body">
+            <span className="hero__eyebrow">Up next</span>
+            <h1 className="hero__title">{top.title}</h1>
+            <span className="hero__meta">
+              {[
+                top.minutes ? `${top.minutes} min` : null,
+                urgency(top.score),
+                shortlist.length > 1 ? `${shortlist.length - 1} more waiting` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn--accent"
+            disabled={busy}
+            onClick={() => void run(() => api.act(top.id, "complete"))}
+          >
+            Done
+          </button>
+        </section>
+      ) : (
+        <section className="empty">
+          <Mascot name="profile_icon" className="empty__art" decorative />
+          <h1 className="empty__title">Tell me what is on your plate</h1>
+          <p className="empty__text">
+            Write it the way you would say it. I will work out the task, the time, and what
+            deserves doing first.
+          </p>
+          <div className="empty__examples">
+            {EXAMPLES.map((example) => (
               <button
+                key={example}
                 type="button"
-                className="button"
-                onClick={() =>
-                  void api.authStart().then((start) => {
-                    window.location.href = start.authorization_url;
-                  })
-                }
+                className="example"
+                onClick={() => send(example)}
               >
-                Connect
+                “{example}”
               </button>
-            </div>
+            ))}
           </div>
-        )}
+        </section>
+      )}
 
-        {auth?.connected && !auth.healthy && auth.hint && !connectionError && (
-          <div className="view" style={{ paddingBottom: 0 }}>
-            <div className="banner banner--bad" role="alert">
-              <div className="banner__text">
-                <span className="banner__title">Calendar needs attention</span>
-                <div>{auth.hint}</div>
-              </div>
-            </div>
+      {reply && (
+        <div
+          className={`reply ${
+            reply.kind === "question"
+              ? "reply--ask"
+              : reply.kind === "note"
+                ? "reply--bad"
+                : "reply--good"
+          }`}
+          role="status"
+          aria-label="Cadence reply"
+        >
+          <span className="reply__dot" aria-hidden="true" />
+          <div className="reply__body">
+            <div className="reply__text">{reply.message}</div>
+            {"chip" in reply && reply.chip && <div className="reply__sub">{reply.chip.join(" · ")}</div>}
           </div>
-        )}
+          {view?.undo && reply.kind !== "question" && reply.kind !== "undone" && (
+            <button
+              type="button"
+              className="reply__undo"
+              disabled={busy}
+              onClick={() => void run(() => api.undo())}
+            >
+              Undo
+            </button>
+          )}
+        </div>
+      )}
 
-        {view === "today" && (
-          <TodayView
-            plan={activePlan}
-            today={today}
-            windows={windows}
-            blocks={blocks}
-            onComplete={onComplete}
-            onTogglePin={onTogglePin}
-            onSchedule={onSchedule}
-            busy={busy}
+      {shortlist.length > 0 && (
+        <section className="section">
+          <div className="section__head">
+            <h2 className="section__title">What to work on</h2>
+            <span className="section__note">
+              {totalMinutes > 0 && `${Math.round(totalMinutes / 60)}h of work · `}
+              ranked for you
+            </span>
+          </div>
+          <div className="stack">
+            {shortlist.map((item) => (
+              <Row
+                key={item.id}
+                item={item}
+                today={view?.today ?? ""}
+                busy={busy}
+                onComplete={() => void run(() => api.act(item.id, "complete"))}
+                onPin={() => void run(() => api.act(item.id, "pin"))}
+                onDrop={() => void run(() => api.act(item.id, "drop"))}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn--accent"
+            style={{ alignSelf: "flex-start" }}
+            disabled={busy}
+            onClick={() => void run(() => api.schedule())}
+          >
+            Put these in my calendar
+          </button>
+        </section>
+      )}
+
+      {scheduled.length > 0 && (
+        <section className="section">
+          <div className="section__head">
+            <h2 className="section__title">Booked</h2>
+            <span className="section__note">
+              {view?.calendar.connected ? "synced to Google" : "on this device"}
+            </span>
+          </div>
+          <div className="stack">
+            {scheduled.map((item) => (
+              <Row
+                key={item.id}
+                item={item}
+                today={view?.today ?? ""}
+                busy={busy}
+                onComplete={() => void run(() => api.act(item.id, "complete"))}
+                onDrop={() => void run(() => api.act(item.id, "drop"))}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="composer">
+        <div className="composer__field">
+          <label className="visually-hidden" htmlFor="say">
+            Say something to Cadence
+          </label>
+          <input
+            id="say"
+            ref={input}
+            className="composer__input"
+            placeholder="Add a task, or ask what is next…"
+            value={text}
+            autoComplete="off"
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && send()}
           />
-        )}
-        {view === "backlog" && (
-          <BacklogView
-            entries={activePlan.backlog}
-            blocked={activePlan.blocked}
-            today={today}
-            onComplete={onComplete}
-            onDrop={onDrop}
-            busy={busy}
-          />
-        )}
-        {view === "windows" && <WindowsView onChanged={() => void refresh()} />}
-        {view === "activity" && <ActivityView onChanged={() => void refresh()} />}
-        {view === "states" && <StateGallery />}
-      </main>
+          <button
+            type="button"
+            className="composer__send"
+            aria-label="Send"
+            disabled={busy || !text.trim()}
+            onClick={() => send()}
+          >
+            ↑
+          </button>
+        </div>
+        <p className="composer__hint">
+          {view?.using_model === false
+            ? "Running offline. Add a Gemini key for messier sentences."
+            : "⌘K to jump here"}
+        </p>
+      </div>
+
+      {hoursOpen && view && (
+        <HoursSheet
+          hours={view.hours}
+          onClose={() => setHoursOpen(false)}
+          onSave={(hours) =>
+            void run(async () => {
+              const result = await api.setHours(hours);
+              setHoursOpen(false);
+              return result;
+            })
+          }
+        />
+      )}
     </div>
   );
 }

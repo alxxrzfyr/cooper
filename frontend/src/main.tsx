@@ -4,9 +4,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 
 const root = document.getElementById("root");
-if (root === null) {
-  throw new Error("Missing root element");
-}
+if (!root) throw new Error("Missing #root");
 
 createRoot(root).render(
   <StrictMode>

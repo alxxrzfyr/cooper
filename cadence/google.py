@@ -1,0 +1,282 @@
+"""Google Calendar, over the REST API.
+
+One file, no SDK. Reads your events so the planner does not double-book you, and writes the
+blocks it places. Only ever modifies events it created, which it recognises by a private tag.
+
+Without credentials every method is a no-op and `connected` is False, so the whole app still
+works with the calendar switched off.
+"""
+
+from __future__ import annotations
+
+import base64
+import dataclasses
+import datetime as dt
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from cryptography.fernet import Fernet, InvalidToken
+
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+API = "https://www.googleapis.com/calendar/v3"
+SCOPE = "https://www.googleapis.com/auth/calendar.events"
+TAG = "cadence"
+TIMEOUT = 20
+
+
+class CalendarError(Exception):
+    """Something went wrong talking to Google. The message is meant to be shown."""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Busy:
+    start: dt.datetime
+    end: dt.datetime
+    title: str
+    mine: bool
+
+
+class Calendar:
+    def __init__(
+        self,
+        *,
+        client_id: str | None,
+        client_secret: str | None,
+        redirect_uri: str,
+        encryption_key: str | None,
+        calendar_id: str = "primary",
+    ) -> None:
+        self._id = client_id
+        self._secret = client_secret
+        self._redirect = redirect_uri
+        self._calendar = calendar_id
+        self._fernet = Fernet(encryption_key.encode()) if encryption_key else None
+        self._refresh_token: str | None = None
+
+    # ------------------------------------------------------------------ status
+
+    @property
+    def configured(self) -> bool:
+        """Whether Google credentials and a place to keep the token both exist."""
+        return bool(self._id and self._secret and self._fernet)
+
+    @property
+    def connected(self) -> bool:
+        return self.configured and self._refresh_token is not None
+
+    def load_token(self, sealed: str | None) -> None:
+        if not sealed or self._fernet is None:
+            self._refresh_token = None
+            return
+        try:
+            self._refresh_token = self._fernet.decrypt(sealed.encode()).decode()
+        except InvalidToken:
+            # The encryption key changed. Treat it as disconnected rather than crashing.
+            self._refresh_token = None
+
+    def seal_token(self, token: str) -> str:
+        if self._fernet is None:
+            raise CalendarError("No encryption key is set, so the token cannot be stored.")
+        return self._fernet.encrypt(token.encode()).decode()
+
+    # ------------------------------------------------------------------- oauth
+
+    def consent_url(self, state: str) -> str:
+        if not self.configured:
+            raise CalendarError(
+                "Google is not set up. Add CADENCE_GOOGLE_CLIENT_ID, "
+                "CADENCE_GOOGLE_CLIENT_SECRET and CADENCE_ENCRYPTION_KEY to .env."
+            )
+        query = urllib.parse.urlencode(
+            {
+                "client_id": self._id or "",
+                "redirect_uri": self._redirect,
+                "response_type": "code",
+                "scope": SCOPE,
+                # offline + consent is what actually returns a refresh token.
+                "access_type": "offline",
+                "prompt": "consent",
+                "state": state,
+            }
+        )
+        return f"{AUTH_URL}?{query}"
+
+    def exchange(self, code: str) -> tuple[str, str | None]:
+        """Trade the one-time code for a refresh token. Returns (token, email)."""
+        payload = self._post_form(
+            TOKEN_URL,
+            {
+                "code": code,
+                "client_id": self._id or "",
+                "client_secret": self._secret or "",
+                "redirect_uri": self._redirect,
+                "grant_type": "authorization_code",
+            },
+        )
+        token = payload.get("refresh_token")
+        if not token:
+            raise CalendarError(
+                "Google did not return a refresh token. The consent screen must request "
+                "offline access, and the grant has to be new."
+            )
+        return (str(token), _email_from(payload.get("id_token")))
+
+    def _access_token(self) -> str:
+        if not self._refresh_token:
+            raise CalendarError("Google Calendar is not connected.")
+        payload = self._post_form(
+            TOKEN_URL,
+            {
+                "refresh_token": self._refresh_token,
+                "client_id": self._id or "",
+                "client_secret": self._secret or "",
+                "grant_type": "refresh_token",
+            },
+        )
+        token = payload.get("access_token")
+        if not token:
+            raise CalendarError("Google refused the saved credential. Reconnect to continue.")
+        return str(token)
+
+    # ------------------------------------------------------------------ events
+
+    def busy(self, *, days: int = 14) -> list[Busy]:
+        """Events between now and the horizon, reduced to times and titles."""
+        if not self.connected:
+            return []
+        start = dt.datetime.now(tz=dt.UTC) - dt.timedelta(hours=6)
+        end = start + dt.timedelta(days=days)
+        query = urllib.parse.urlencode(
+            {
+                "timeMin": start.isoformat(),
+                "timeMax": end.isoformat(),
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": "250",
+            }
+        )
+        payload = self._call("GET", f"/calendars/{self._encoded}/events?{query}")
+
+        out: list[Busy] = []
+        for raw in payload.get("items") or []:
+            begins = _moment(raw.get("start"))
+            finishes = _moment(raw.get("end"))
+            if begins is None or finishes is None or finishes <= begins:
+                continue
+            private = (raw.get("extendedProperties") or {}).get("private") or {}
+            out.append(
+                Busy(
+                    start=begins,
+                    end=finishes,
+                    # Only the title is kept. Descriptions, locations, meeting links and
+                    # attendee addresses are other people's business and are never read.
+                    title=str(raw.get("summary") or "Busy")[:200],
+                    mine=TAG in private,
+                )
+            )
+        return out
+
+    def add_block(self, *, item_id: str, title: str, start: dt.datetime, end: dt.datetime) -> str:
+        """Create an event Cadence owns. The id is derived so a retry updates, not duplicates."""
+        event_id = f"{TAG}{item_id}"
+        body = {
+            "id": event_id,
+            "summary": title,
+            "start": {"dateTime": start.astimezone(dt.UTC).isoformat()},
+            "end": {"dateTime": end.astimezone(dt.UTC).isoformat()},
+            "extendedProperties": {"private": {TAG: item_id}},
+            "reminders": {"useDefault": False},
+        }
+        try:
+            self._call("POST", f"/calendars/{self._encoded}/events", body)
+        except CalendarError as error:
+            if "409" not in str(error):
+                raise
+            self._call(
+                "PATCH",
+                f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",
+                {k: v for k, v in body.items() if k != "id"},
+            )
+        return event_id
+
+    def remove_block(self, event_id: str) -> None:
+        if not self.connected:
+            return
+        try:
+            self._call(
+                "DELETE",
+                f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",
+            )
+        except CalendarError as error:
+            # Already gone is the outcome we wanted.
+            if "410" not in str(error) and "404" not in str(error):
+                raise
+
+    # ---------------------------------------------------------------- plumbing
+
+    @property
+    def _encoded(self) -> str:
+        return urllib.parse.quote(self._calendar, safe="")
+
+    def _call(self, method: str, path: str, body: dict | None = None) -> dict:
+        request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
+            f"{API}{path}",
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={
+                "Authorization": f"Bearer {self._access_token()}",
+                "Content-Type": "application/json",
+            },
+            method=method,
+        )
+        return self._send(request)
+
+    def _post_form(self, url: str, form: dict[str, str]) -> dict:
+        request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
+            url,
+            data=urllib.parse.urlencode(form).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        return self._send(request)
+
+    @staticmethod
+    def _send(request: urllib.request.Request) -> dict:
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
+                raw = response.read()
+                decoded = json.loads(raw) if raw else {}
+                return decoded if isinstance(decoded, dict) else {}
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")[:200]
+            raise CalendarError(f"Google returned {error.code}: {detail}") from error
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise CalendarError(f"Could not reach Google: {error}") from error
+        except json.JSONDecodeError as error:
+            raise CalendarError("Google sent a response that was not JSON.") from error
+
+
+def _moment(value: dict | None) -> dt.datetime | None:
+    if not value:
+        return None
+    if "dateTime" in value:
+        return dt.datetime.fromisoformat(value["dateTime"]).astimezone(dt.UTC)
+    if "date" in value:
+        day = dt.date.fromisoformat(value["date"])
+        return dt.datetime.combine(day, dt.time.min, tzinfo=dt.UTC)
+    return None
+
+
+def _email_from(id_token: object) -> str | None:
+    """Read the account label out of the id token, for display only."""
+    if not isinstance(id_token, str) or id_token.count(".") != 2:
+        return None
+    try:
+        body = id_token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+    email = claims.get("email")
+    return str(email) if isinstance(email, str) else None

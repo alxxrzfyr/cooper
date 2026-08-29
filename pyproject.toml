@@ -1,10 +1,9 @@
 [project]
 name = "cadence"
-version = "0.1.0"
-description = "Single-user task and calendar agent"
+version = "0.2.0"
+description = "A personal calendar you talk to"
 requires-python = "==3.12.*"
 dependencies = [
-    "alembic==1.19.1",
     "cryptography==50.0.1",
     "fastapi==0.141.1",
     "pydantic-settings==2.15.0",
@@ -15,8 +14,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx==0.28.1",
-    "import-linter==2.14",
-    "mypy==2.3.1",
     "pytest==9.1.1",
     "ruff==0.16.5",
 ]
@@ -26,8 +23,6 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# The project is not installed as a package (see [tool.uv] package = false),
-# so the repository root must be importable for `import cadence` to resolve.
 pythonpath = ["."]
 
 [tool.ruff]
@@ -36,8 +31,3 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-packages = ["cadence"]
