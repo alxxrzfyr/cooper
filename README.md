@@ -8,69 +8,74 @@ Python FastAPI, React, SQLite, Google Gemini. Runs on localhost. Built for one p
 
 ## Status
 
-**Capture and prioritisation work end to end. Calendar integration does not exist yet.**
-
-Being precise, because the phase numbers alone would overstate this. `PRD.md` gives Phase 0
-five acceptance criteria:
-
-| Phase 0 criterion | State |
-| --- | --- |
-| 1 Full section 6 schema via `alembic upgrade head` | Done |
-| 2 OAuth flow storing an encrypted refresh token | **Not built** |
-| 3 Existing calendar events cached with sensitive fields absent | **Not built** |
-| 4 API refuses missing secret, unknown origin, unexpected host; binds `127.0.0.1` | Done |
-| 5 `import-linter` contract enforced in CI | Done |
-
-So the honest summary is:
+**The loop is closed.** Capture, prioritisation, scheduling, and re-planning all work.
+Google Calendar projection is built and tested, and needs your own Google Cloud credentials
+to run against a real calendar.
 
 | Phase | State |
 | --- | --- |
-| 0 Foundation | Partial. Schema, localhost hardening, manual task CRUD. OAuth and calendar reading deferred to Phase 3, where the first code that needs them lives. |
+| 0 Foundation | Done. Schema, localhost hardening, task CRUD, OAuth boundary, scrubbed calendar read. |
 | 1 Capture | Done. Sentence to validated intent, parsed chip, undo. |
 | 2 Prioritise | Done. Deterministic scoring, Today and Backlog. |
-| 3 Schedule | Not started. OAuth, calendar reading, focus windows, placement, calendar writes. |
-| 4 Intelligence | Not started. Reranker, nightly plan, digest. |
-| 5 Hardening | Not started. Quota governor, sync reconciliation. |
+| 3 Schedule | Done. Focus windows, DST-safe expansion, placement, outbox projection, batch undo, activity feed. |
+| 4 Intelligence | Done. Reranker containment, nightly plan, day-drift reconcile, digest. |
+| 5 Hardening | Done. Quota governor, degraded mode, sync-token recovery, WAL concurrency. |
 
-Deferring OAuth is a deliberate call, not an oversight: nothing in Phases 1 or 2 reads or
-writes a calendar, so building the token flow now would ship an untestable credential path
-months before its first caller. The `calendar_event_cache` table exists with no column for
-descriptions, locations, meeting links, or attendee addresses, so the scrubbing guarantee is
-already structural.
+What works right now, with no API key and no Google account:
 
-What works right now:
-
-- Type `write the quarterly report, 3h, important, due friday` and get a structured task.
-- Type `dentist thursday 3pm` and get a parsed fixed event. It is **not** written to Google
-  Calendar; that is Phase 3.
+- Type `write the quarterly report, 90m, important, due friday` and get a structured task.
+- Type `dentist thursday 3pm` and get a parsed fixed event.
 - Type `done quarterly` to close a task by partial title, or `pin the report` to force it to
   the top of today.
 - Open Today for a ranked shortlist where every row explains its own score.
-- Undo any capture from the chip it produced.
+- Paint focus windows, then press **Schedule shortlist** to place work inside them.
+- Watch the timeline shade the hours the scheduler may use, and hatch the hours it may not.
+- Open Activity to see every change grouped into batches, each reversible as a unit.
 
-Not yet wired: Google OAuth, calendar reading, focus windows, automatic scheduling, and the
-activity history view. The Windows and Activity screens exist as labelled previews.
+What needs your Google credentials: projecting those blocks into Google Calendar, reading
+your existing events as busy time, and adopting edits you make by hand. Set
+`CADENCE_GOOGLE_CLIENT_ID`, `CADENCE_GOOGLE_CLIENT_SECRET`, and a generated
+`CADENCE_TOKEN_ENCRYPTION_KEY`. Until then the app runs fully and says plainly that the
+calendar is not connected.
 
-Runs with **no API key at all**, using a rule-based parser. Configuring Gemini improves
-parsing; it is not required, and ranking never uses a model.
+Configuring Gemini improves parsing on messier sentences. It is not required, and neither
+ranking nor scheduling ever calls a model.
 
 ## Verified
 
 Every command below was run against this tree.
 
 ```
-uv run pytest                 260 passed
+uv run pytest                 461 passed
 uv run ruff check .           All checks passed
-uv run ruff format --check .  77 files already formatted
-uv run mypy cadence           Success: no issues found in 36 source files
+uv run ruff format --check .  107 files already formatted
+uv run mypy cadence           Success: no issues found in 55 source files
 uv run lint-imports           Contracts: 1 kept, 0 broken
-cd frontend && npm test       24 passed
+cd frontend && npm test       43 passed
 cd frontend && npm run build  built successfully
 ```
 
-End-to-end smoke test: `alembic upgrade head` on a fresh database, server bound to
-`127.0.0.1`, `403` without the shared secret, `403` from an unknown origin, a sentence
-captured into a correctly parsed task, and a correctly ranked shortlist returned.
+Also confirmed in a running process and a real browser: fresh `alembic upgrade head`,
+`403` without the shared secret, `403` from an unknown origin, `400` on a spoofed `Host`,
+six sentences captured and correctly parsed, weekday-morning windows declared, the shortlist
+placed into them, the whole schedule batch undone, and all five background jobs recorded in
+`job_run` at startup.
+
+## The two invariants that make autonomy safe
+
+The AI applies changes without asking, which is a deliberate choice. Two structural
+properties are what make that acceptable rather than reckless.
+
+**The scheduler cannot write outside a declared window.** Candidate time is constructed from
+your windows, so there is no code path that reaches other calendar time. It is not a check
+that could be forgotten; it is the shape of the data.
+
+**The reranker cannot mutate anything.** Other people's event titles are untrusted text, and
+they reach only that component, whose output is validated as a permutation of IDs Cadence
+supplied. A fully hijacked reranker can do exactly one thing: order ten of your own tasks
+wrongly. The component that does cause mutations never sees third-party text at all.
+
+Both are asserted by tests named after them.
 
 ## The idea in one paragraph
 

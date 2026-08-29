@@ -29,11 +29,14 @@ is comfortable with a terminal, and runs the app on their own machine.
 
 ## Kill criterion
 
-After Phase 2 ships, development stops for two weeks of real use. If the Today view is not
-being opened on at least 10 of those 14 days, the project ends and Phase 3 is never built.
+The original gate: after Phase 2, stop for two weeks of real use, and if the Today view is not
+opened on at least 10 of 14 days, end the project rather than build Phase 3.
 
-This gate is binding. The expensive half of the system is calendar writes, undo, and
-reconciliation, and all of it is worthless if the cheap half has not already earned a habit.
+**The author chose to override this gate and build the remaining phases immediately.** That was
+their call to make, and it is recorded here rather than quietly dropped. The gate's reasoning
+still stands as the thing to watch: the expensive half of this system is worthless if the cheap
+half has not earned a daily habit. The question the two weeks would have answered is now
+answered by using it.
 
 ## Requirements by phase
 
@@ -41,10 +44,8 @@ Each phase is independently useful. Acceptance criteria are the definition of ph
 
 ### Phase 0: Foundation
 
-**Delivered state:** criteria 1, 4, and 5 are met. Criteria 2 and 3 are deferred to Phase 3.
-Nothing in Phases 1 or 2 reads or writes a calendar, so building the OAuth flow earlier would
-ship an untestable credential path long before its first caller. The deferral is recorded here
-rather than hidden: Phase 0 is partial, not complete.
+**Delivered state:** all five criteria are met. Criteria 2 and 3 were initially deferred and
+were completed alongside Phase 3, where their first caller lives.
 
 Stories:
 
@@ -104,6 +105,10 @@ Acceptance:
 
 ### Phase 3: Schedule
 
+**Delivered.** Focus windows, DST-safe expansion, placement, the outbox, batch undo, and the
+activity feed all ship. Calendar projection requires the user's Google credentials to exercise
+against a real calendar; the adapter itself is covered by tests against a fake.
+
 Stories: declare recurring focus windows, have the shortlist placed inside them, see those
 blocks in Google Calendar, and undo any batch of changes.
 
@@ -121,6 +126,9 @@ Acceptance:
 
 ### Phase 4: Intelligence
 
+**Delivered.** Reranker containment, catch-up jobs, day-drift reconcile, and the digest ship.
+The reranker is wired as a validated component; enabling it end to end needs a Gemini key.
+
 Stories: the ranking accounts for judgment the formula cannot express, tomorrow is planned
 overnight, a drifted day repairs itself, and the user sees what the AI did unattended.
 
@@ -136,6 +144,9 @@ Acceptance:
 5. The digest lists every AI-originated batch since the last digest.
 
 ### Phase 5: Hardening
+
+**Delivered.** Quota governor with a breaker that closes at the next midnight Pacific,
+degraded mode as a designed product state, sync-token recovery, and WAL concurrency.
 
 Stories: quota exhaustion degrades the app instead of breaking it, and credential expiry is
 visible rather than mysterious.

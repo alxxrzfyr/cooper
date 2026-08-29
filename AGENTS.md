@@ -22,21 +22,22 @@ user-declared focus windows. Python FastAPI backend, React frontend, SQLite, Gem
 
 ## Current state
 
-**Capture and prioritisation work. Calendar integration does not exist.** Task CRUD, the
-intent pipeline, deterministic ranking, and the Today and Backlog views all run today. The
-commands below run today.
+**All six phases are built.** Capture, deterministic prioritisation, window-bounded
+scheduling, outbox projection to Google Calendar, batch undo, the activity feed, the quota
+governor, and the five background jobs all run today.
 
-Phase 0 is partial by deliberate choice: acceptance criteria 1, 4, and 5 are met, but 2
-(OAuth with an encrypted refresh token) and 3 (cached calendar events) are deferred to
-Phase 3, where their first caller lives. Do not describe Phase 0 as done. See the table in
-`README.md`.
+One thing needs the user's own credentials: projecting blocks into a real Google Calendar
+requires `CADENCE_GOOGLE_CLIENT_ID`, `CADENCE_GOOGLE_CLIENT_SECRET`, and a generated
+`CADENCE_TOKEN_ENCRYPTION_KEY`. Without them the app runs fully and reports the calendar as
+not connected. The Google adapter is tested against a fake implementing the same Protocol,
+so its behaviour is covered without credentials.
 
-Not built: Google OAuth and calendar reading, focus windows, placement, calendar writes, the
-reranker, scheduled jobs, and the activity history view. The Windows and Activity screens are
-labelled previews with disabled controls. Do not treat them as working features.
+The user chose to build past the two-week trial gate in `PRD.md`. That gate is therefore
+spent, not pending.
 
-Phase 3 is gated behind the two-week trial in `PRD.md`. Do not start it without that gate
-being addressed.
+Before adding anything, read the invariants in `ARCHITECTURE.md`. Two of them are the reason
+full autonomy is safe here, and both are asserted by tests named after them: the scheduler
+cannot emit a block outside a declared window, and the reranker cannot mutate anything.
 
 ## Commands
 
