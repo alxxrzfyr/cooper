@@ -221,11 +221,20 @@ select {
   letter-spacing: -0.02em;
 }
 
-.topbar__action,
+/* Narrow layouts have room for the word and nothing else, so it stays a compact pill. */
+.topbar__action {
+  border-radius: var(--pill);
+  padding: 6px 13px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  transition: background 0.15s ease;
+}
+
 /*
- * "Undo" on its own is a question, not an answer, so it names the thing it will reverse. It also
- * only exists when there is something to reverse, rather than sitting in the rail looking like a
- * section you never visit.
+ * "Undo" on its own is a question, not an answer, so in the rail, where there is room, it names
+ * the thing it will reverse. It also only exists when there is something to reverse, rather than
+ * sitting there looking like a section you never visit.
  */
 .rail__undo {
   display: flex;
@@ -950,9 +959,13 @@ select {
   color: var(--accent);
 }
 
+/* A button, but it has to look like the row it fills. */
 .row__main {
   flex: 1;
   min-width: 0;
+  text-align: left;
+  padding: 0;
+  background: none;
 }
 
 .row__title {
@@ -968,12 +981,6 @@ select {
   align-items: center;
   flex-wrap: wrap;
   margin-top: 3px;
-}
-
-.row__actions {
-  display: flex;
-  gap: 1px;
-  flex: none;
 }
 
 .iconbtn {
@@ -1052,6 +1059,20 @@ select {
   padding: 10px 14px 13px 52px;
   background: var(--card);
   flex-wrap: wrap;
+}
+
+.why--frame {
+  padding: 0;
+  background: none;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.why__note {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--faint);
 }
 
 .why__item {
@@ -1165,6 +1186,17 @@ select {
 
 .btn--full {
   width: 100%;
+}
+
+/* The same two colours the chat uses, for the same two meanings. */
+.btn--good {
+  background: var(--tone-good);
+  color: #fff;
+}
+
+.btn--bad {
+  background: color-mix(in srgb, var(--tone-bad) 14%, var(--card));
+  color: var(--tone-bad);
 }
 
 .btn--quiet {
@@ -1339,7 +1371,19 @@ select {
   border-radius: var(--r-sm);
   padding: 6px 10px;
   min-width: 0;
+  width: 100%;
   font-size: 13.5px;
+  font-family: inherit;
+  text-align: left;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+button.slot:hover {
+  filter: brightness(0.97);
+}
+
+button.slot:active {
+  transform: scale(0.985);
 }
 
 /*
@@ -1858,34 +1902,6 @@ select {
  * times and actions. Tapping a cell selects it rather than navigating, because this panel is
  * the only place that detail exists at this size.
  */
-.daydetail {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: none;
-}
-
-.daydetail .daygroup {
-  margin: 0;
-}
-
-.daydetail__none {
-  margin: 0;
-  font-size: 13px;
-  color: var(--faint);
-}
-
-.monthcell.is-picked {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  box-shadow:
-    inset 0.5px 0.5px 0 var(--hair),
-    inset 0 0 0 2px var(--accent);
-}
-
 /* The week is a genuine grid and stays scrollable; it must not drag the layout with it. */
 .weekscroll {
   max-width: 100%;
@@ -1938,5 +1954,300 @@ select {
     gap: 0;
     color: transparent;
     border-radius: 3px;
+  }
+}
+
+/* ==================================================================== frame
+
+   One thing at a time, with the app pushed out of focus behind it. A sheet on a phone, a card in
+   the middle on a desktop, from one component: only the rules below differ by width.
+   ------------------------------------------------------------------------ */
+
+.frame {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  animation: frame-in 0.18s ease-out;
+}
+
+@keyframes frame-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.frame__panel {
+  width: 100%;
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-lg);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  outline: none;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(14px);
+  }
+}
+
+/* The grab handle is a phone affordance, so it goes away with the sheet shape. */
+.frame__grip {
+  width: 38px;
+  height: 5px;
+  border-radius: var(--pill);
+  background: var(--hair);
+  margin: 8px auto 0;
+  flex: none;
+}
+
+.frame__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 18px 10px;
+}
+
+.frame__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.frame__title {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.frame__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.frame__close {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--pill);
+  background: var(--sunken);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.frame__close:hover {
+  color: var(--text);
+}
+
+.frame__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.frame__foot {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  box-shadow: inset 0 0.5px 0 var(--hair);
+}
+
+.frame__foot .btn {
+  flex: 1;
+}
+
+.frame__notes {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.frame__empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.framelist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Label and value, one per line, because a task has more facts than a row can hold. */
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.facts__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.facts__row + .facts__row {
+  box-shadow: inset 0 0.5px 0 var(--hair);
+}
+
+.facts dt {
+  flex: none;
+  width: 96px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.facts dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+}
+
+@media (min-width: 700px) {
+  .frame {
+    align-items: center;
+  }
+
+  .frame__panel {
+    width: min(560px, calc(100vw - 48px));
+    border-radius: 20px;
+    animation: card-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .frame__grip {
+    display: none;
+  }
+
+  @keyframes card-in {
+    from {
+      transform: scale(0.97);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame,
+  .frame__panel {
+    animation: none;
+  }
+}
+
+
+/* ------------------------------------------------------ Manual or AI, as a capsule */
+
+/*
+ * Centred at the top of the conversation, because it changes what the next thing you type will
+ * do, and a control with that much consequence should not be tucked into a corner.
+ *
+ * The motion is a single `translateX` on the thumb, which the compositor animates without
+ * touching the main thread. A JS animation library would run the same property from
+ * requestAnimationFrame, which is strictly more work for a two-state slide. The curve is Apple's:
+ * quick to leave, unhurried to settle, no bounce.
+ */
+.modebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 0 4px;
+}
+
+.modeswitch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(76px, auto));
+  padding: 3px;
+  /*
+   * Mixed from the text colour rather than taken from `--fill`, which is tuned for sitting on a
+   * card. On the page background it was the same value as the page and the capsule disappeared,
+   * leaving the thumb looking like a chip floating next to a word.
+   */
+  background: color-mix(in srgb, currentcolor 8%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, currentcolor 7%, transparent);
+  border-radius: var(--pill);
+  /* A real superellipse where the browser has one, a plain capsule where it does not. */
+  corner-shape: squircle;
+  isolation: isolate;
+}
+
+.modeswitch__thumb {
+  position: absolute;
+  z-index: -1;
+  inset: 3px auto 3px 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--pill);
+  corner-shape: squircle;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.modeswitch[data-mode="ai"] .modeswitch__thumb {
+  transform: translateX(100%);
+}
+
+.modeswitch__opt {
+  padding: 6px 16px;
+  border-radius: var(--pill);
+  corner-shape: squircle;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--dim);
+  transition:
+    color 0.3s ease,
+    transform 0.14s ease;
+}
+
+.modeswitch__opt[aria-pressed="true"] {
+  color: var(--text);
+}
+
+.modeswitch__opt:disabled {
+  opacity: 0.4;
+}
+
+/* A press you can feel, which is most of what makes a control seem physical. */
+.modeswitch__opt:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.modebar__hint {
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modeswitch__thumb,
+  .modeswitch__opt {
+    transition: none;
   }
 }
