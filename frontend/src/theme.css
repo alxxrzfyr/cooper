@@ -4,9 +4,9 @@
  * Apple structure and materials, Google colour and shape. Two frosted bars, cards between them,
  * light and dark both first class.
  *
- * One thing worth knowing about the mascot art: it has an opaque warm ground shadow baked under
- * the feet. So `.mascot` fades the bottom of the image out with a mask, which lets Cooper stand
- * straight on the page instead of sitting in a tinted chip.
+ * One thing worth knowing about the mascot art: it is cut out to transparency by
+ * `tools/mascot_cutout.py`, square with even margins, so Cooper drops straight onto any
+ * background at any size. No container, no mask, no crop.
  */
 
 :root {
@@ -40,7 +40,6 @@
   /* The material the bars are made of. */
   --bar: rgba(249, 249, 251, 0.72);
   --tint: #e8e8ed;
-  --leaf: #4a6b53;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.07);
@@ -82,8 +81,6 @@
 
     --bar: rgba(24, 24, 26, 0.72);
     --tint: #2c2c2e;
-    /* The supplied green is too dark to read on black. */
-    --leaf: #7fb08c;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.5);
@@ -771,19 +768,14 @@ select {
 
 /* =================================================================== mascot
 
-   Cooper, with no container. The art has an opaque warm ground shadow baked under the feet, so
-   the bottom of the image is masked to transparent rather than cropped inside a tinted shape.
+   Cooper, with no container. `tools/mascot_cutout.py` has already removed the paper and the
+   ground shadow and squared the frame, so all this has to do is pick a size.
    ------------------------------------------------------------------------ */
 
 .mascot {
   display: block;
   object-fit: contain;
   flex: none;
-  /* The art carries an opaque warm ground ellipse under the feet. Rather than hide it inside a
-     tinted circle, the bottom of the image is faded out, so Cooper stands straight on the page
-     on any background instead of sitting in a chip. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 78%, rgba(0, 0, 0, 0.28) 91%, transparent 99%);
-  mask-image: linear-gradient(to bottom, #000 78%, rgba(0, 0, 0, 0.28) 91%, transparent 99%);
 }
 
 .mascot--xs {
@@ -1062,28 +1054,6 @@ select {
   color: var(--muted);
   max-width: 32ch;
   font-size: 14px;
-}
-
-/* =================================================================== brand */
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--leaf);
-}
-
-.brand__leaf {
-  width: 19px;
-  height: 19px;
-  flex: none;
-}
-
-.brand__word {
-  font-size: 16.5px;
-  font-weight: 800;
-  letter-spacing: -0.015em;
-  color: var(--text);
 }
 
 /* =================================================================== button */
@@ -1675,5 +1645,101 @@ select {
   .calnav__label {
     min-width: 8ch;
     font-size: 13px;
+  }
+}
+
+
+/* ------------------------------------------------------ the calendar wants the whole window */
+
+/*
+ * `.scroll > *` holds content to a reading measure, which is right for a conversation and wrong
+ * for a grid: a month squeezed into 760px wasted half a laptop screen. The calendar opts out.
+ */
+.scroll--wide > * {
+  width: 100%;
+  max-width: 1500px;
+}
+
+.calfoot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (min-width: 900px) {
+  .scroll--wide {
+    padding: 14px 28px 18px;
+  }
+
+  /*
+   * Fill the height too, so a month is one glance rather than a scroll, and the last week is not
+   * cut off. The grid rows share whatever is left after the title, the controls and the footer.
+   */
+  .scroll--wide > .group {
+    flex: 1;
+    min-height: 0;
+    /* Fills the window when it fits, scrolls when a busy week needs more than its share. */
+    overflow: auto;
+  }
+
+  /*
+   * `min-content` rather than 0: equal rows look tidy but a day with four entries was having
+   * them sliced in half. A row that needs more height takes it.
+   */
+  .monthgrid {
+    min-height: 100%;
+    grid-template-rows: auto repeat(6, minmax(min-content, 1fr));
+  }
+
+  .monthcell {
+    min-height: 0;
+  }
+
+  /* Room for a fourth entry once the cells are taller than a phone's. */
+  .monthcell .pill {
+    font-size: 11.5px;
+    padding: 2px 6px;
+  }
+
+  .daygrid,
+  .weekscroll {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .weekgrid {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /*
+   * `auto` basis so a busy hour still sets its own height; growth shares the leftover. The phone
+   * floor of 34px has to go, or fifteen hours add up to more than the window and the last one
+   * gets cut off.
+   */
+  .daygrid__row,
+  .weekgrid__line {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .calfoot {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 28px;
+  }
+
+  /* The legend keeps its width; the sentence beside it is what gives way. */
+  .calfoot .legend {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .calfoot .hint {
+    margin: 0;
+    text-align: right;
   }
 }

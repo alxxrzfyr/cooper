@@ -280,10 +280,10 @@ export function Calendar({
 
   if (entries.length === 0) {
     return (
-      <div className="scroll">
+      <div className="scroll scroll--wide">
         {header}
         <section className="empty">
-          <Mascot name="empty_state_windows" size="lg" decorative />
+          <Mascot name="cooper_reading" size="lg" decorative />
           <h2 className="empty__title">Nothing on the calendar</h2>
           <p className="empty__text">
             Add a task with a time estimate and say &ldquo;plan my day&rdquo;, or give something an
@@ -335,7 +335,7 @@ export function Calendar({
   }
 
   return (
-    <div className="scroll">
+    <div className="scroll scroll--wide">
       {header}
 
       {mode === "day" ? (
@@ -437,12 +437,13 @@ export function Calendar({
         </section>
       ) : null}
 
-      {legend}
-
-      <p className="hint">
-        Colour is the category, picked when you add something. Shaded hours are yours to book.
-        Filled entries are ones Cooper placed; outlined ones came from your calendar.
-      </p>
+      <footer className="calfoot">
+        {legend}
+        <p className="hint">
+          Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
+          placed; outlined ones came from your calendar.
+        </p>
+      </footer>
     </div>
   );
 }
