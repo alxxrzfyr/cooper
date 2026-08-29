@@ -1,0 +1,84 @@
+{
+  "mascots": {
+    "profile_icon": {
+      "file": "assets/mascot/profile_icon.webp",
+      "width": 140,
+      "height": 177,
+      "format": "webp"
+    },
+    "task_active": {
+      "file": "assets/mascot/task_active.webp",
+      "width": 169,
+      "height": 165,
+      "format": "webp"
+    },
+    "activity_summary": {
+      "file": "assets/mascot/activity_summary.webp",
+      "width": 140,
+      "height": 166,
+      "format": "webp"
+    },
+    "empty_state_windows": {
+      "file": "assets/mascot/empty_state_windows.webp",
+      "width": 174,
+      "height": 168,
+      "format": "webp"
+    },
+    "activity_history": {
+      "file": "assets/mascot/activity_history.webp",
+      "width": 182,
+      "height": 175,
+      "format": "webp"
+    },
+    "first_run_state": {
+      "file": "assets/mascot/first_run_state.webp",
+      "width": 176,
+      "height": 161,
+      "format": "webp"
+    },
+    "degraded_mode_state": {
+      "file": "assets/mascot/degraded_mode_state.webp",
+      "width": 172,
+      "height": 169,
+      "format": "webp"
+    },
+    "credential_expired_state": {
+      "file": "assets/mascot/credential_expired_state.webp",
+      "width": 178,
+      "height": 167,
+      "format": "webp"
+    },
+    "parse_ambiguity_state": {
+      "file": "assets/mascot/parse_ambiguity_state.webp",
+      "width": 128,
+      "height": 172,
+      "format": "webp"
+    },
+    "task_too_large_state": {
+      "file": "assets/mascot/task_too_large_state.webp",
+      "width": 194,
+      "height": 159,
+      "format": "webp"
+    }
+  },
+  "brand": {
+    "cadence_logo": {
+      "file": "assets/brand/cadence_logo.webp",
+      "width": 110,
+      "height": 25,
+      "format": "webp"
+    },
+    "cadence_icon": {
+      "file": "assets/brand/cadence_icon.webp",
+      "width": 24,
+      "height": 25,
+      "format": "webp"
+    },
+    "cadence_wordmark": {
+      "file": "assets/brand/cadence_wordmark.webp",
+      "width": 86,
+      "height": 22,
+      "format": "webp"
+    }
+  }
+}
