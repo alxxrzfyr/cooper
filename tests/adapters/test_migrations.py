@@ -85,6 +85,16 @@ EXPECTED_COLUMNS = {
         "state",
     },
     "job_run": {"job_name", "last_run_at", "last_status"},
+    "google_credential": {
+        "id",
+        "refresh_token_encrypted",
+        "scope",
+        "account_email",
+        "obtained_at",
+        "last_refreshed_at",
+        "last_error",
+    },
+    "sync_state": {"calendar_id", "sync_token", "last_synced_at"},
 }
 
 
@@ -138,3 +148,15 @@ def test_section_6_enum_values_are_enforced(tmp_path: Path, statement: str) -> N
 
     with engine.begin() as connection, pytest.raises(IntegrityError):
         connection.execute(text(statement))
+
+
+def test_credential_table_has_no_plaintext_token_column(tmp_path: Path) -> None:
+    # The column name itself is part of the guarantee: there is nowhere to put a raw token.
+    columns = {
+        column["name"]
+        for column in inspect(migrated_engine(tmp_path)).get_columns("google_credential")
+    }
+
+    assert "refresh_token_encrypted" in columns
+    assert "refresh_token" not in columns
+    assert "access_token" not in columns

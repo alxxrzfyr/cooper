@@ -166,3 +166,31 @@ class JobRunModel(Base):
     job_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     last_status: Mapped[str | None] = mapped_column(String(40))
+
+
+class GoogleCredentialModel(Base):
+    """Single-row Google authorization.
+
+    The refresh token is stored encrypted. There is no column for the access token: it is
+    short-lived, so it is fetched on demand and never persisted.
+    """
+
+    __tablename__ = "google_credential"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    refresh_token_encrypted: Mapped[str] = mapped_column(Text)
+    scope: Mapped[str] = mapped_column(String(500))
+    account_email: Mapped[str | None] = mapped_column(String(320))
+    obtained_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    last_refreshed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+
+
+class SyncStateModel(Base):
+    """Incremental sync bookmarks, one row per calendar."""
+
+    __tablename__ = "sync_state"
+
+    calendar_id: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    sync_token: Mapped[str | None] = mapped_column(Text)
+    last_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
