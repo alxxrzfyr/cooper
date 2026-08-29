@@ -37,6 +37,29 @@ class MutationRecord:
         return self.inverse_applied_at is not None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class MutationBatch:
+    """All mutations produced by one user turn or one job run.
+
+    The unit of undo. Reversing a re-plan means reversing the batch, not hunting for the
+    individual blocks it touched.
+    """
+
+    batch_id: str
+    ts: dt.datetime
+    actor: Actor
+    intent_kind: str
+    mutations: tuple[MutationRecord, ...]
+
+    @property
+    def is_undone(self) -> bool:
+        return all(mutation.is_undone for mutation in self.mutations)
+
+    @property
+    def size(self) -> int:
+        return len(self.mutations)
+
+
 @runtime_checkable
 class MutationRepository(Protocol):
     def record(self, mutation: MutationRecord) -> None: ...
@@ -46,6 +69,10 @@ class MutationRepository(Protocol):
     def latest(self) -> MutationRecord | None: ...
 
     def mark_undone(self, mutation_id: str, *, at: dt.datetime) -> None: ...
+
+    def batch(self, batch_id: str) -> MutationBatch | None: ...
+
+    def recent_batches(self, *, limit: int = 25) -> tuple[MutationBatch, ...]: ...
 
 
 def _to_domain(row: MutationLogModel) -> MutationRecord:
@@ -110,3 +137,43 @@ class SqlAlchemyMutationRepository:
             raise KeyError(mutation_id)
         row.inverse_applied_at = at.astimezone(dt.UTC)
         self._session.flush()
+
+    def batch(self, batch_id: str) -> MutationBatch | None:
+        statement = (
+            select(MutationLogModel)
+            .where(MutationLogModel.batch_id == batch_id)
+            .order_by(MutationLogModel.ts, MutationLogModel.id)
+        )
+        rows = list(self._session.scalars(statement))
+        if not rows:
+            return None
+        return _to_batch(rows)
+
+    def recent_batches(self, *, limit: int = 25) -> tuple[MutationBatch, ...]:
+        """Most recent batches first, so the activity feed reads newest at the top."""
+        ordered = (
+            select(MutationLogModel)
+            .order_by(MutationLogModel.ts.desc(), MutationLogModel.id.desc())
+            .limit(limit * 20)
+        )
+        grouped: dict[str, list[MutationLogModel]] = {}
+        for row in self._session.scalars(ordered):
+            grouped.setdefault(row.batch_id, []).append(row)
+            if len(grouped) > limit and row.batch_id not in grouped:
+                break
+
+        batches = [_to_batch(sorted(rows, key=lambda r: (r.ts, r.id))) for rows in grouped.values()]
+        batches.sort(key=lambda batch: batch.ts, reverse=True)
+        return tuple(batches[:limit])
+
+
+def _to_batch(rows: list[MutationLogModel]) -> MutationBatch:
+    mutations = tuple(_to_domain(row) for row in rows)
+    first = mutations[0]
+    return MutationBatch(
+        batch_id=first.batch_id,
+        ts=max(mutation.ts for mutation in mutations),
+        actor=first.actor,
+        intent_kind=first.intent_kind,
+        mutations=mutations,
+    )
