@@ -13,15 +13,16 @@ function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-function day(iso: string): string {
+function shortDay(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { weekday: "short" });
 }
 
-/** One task or event. Shows why it ranks where it does, on request. */
+/** One task or event in a grouped list. Explains its own ranking on request. */
 export function Row({
   item,
   today,
   busy,
+  showTime = true,
   onComplete,
   onPin,
   onDrop,
@@ -29,6 +30,7 @@ export function Row({
   item: Item | Ranked;
   today: string;
   busy: boolean;
+  showTime?: boolean;
   onComplete: () => void;
   onPin?: () => void;
   onDrop?: () => void;
@@ -39,7 +41,7 @@ export function Row({
   const dueToday = item.due !== null && item.due.slice(0, 10) === today;
 
   return (
-    <div>
+    <>
       <div className={`row ${item.status !== "open" ? "row--done" : ""}`}>
         <button
           type="button"
@@ -55,25 +57,25 @@ export function Row({
           <div className="row__title">{item.title}</div>
           <div className="row__meta">
             {item.pinned && <span className="tag tag--pin">pinned</span>}
-            {item.start_at && (
+            {showTime && item.start_at && (
               <span className="tag tag--time">
-                {day(item.start_at)} {clock(item.start_at)}
+                {shortDay(item.start_at)} {clock(item.start_at)}
               </span>
             )}
             {item.minutes !== null && <span className="tag">{item.minutes}m</span>}
             {item.due && (
               <span className={`tag ${late ? "tag--late" : dueToday ? "tag--due" : ""}`}>
-                {late ? "overdue" : dueToday ? "due today" : `due ${day(item.due)}`}
+                {late ? "overdue" : dueToday ? "due today" : `due ${shortDay(item.due)}`}
               </span>
             )}
-            {item.google_event_id && <span className="tag">in Google</span>}
+            {item.google_event_id && <span className="tag">Google</span>}
           </div>
         </div>
 
         {ranked && (
           <button
             type="button"
-            className="score"
+            className="chevron"
             aria-expanded={open}
             aria-label={`Why “${item.title}” ranks here`}
             onClick={() => setOpen(!open)}
@@ -121,6 +123,6 @@ export function Row({
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

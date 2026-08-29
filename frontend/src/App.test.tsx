@@ -158,11 +158,15 @@ describe("first impression", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Cadence is not running");
   });
 
-  test("offline mode is stated without alarm", async () => {
+  test("offline parsing is stated under setup without alarm", async () => {
     stub({});
     render(<App />);
+    const user = userEvent.setup();
 
-    expect(await screen.findByText(/Running offline/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
+
+    expect(await screen.findByText("Offline rules")).toBeInTheDocument();
+    expect(screen.getByText(/Works fine without a key/)).toBeInTheDocument();
   });
 });
 
@@ -278,7 +282,7 @@ describe("the list", () => {
     expect(await screen.findByText("overdue")).toBeInTheDocument();
   });
 
-  test("a booked task shows its time", async () => {
+  test("a booked task shows its time on the calendar tab", async () => {
     const booked: Item = {
       ...ranked(),
       id: "b1",
@@ -288,9 +292,11 @@ describe("the list", () => {
     };
     stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
+    const user = userEvent.setup();
 
-    expect(await screen.findByText("Booked")).toBeInTheDocument();
-    expect(screen.getByText("review the budget")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Calendar/ }));
+
+    expect(await screen.findByText("review the budget")).toBeInTheDocument();
   });
 
   test("scheduling asks the backend to place everything", async () => {
@@ -334,73 +340,122 @@ describe("undo", () => {
 });
 
 describe("working hours", () => {
-  test("the sheet explains the boundary", async () => {
+  test("setup states the boundary", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("button", { name: "Hours" }));
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
 
-    const sheet = await screen.findByRole("dialog", { name: "Working hours" });
-    expect(within(sheet).getByText(/only ever places work inside these hours/)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing is ever booked outside these hours/)).toBeInTheDocument();
   });
 
-  test("saving sends the chosen days", async () => {
+  test("changing the end hour saves it", async () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Hours" }));
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
 
-    await user.click(await screen.findByRole("button", { name: "Save" }));
+    await user.selectOptions(await screen.findByLabelText("Day ends at"), "17");
 
     await waitFor(() => {
       const put = calls.find((call) => call.method === "PUT");
-      expect(put?.body.weekdays).toEqual([0, 1, 2, 3, 4]);
+      expect(put?.body.end_hour).toBe(17);
     });
   });
 
-  test("saving is blocked with no days chosen", async () => {
-    stub({ view: view({ hours: { start_hour: 9, end_hour: 18, weekdays: [], max_per_day: 4 } }) });
+  test("toggling a day saves the new set", async () => {
+    const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
 
-    await user.click(await screen.findByRole("button", { name: "Hours" }));
+    await user.click(await screen.findByRole("button", { name: "Sat" }));
 
-    expect(
-      await screen.findByRole("button", { name: /Pick a day and a valid range/ }),
-    ).toBeDisabled();
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === "PUT");
+      expect(put?.body.weekdays).toEqual([0, 1, 2, 3, 4, 5]);
+    });
   });
+});
 
-  test("the sheet closes", async () => {
+describe("navigation", () => {
+  test("all three tabs are present", async () => {
     stub({});
     render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "Sections" });
+    for (const label of ["Today", "Calendar", "Setup"]) {
+      expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
+    }
+  });
+
+  test("today is the tab you land on", async () => {
+    stub({});
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "Sections" });
+    expect(within(nav).getByRole("button", { name: /Today/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  test("the calendar tab groups booked work by day", async () => {
+    const booked = { ...ranked(), start_at: "2026-08-31T02:00:00+00:00" };
+    stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Hours" }));
 
-    await user.click(await screen.findByRole("button", { name: "Close" }));
+    await user.click(await screen.findByRole("button", { name: /Calendar/ }));
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Calendar/ })).toBeInTheDocument();
+    expect(screen.getByText("write the quarterly report")).toBeInTheDocument();
+  });
+
+  test("an empty calendar explains how to fill it", async () => {
+    stub({ view: view({ scheduled: [] }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /Calendar/ }));
+
+    expect(await screen.findByText("Nothing booked yet")).toBeInTheDocument();
+  });
+
+  test("the calendar tab shows how much is booked", async () => {
+    const booked = { ...ranked(), start_at: "2026-08-31T02:00:00+00:00" };
+    stub({ view: view({ scheduled: [booked, { ...booked, id: "b2" }] }) });
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "Sections" });
+    expect(within(nav).getByText("2")).toBeInTheDocument();
   });
 });
 
 describe("google calendar", () => {
-  test("nothing is said when it is not configured", async () => {
+  test("an unconfigured calendar says so under setup", async () => {
     stub({});
     render(<App />);
-    await screen.findByText("Up next");
+    const user = userEvent.setup();
 
-    expect(screen.queryByText("Google Calendar is off")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
+
+    expect(await screen.findByText("Not set up")).toBeInTheDocument();
   });
 
   test("configured but unconnected offers to connect", async () => {
     stub({ view: view({ calendar: { configured: true, connected: false, email: null } }) });
     render(<App />);
+    const user = userEvent.setup();
 
-    expect(await screen.findByText("Google Calendar is off")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Setup/ }));
+
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
   });
 
-  test("a connected calendar is reflected on booked items", async () => {
+  test("a connected calendar is named", async () => {
     const booked: Item = { ...ranked(), start_at: "2026-08-31T02:00:00+00:00" };
     stub({
       view: view({
@@ -409,17 +464,22 @@ describe("google calendar", () => {
       }),
     });
     render(<App />);
+    const user = userEvent.setup();
 
-    expect(await screen.findByText("synced to Google")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Calendar/ }));
+
+    expect(await screen.findByText("Synced with Google")).toBeInTheDocument();
   });
 });
 
 describe("the mascot", () => {
-  test("the brand mark is labelled for screen readers", async () => {
+  test("the wordmark is real text, so it reads in both themes", async () => {
+    // The supplied logo webp has dark ink baked in and vanished on black. Text inherits the
+    // theme colour instead, which is why this asserts text rather than an image.
     stub({});
     render(<App />);
 
-    expect(await screen.findByRole("img", { name: "Cadence" })).toBeInTheDocument();
+    expect(await screen.findByText("Cadence")).toBeInTheDocument();
   });
 
   test("every mascot image resolves and reserves its space", async () => {
@@ -435,8 +495,10 @@ describe("the mascot", () => {
     expect(images.length).toBeGreaterThan(0);
     for (const image of images) {
       expect(image.getAttribute("src")).toMatch(/\.webp$/);
-      expect(image).toHaveAttribute("width");
-      expect(image).toHaveAttribute("height");
+      // Sizing and cropping live in CSS. The size class fixes the box, so nothing shifts while
+      // loading, and the shape class crops the art's baked-in ground shadow.
+      expect(image.className).toMatch(/mascot--(xs|sm|md|lg)/);
+      expect(image.className).toMatch(/mascot--(round|squircle)/);
     }
   });
 });
