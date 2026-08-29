@@ -1,123 +1,75 @@
 # AGENTS.md
 
-Operating instructions for AI coding agents working in this repository. Read this before
-touching any file. Human contributors will also find it accurate.
+Instructions for anyone changing this code, human or model.
 
 ## What this is
 
-Cadence is a single-user web app that turns typed sentences into tasks and calendar events,
-ranks what to work on next, and places the top of that ranking into Google Calendar inside
-user-declared focus windows. Python FastAPI backend, React frontend, SQLite, Gemini free tier.
+A personal calendar you talk to. One user, one machine. Six backend files, three tables.
 
-## Read in this order
-
-1. `PRD.md` for what must be true.
-2. `ARCHITECTURE.md` for structure and the nine invariants.
-3. `docs/superpowers/specs/2026-08-29-ai-calendar-agent-design.md` for the full design and its
-   rationale. This is the frozen record. If your change contradicts it, the spec is wrong or
-   your change is. Resolve that before writing code.
-4. `docs/GLOSSARY.md` when a term is unfamiliar. The vocabulary is precise and worth respecting.
-5. `docs/DECISIONS.md` before proposing an alternative approach. Most alternatives were already
-   considered and rejected for stated reasons.
-
-## Current state
-
-**All six phases are built.** Capture, deterministic prioritisation, window-bounded
-scheduling, outbox projection to Google Calendar, batch undo, the activity feed, the quota
-governor, and the five background jobs all run today.
-
-One thing needs the user's own credentials: projecting blocks into a real Google Calendar
-requires `CADENCE_GOOGLE_CLIENT_ID`, `CADENCE_GOOGLE_CLIENT_SECRET`, and a generated
-`CADENCE_TOKEN_ENCRYPTION_KEY`. Without them the app runs fully and reports the calendar as
-not connected. The Google adapter is tested against a fake implementing the same Protocol,
-so its behaviour is covered without credentials.
-
-The user chose to build past the two-week trial gate in `PRD.md`. That gate is therefore
-spent, not pending.
-
-Before adding anything, read the invariants in `ARCHITECTURE.md`. Two of them are the reason
-full autonomy is safe here, and both are asserted by tests named after them: the scheduler
-cannot emit a block outside a declared window, and the reranker cannot mutate anything.
+Read `PRD.md`, then `ARCHITECTURE.md`. Both are short on purpose.
 
 ## Commands
 
 ```bash
-# Backend
-uv sync                          # install
-uv run alembic upgrade head      # migrate
-uv run uvicorn cadence.main:app --reload --host 127.0.0.1
-uv run pytest                    # all tests
-uv run pytest tests/core -q      # fast, pure, no I/O
+uv sync
+uv run uvicorn cadence.app:app --reload --host 127.0.0.1
+uv run pytest
 uv run ruff check . && uv run ruff format --check .
-uv run mypy cadence
-uv run lint-imports              # layer purity contract
 
-# Frontend
 cd frontend && npm install
 npm run dev
-npm run test
+npm test
 npm run build
 ```
 
-## Workflow for any change
+No migrations. No linter beyond ruff. That is the whole toolchain.
 
-1. **Locate the requirement.** Find the phase and acceptance criterion in `PRD.md` that your
-   change serves. If none exists, stop and ask. Unrequested features are the main failure mode
-   here.
-2. **Write the test first.** Every change starts with a failing test. Domain logic goes in
-   `tests/core` with no mocks. See `docs/TESTING.md`.
-3. **Implement the smallest change that passes.**
-4. **Run the gates.** `pytest`, `ruff`, `mypy`, `lint-imports`. All four, every time.
-5. **State what you verified.** Cite the command and its result. Do not claim a test passes
-   without having run it.
+## The bar for adding anything
 
-## Non-negotiable rules
+This project was rebuilt once because it grew into 55 files and 461 tests for a problem that
+needs neither. Before you add code, answer these:
 
-- **Never weaken an invariant** from `ARCHITECTURE.md` to make a test pass. If an invariant
-  blocks you, the design needs a decision, so stop and ask.
-- **Never put a model ID literal in code.** It belongs in `config.py`, read from the environment.
-- **Never pass calendar text into the intent compiler's prompt.** That separation is what
-  contains prompt injection. Invariant 4.
-- **Never let `core` import SQLAlchemy, FastAPI, a vendor SDK, `services`, `adapters`, or
-  `api`.** `lint-imports` will fail, and correctly so.
-- **Never add infrastructure for scale.** No cache, no broker, no replica, no worker process.
-  One user. Spec section 19 is explicit.
-- **Never commit secrets.** `.env` is git-ignored. Tokens never appear in logs. `ai_decision`
-  stores a digest of input, not raw prompt text.
-- **Never bind `0.0.0.0`.** Localhost only. Exposing this service is a separate decision that
-  requires real authentication first, and it is out of scope.
-- **Never add a confirmation modal to the capture path.** Autonomy is full by decision. The
-  correction path is the parsed chip. See `docs/DECISIONS.md` entry 4.
-- **Never trust model-reported confidence.** Disambiguation is deterministic. Invariant in
-  spec section 8.
-- **Never exceed two model calls per utterance,** or the per-turn mutation cap.
+1. **Which of the four requirements in `PRD.md` does this serve?** If none, stop.
+2. **Would it still be needed with one user?** Queues, audit logs, and permission models are
+   answers to problems this app does not have.
+3. **Can it be a smaller change to an existing file instead of a new file?** Usually yes.
 
-## Definition of done
+If you find yourself writing an abstraction because a second implementation *might* appear, do
+not. Write the one that exists.
 
-A change is done when all of these hold, and you have output proving each:
+## Rules that are not negotiable
 
-- [ ] The acceptance criterion from `PRD.md` is satisfied.
-- [ ] A test exists that fails without the change.
-- [ ] `uv run pytest` passes.
-- [ ] `uv run ruff check .` and `uv run ruff format --check .` pass.
-- [ ] `uv run mypy cadence` passes.
-- [ ] `uv run lint-imports` passes.
-- [ ] No new dependency was added without a pinned version and a stated reason.
-- [ ] Docs updated if behavior described in `PRD.md` or `ARCHITECTURE.md` changed.
+These are in `PRD.md` as product rules. Here is what they mean in code.
 
-## When to stop and ask
-
-- The change requires modifying an invariant, or contradicts the spec.
-- The requirement is absent from `PRD.md`.
-- A test fails twice for reasons you have not diagnosed. Stop. Do not try a third variation.
-- The work touches OAuth scopes, the localhost hardening, or secret handling.
-- A dependency needs adding.
-- The change would make the app unusable when the model is unavailable.
+- **`brain.py` never touches the database.** It returns a validated `Action`. If you need it to
+  read state, pass the state in.
+- **`app.py` is the only writer.** Every mutation goes through it, so undo has one place to hook.
+- **Placement only uses working hours.** Never widen `_first_gap` to consider other time.
+- **Ambiguity asks.** Do not make `find()` return a best guess. Two matches is a 409.
+- **Times are UTC in the database.** Use the `Utc` column type for any new timestamp. A naive
+  datetime in SQLite silently shifts by your offset.
+- **Never bind `0.0.0.0`.** There is no authentication.
+- **Never log a token or a prompt.** The Google token is encrypted at rest.
+- **No confirmation dialog on the composer.** Undo is the correction path.
+- **It must work with no Gemini key and no Google account.** If your change breaks that, it is
+  the wrong change.
 
 ## Working style
 
-Small, focused files. One clear purpose each. A file that is hard to describe in one sentence is
-doing too much and should be split. Prefer boring code: this codebase has one user and needs to
-be readable in six months more than it needs to be clever.
+TDD where the logic is real: parsing, ranking, placing, and anything about time. Skip it for
+markup. `tests/test_cadence.py` covers the pure functions, `tests/test_api.py` goes through HTTP.
 
-Commit messages use Conventional Commits. See `docs/CONVENTIONS.md`.
+Run the app and look at it before saying you are done. Three of the bugs in this codebase's
+history were invisible in tests and obvious on screen: a timezone shift that displayed 3pm as
+11pm, a grid that wrapped, and the same task listed twice.
+
+Small files. If one is hard to describe in a sentence, split it.
+
+Conventional Commits. Explain why in the body; the diff already says what.
+
+## When to stop and ask
+
+- The change needs a new table, a new dependency, or a background process.
+- It contradicts a rule above.
+- A test fails twice for a reason you have not diagnosed. Stop guessing.
+- You are about to touch the shared key, the localhost binding, or token storage.

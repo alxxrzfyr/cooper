@@ -1,20 +1,15 @@
 # CLAUDE.md
 
-The instructions for this repository live in **[AGENTS.md](./AGENTS.md)**. Read that file. It is
-not duplicated here on purpose: two copies of the same rules drift apart, and the stale copy is
-always the one someone follows.
+Read **[AGENTS.md](./AGENTS.md)**. The rules live there and are not duplicated here, because two
+copies drift and the stale one is always the one someone follows.
 
-## Claude-specific notes
+## Notes for Claude specifically
 
-- **Read before writing.** `AGENTS.md`, then `PRD.md`, then the relevant section of the spec at
-  `docs/superpowers/specs/2026-08-29-ai-calendar-agent-design.md`. The spec is long; read the
-  section that governs your change rather than the whole document.
-- **One phase at a time.** `PRD.md` defines six phases. Work only within the current one. If a
-  change would be easier "while you are in there", it is out of scope.
-- **Verify before claiming.** Run the four gates in `AGENTS.md` and quote their output. An
-  unverified completion claim is worse than an admitted blocker, because it costs a debugging
-  session to discover.
-- **Two failures means stop.** Do not attempt a third variation on a failing test. Report the
-  failure, your diagnosis, and what you would try next.
-- **Prefer deleting to adding.** This project's stated risk is scope creep, not missing
-  features. If you can satisfy an acceptance criterion with less code, do that.
+- **Read `PRD.md` first.** Its "what it must never become" section exists because this project
+  was already rebuilt once after being over-engineered. Take it literally.
+- **Prefer deleting.** The failure mode here is addition, not omission. A smaller change that
+  meets the requirement beats a more general one that also does.
+- **Look at the running app.** Several real bugs in this codebase were invisible to a passing
+  test suite and obvious in a browser.
+- **Two failures means stop.** Report the diagnosis instead of trying a third variation.
+- **Do not add an abstraction for a second implementation that does not exist yet.**

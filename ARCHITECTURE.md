@@ -1,141 +1,134 @@
-# Cadence: Architecture
+# Architecture
 
-Structural reference. Rationale for these choices lives in the design spec at
-`docs/superpowers/specs/2026-08-29-ai-calendar-agent-design.md`; this document states the
-structure and the rules that protect it.
+Nine files do everything. Read them in this order and you will understand the whole app in
+about twenty minutes.
 
-## Shape
-
-Four layers, dependencies pointing inward only.
-
-```
-frontend/                       React, Vite, TypeScript
-     |  HTTP + shared-secret header
-     v
-cadence/api/                    FastAPI routers. Validation and serialization only.
-     v
-cadence/services/               Orchestration. Owns transactions and the outbox.
-     v
-cadence/core/                   Pure Python. No I/O. No frameworks.
-     ^
-cadence/adapters/               Implements Protocols declared in core.
-```
-
-`adapters` depends on `core` for the Protocols it satisfies. `services` composes `core` and
-`adapters`. Nothing depends on `api`.
-
-## Directory map
+## Backend
 
 ```
 cadence/
-  core/
-    intents.py          Intent dataclasses. The model's entire output space.
-    scoring.py          score() and its per-term functions. Pure.
-    windows.py          Focus window expansion, including DST rules.
-    placement.py        Greedy first-fit placement. Pure.
-    disambiguation.py   Title similarity, threshold and tie rules.
-    protocols.py        LLMProvider, CalendarClient, Repository.
-    errors.py           Domain error types.
-  services/
-    task_service.py     Task lifecycle, mutation log writes.
-    plan_service.py     Rank, rerank, place, reconcile.
-    sync_service.py     Calendar pull, outbox drain.
-    undo_service.py     Batch inverse application.
-    intent_executor.py  Maps a validated Intent to service calls.
-  adapters/
-    gemini_provider.py     LLMProvider via Gemini structured output.
-    rule_provider.py       LLMProvider via dateparser and regex. No network.
-    scrubber.py            Field allowlist. Enforced here, not by callers.
-    quota_governor.py      Backoff, circuit breaker, degraded-mode flag.
-    google_calendar.py     CalendarClient. Tagging, sync tokens, idempotent insert.
-    repository.py          SQLAlchemy implementation of Repository.
-  api/
-    routes_tasks.py  routes_plan.py  routes_windows.py
-    routes_chat.py   routes_activity.py  routes_auth.py
-    security.py      Shared secret, CORS, Host validation.
-  jobs/
-    scheduler.py     APScheduler wiring. Catch-up logic via job_run.
-    definitions.py   The five jobs from spec section 14.
-  config.py          Pydantic settings. All weights, model IDs, intervals, thresholds.
-  main.py            App factory. Binds 127.0.0.1.
+  config.py    ~50 lines   settings from .env; only CADENCE_SHARED_KEY is required
+  db.py       ~250 lines   three tables, a session helper, the UTC column type
+  brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
+  planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
+  google.py   ~280 lines   Calendar over REST; no SDK
+  app.py      ~580 lines   every route; the only thing that writes to the database
+```
+
+## Frontend
+
+```
 frontend/src/
-  views/   Today.tsx  Backlog.tsx  Windows.tsx  Activity.tsx
-  components/  CaptureBar.tsx  ParsedChip.tsx  ScoreBreakdown.tsx  DegradedBanner.tsx
-  api/     client.ts  types.ts
-migrations/          Alembic
-tests/
-  core/  services/  adapters/  fixtures/intents.jsonl  e2e/
+  App.tsx           one screen: hero, list, composer
+  Row.tsx           a task or event, with its score breakdown
+  HoursSheet.tsx    when you may be booked
+  Mascot.tsx        the otter, sized from the manifest
+  api.ts            the only place that calls the backend
+  types.ts          mirrors what app.py returns
+  theme.css         tokens, light and dark
 ```
 
-## Invariants
+## Data
 
-These are load-bearing. Breaking any one of them is a design regression, not a refactor. Each is
-covered by a test named after it.
+Three tables. That is the whole schema.
 
-1. **`core` is pure.** No I/O, no network, no ORM, no framework imports. Enforced by an
-   `import-linter` contract in CI, not by reviewer memory.
-2. **The scheduler cannot emit a block outside a declared focus window.** The candidate interval
-   set is built from the user's windows, so no code path reaches other calendar time.
-3. **The reranker cannot mutate anything.** Its output is validated as a permutation of the IDs
-   the system supplied, plus a reason string. Nothing else is accepted.
-4. **The intent compiler never sees third-party text.** Only text the user typed. This is what
-   contains prompt injection arriving through other people's calendar event titles.
-5. **Multi-attendee events are never moved or deleted automatically.** Moving them emails real
-   people, and undo cannot un-send email.
-6. **Sensitive fields are stripped at ingestion, not at prompt time.** Descriptions, locations,
-   meeting links, and attendee emails never enter the database, so they cannot leak from it.
-7. **Calendar writes never share a transaction with database writes.** They go through the
-   outbox. A Google outage delays projection; it does not corrupt state.
-8. **Every mutation is logged with its inverse and a `batch_id`.** Undo operates on batches.
-9. **Scheduled jobs are catch-up based and idempotent.** A machine asleep at the trigger time
-   must still run the job at next startup, exactly once.
-
-## Data flow: capture
+**`item`** — a task *or* an event. The only difference is whether the time is fixed, so they
+share a table. Splitting them into `task` and `scheduled_block` is what made the previous
+version sprawl.
 
 ```
-CaptureBar -> POST /chat -> IntentCompiler (adapters, <=2 model calls)
-           -> Intent validated against core.intents
-           -> disambiguation resolves *_ref, or returns Clarify
-           -> IntentExecutor -> service call
-           -> mutation_log row (+ outbox row if calendar is affected)
-           -> ParsedChip rendered with edit and undo
+id kind title notes minutes importance due
+start_at end_at google_event_id
+status pinned created_at done_at
 ```
 
-Validation failure at any step yields `Clarify` and zero writes. Partial application is not a
-reachable state.
+**`setting`** — key/value. Working hours, and the encrypted Google refresh token.
 
-## Data flow: plan
+**`change`** — `label`, `item_id`, `before`. Enough to undo the last thing, pruned to twenty
+rows. Not an audit log.
 
-```
-PlanService.rank()      candidates -> core.scoring -> ranked list
-PlanService.rerank()    top 10 -> LLMProvider.rerank -> permutation validated -> reason logged
-PlanService.place()     windows -> expand -> subtract busy -> core.placement -> blocks
-SyncService.drain()     outbox -> GoogleCalendar.insert/patch -> block.state = pushed
-```
+There is no migration tool. `Store.__init__` calls `create_all`, which is the right amount of
+ceremony for three tables owned by one person.
 
-Skipping the rerank step changes ordering quality and nothing else. This is what makes degraded
-mode a product state rather than an outage.
-
-## Data flow: sync in
+## The flow
 
 ```
-calendar_poll -> events.list(syncToken) -> scrubber (allowlist) -> calendar_event_cache
-              -> app-owned event moved by user  -> block.state = user_moved
-              -> app-owned event deleted by user -> block.state = orphaned, task to backlog
-              -> 410 Gone -> full resync, new token
+you type
+   ↓
+POST /api/say
+   ↓
+brain.read()          Gemini with a JSON schema, one retry, then regex
+   ↓                  returns Action(verb=…) — never touches the database
+_sanity_check()       refuses anything unexecutable; unsure becomes verb="ask"
+   ↓
+app.run()             the only code that writes
+   ↓
+planner.rank()        pure scoring
+planner.place()       pure fitting, inside working hours only
+   ↓
+google.add_block()    best effort; a failure leaves it scheduled locally
 ```
 
-## Storage
+## The rules the code enforces
 
-SQLite through SQLAlchemy, migrated with Alembic. One user on one machine. The connection
-string is the only change required if Postgres ever becomes necessary. Do not add a cache, a
-broker, or a replica. See spec section 19.
+**The model proposes; `app.py` decides.** `brain.py` returns a frozen `Action` and has no
+database access. `_sanity_check` rejects an add with no title, a reference with nothing to
+reference, and an event that ends before it starts. Wrong model output becomes a question, not a
+mutation.
 
-## Configuration
+**Nothing is booked outside your hours.** `_first_gap` builds candidate times from
+`Hours.start_hour`, `end_hour`, and `weekdays`. There is no code path that produces a time
+outside them, so this is structural rather than checked.
 
-Everything tunable lives in `config.py`, read from the environment. Notably: scoring weights,
-`horizon_days`, similarity threshold, block minimum and maximum, buffer, daily cap, poll
-intervals, per-turn mutation cap, and both model IDs.
+**Unsure means ask.** `find()` in `app.py` resolves by exact id, exact title, then unique
+substring. Two matches raise a 409 listing them. Zero matches returns a question. It never
+picks the closest.
 
-Model IDs must never appear as literals in code. The Gemini lineup shifts frequently, and a
-model rename should be a one-line environment change rather than a code search.
+**Times are UTC in the database.** The `Utc` column type converts on write and re-tags on read.
+SQLite drops offsets, and without this a 3pm appointment displayed at 11pm and every due date
+slid a day. It is a type rather than a convention so no future query can forget.
+
+**Calendar failures never block you.** Every Google call is wrapped. If it fails the item is
+still captured, still ranked, still scheduled locally. The calendar catches up next time.
+
+## Scoring
+
+In `planner.py`, weights summing to 1:
+
+```
+score = 0.40·due + 0.30·importance + 0.15·age + 0.15·quick
+```
+
+- `due` — 0 with no deadline, ramps over 14 days, 1.0 once overdue
+- `importance` — your 1–5, normalised
+- `age` — how long it has been waiting, capped at three weeks
+- `quick` — shorter scores higher, because finishing beats starting; no estimate sits at 0.5
+
+Pinned items sort first regardless. Tuning these numbers is the intended way to disagree with
+the ranking, and each row shows its own breakdown so you can see which term is responsible.
+
+## Placement
+
+Greedy, earliest fit, in ranked order. Blocks are 20–90 minutes with a 10 minute gap, capped
+per day, starting no sooner than 15 minutes from now. A task with no estimate is skipped rather
+than guessed at.
+
+## Security
+
+One user on one machine, so no login. That is only safe on localhost, so:
+
+- bind `127.0.0.1`
+- every route except `/health` and the OAuth callback needs `X-Cadence-Key`
+- CORS pinned to one origin
+- the Google refresh token is encrypted with Fernet before it touches the database
+- the refusal is *returned* from middleware, not raised — exception handlers do not run for
+  middleware, so raising would surface as a 500
+
+Exposing this to the internet needs real authentication first. That is a different project.
+
+## What is deliberately absent
+
+No outbox, no job scheduler, no circuit breaker, no quota governor, no mutation ledger, no
+reranker, no layered `core`/`services`/`adapters` split, no import contract, no WAL tuning. The
+previous version had every one of them. Each was defensible in isolation and together they made
+a personal calendar app impossible to hold in your head.
