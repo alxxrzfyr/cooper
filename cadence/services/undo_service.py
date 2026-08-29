@@ -108,7 +108,7 @@ class UndoService:
                 return 0
             self._blocks.update(dataclasses.replace(block, state="orphaned"))
             if block.google_event_id:
-                self._enqueue_delete(block, now=now)
+                self._enqueue_delete(block, mutation_id=mutation.id, now=now)
                 return 1
             return 0
 
@@ -119,21 +119,29 @@ class UndoService:
         else:
             self._blocks.update(restored)
         if restored.google_event_id:
-            self._enqueue_insert(restored, now=now)
+            self._enqueue_insert(restored, mutation_id=mutation.id, now=now)
             return 1
         return 0
 
-    def _enqueue_delete(self, block: ScheduledBlock, *, now: dt.datetime) -> None:
-        self._enqueue(block, operation="delete", now=now)
+    def _enqueue_delete(self, block: ScheduledBlock, *, mutation_id: str, now: dt.datetime) -> None:
+        self._enqueue(block, mutation_id=mutation_id, operation="delete", now=now)
 
-    def _enqueue_insert(self, block: ScheduledBlock, *, now: dt.datetime) -> None:
-        self._enqueue(block, operation="insert", now=now)
+    def _enqueue_insert(self, block: ScheduledBlock, *, mutation_id: str, now: dt.datetime) -> None:
+        self._enqueue(block, mutation_id=mutation_id, operation="insert", now=now)
 
-    def _enqueue(self, block: ScheduledBlock, *, operation: str, now: dt.datetime) -> None:
+    def _enqueue(
+        self,
+        block: ScheduledBlock,
+        *,
+        mutation_id: str,
+        operation: str,
+        now: dt.datetime,
+    ) -> None:
+        """The reference is the mutation being reversed, which is a real mutation_log row."""
         self._outbox.enqueue(
             OutboxEntry(
                 id=self._new_id(),
-                mutation_id=block.id,
+                mutation_id=mutation_id,
                 operation=operation,
                 payload={
                     "block_id": block.id,

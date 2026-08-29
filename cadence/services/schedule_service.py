@@ -141,7 +141,7 @@ class ScheduleService:
                 state="planned",
             )
             self._blocks.add(block)
-            self._record(
+            mutation_id = self._record(
                 batch_id=batch_id,
                 op="schedule",
                 block=block,
@@ -149,7 +149,12 @@ class ScheduleService:
                 after=_snapshot(block),
                 now=now,
             )
-            self._enqueue_write(block=block, batch_id=batch_id, operation="insert", now=now)
+            self._enqueue_write(
+                block=block,
+                mutation_id=mutation_id,
+                operation="insert",
+                now=now,
+            )
             placed.append(block)
 
         return ScheduleOutcome(
@@ -177,7 +182,7 @@ class ScheduleService:
                 continue
             updated = dataclasses.replace(block, state="orphaned")
             self._blocks.update(updated)
-            self._record(
+            mutation_id = self._record(
                 batch_id=batch_id,
                 op="release",
                 block=block,
@@ -188,7 +193,7 @@ class ScheduleService:
             if block.google_event_id:
                 self._enqueue_write(
                     block=block,
-                    batch_id=batch_id,
+                    mutation_id=mutation_id,
                     operation="delete",
                     now=now,
                 )
@@ -228,14 +233,19 @@ class ScheduleService:
         self,
         *,
         block: ScheduledBlock,
-        batch_id: str,
+        mutation_id: str,
         operation: str,
         now: dt.datetime,
     ) -> None:
+        """Queue a calendar write against the mutation that caused it.
+
+        The reference must be a real mutation_log row: the column carries a foreign key, and
+        storing a batch id here left a dangling reference.
+        """
         self._outbox.enqueue(
             OutboxEntry(
                 id=self._new_id(),
-                mutation_id=batch_id,
+                mutation_id=mutation_id,
                 operation=operation,
                 payload={
                     "block_id": block.id,

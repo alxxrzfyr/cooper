@@ -7,7 +7,10 @@ acceptable, and it is asserted by a test rather than trusted.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime as dt
+from collections.abc import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -30,6 +33,7 @@ from cadence.api.routes_windows import router as windows_router
 from cadence.api.security import SHARED_SECRET_HEADER, LocalSecurityMiddleware
 from cadence.config import Settings
 from cadence.core.protocols import LLMProvider
+from cadence.jobs.runtime import run_scheduler
 
 ROUTERS = (
     health_router,
@@ -82,7 +86,34 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     so schema creation is never an implicit side effect of starting the server.
     """
     runtime_settings = settings or Settings()  # type: ignore[call-arg]
-    app = FastAPI(title="Cadence", docs_url=None, redoc_url=None)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(instance: FastAPI) -> AsyncIterator[None]:
+        """Run background jobs for the life of the process.
+
+        Disabled under `create_schema`, which is the test path: a background loop sharing a
+        test database makes assertions race against it.
+        """
+        stop = asyncio.Event()
+        task: asyncio.Task[None] | None = None
+        if not create_schema:
+            task = asyncio.create_task(
+                run_scheduler(
+                    factory=instance.state.session_factory,
+                    settings=runtime_settings,
+                    transport=instance.state.http_transport,
+                    stop=stop,
+                )
+            )
+        try:
+            yield
+        finally:
+            stop.set()
+            if task is not None:
+                with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                    await asyncio.wait_for(task, timeout=5)
+
+    app = FastAPI(title="Cadence", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     engine = build_engine(runtime_settings.database_url)
     if create_schema:
