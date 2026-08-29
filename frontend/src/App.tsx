@@ -2,21 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./theme.css";
 import { api } from "./api";
+import { Chat, loadTurns, saveTurns, type Turn } from "./Chat";
 import { Mascot } from "./Mascot";
-import { NavBar, TabBar, type Tab } from "./Nav";
+import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
-import { ApiError, type Item, type Reply, type ReplyKind, type View } from "./types";
-
-/** What the reply strip is showing. Errors and questions are replies too, not exceptions. */
-type Shown = { kind: ReplyKind; message: string; chip?: string[] };
-
-const EXAMPLES = [
-  "write the quarterly report, 90m, important, due friday",
-  "dentist thursday 3pm",
-  "plan my day",
-];
+import { ApiError, type Item, type Reply, type View } from "./types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function id(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 function urgency(score: number): string {
   if (score >= 0.6) return "do this first";
@@ -24,7 +20,7 @@ function urgency(score: number): string {
   return "can wait";
 }
 
-/** Group booked items by local day, so Calendar reads as a schedule rather than a list. */
+/** Group booked work by local day, so Plan reads as a schedule rather than a list. */
 function byDay(items: Item[]): Array<[string, Item[]]> {
   const groups = new Map<string, Item[]>();
   for (const item of items) {
@@ -40,13 +36,15 @@ function byDay(items: Item[]): Array<[string, Item[]]> {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>("chat");
   const [view, setView] = useState<View | null>(null);
-  const [reply, setReply] = useState<Shown | null>(null);
+  const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => saveTurns(turns), [turns]);
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +63,7 @@ export default function App() {
     function shortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setTab("today");
+        setTab("chat");
         input.current?.focus();
       }
     }
@@ -73,32 +71,82 @@ export default function App() {
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
 
-  const run = useCallback(async (work: () => Promise<Reply | { view: View }>) => {
-    setBusy(true);
-    try {
-      const result = await work();
-      if ("kind" in result) setReply(result);
-      setView(result.view);
-      setFailure(null);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        // A 409 means the words matched more than one thing. That is a question, not a fault.
-        setReply({ kind: error.status === 409 ? "question" : "note", message: error.message });
-      } else {
-        setFailure(error instanceof Error ? error.message : "Something went wrong.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  function send(sentence?: string) {
-    const said = (sentence ?? text).trim();
-    if (!said || busy) return;
-    setText("");
-    setTab("today");
-    void run(() => api.say(said));
+  function reply(turn: Omit<Turn, "id" | "at" | "who">) {
+    setTurns((current) => [...current, { ...turn, id: id(), at: Date.now(), who: "otter" }]);
   }
+
+  /** Send one sentence and let the otter answer. */
+  const say = useCallback(
+    async (sentence: string) => {
+      const said = sentence.trim();
+      if (!said || busy) return;
+
+      setTab("chat");
+      setText("");
+      setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
+      setBusy(true);
+
+      try {
+        const result = await api.say(said);
+        setView(result.view);
+        setFailure(null);
+
+        if (result.kind === "shown") {
+          // "What should I do?" deserves an actual answer in the conversation, not a nudge to
+          // go and look at another tab.
+          const list = result.view.shortlist.slice(0, 4);
+          reply({
+            text: list.length
+              ? `Start with ${list[0].title}.`
+              : "Nothing waiting. Tell me what's on your plate.",
+            kind: "shown",
+            lines: list.map(
+              (row, index) =>
+                `${index + 1}. ${row.title}${row.minutes ? ` · ${row.minutes}m` : ""} · ${urgency(row.score)}`,
+            ),
+          });
+        } else {
+          reply({ text: result.message, kind: result.kind, item: result.item, lines: result.chip });
+        }
+      } catch (error) {
+        if (error instanceof ApiError) {
+          reply({
+            text: error.message,
+            kind: error.status === 409 ? "question" : "note",
+          });
+        } else {
+          setFailure(error instanceof Error ? error.message : "Something went wrong.");
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy],
+  );
+
+  /** Buttons elsewhere in the app also narrate themselves into the conversation. */
+  const act = useCallback(
+    async (work: () => Promise<Reply | { view: View }>, narrate = true) => {
+      setBusy(true);
+      try {
+        const result = await work();
+        setView(result.view);
+        setFailure(null);
+        if (narrate && "kind" in result) {
+          reply({ text: result.message, kind: result.kind, item: result.item, lines: result.chip });
+        }
+      } catch (error) {
+        if (error instanceof ApiError) {
+          reply({ text: error.message, kind: error.status === 409 ? "question" : "note" });
+        } else {
+          setFailure(error instanceof Error ? error.message : "Something went wrong.");
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
 
   const shortlist = view?.shortlist ?? [];
   const scheduled = view?.scheduled ?? [];
@@ -106,19 +154,23 @@ export default function App() {
   const hours = view?.hours;
 
   return (
-    <>
-      <NavBar
+    <div className="app">
+      <Nav
+        current={tab}
+        todo={shortlist.length}
+        booked={scheduled.length}
         canUndo={Boolean(view?.undo)}
         busy={busy}
-        onUndo={() => void run(() => api.undo())}
+        onChange={setTab}
+        onUndo={() => void act(() => api.undo())}
       />
 
-      <main className="page">
+      <main className="main">
         {failure && (
           <div className="banner" role="alert">
             <Mascot name="degraded_mode_state" size="sm" decorative />
             <div className="banner__body">
-              <span className="banner__title">Cadence is not running</span>
+              <span className="banner__title">Cadence isn&rsquo;t running</span>
               <span className="banner__text">
                 Start it with <code>uv run uvicorn cadence.app:app --host 127.0.0.1</code>.
               </span>
@@ -129,42 +181,22 @@ export default function App() {
           </div>
         )}
 
-        {reply && (
-          <div className="reply" role="status" aria-label="Cadence reply">
-            <Mascot
-              name={reply.kind === "question" ? "parse_ambiguity_state" : "activity_summary"}
-              size="sm"
-              decorative
-            />
-            <div className="reply__body">
-              <div className="reply__text">{reply.message}</div>
-              {reply.chip && <div className="reply__sub">{reply.chip.join(" · ")}</div>}
-            </div>
-            {view?.undo && reply.kind !== "question" && reply.kind !== "undone" && (
-              <button
-                type="button"
-                className="reply__undo"
-                disabled={busy}
-                onClick={() => void run(() => api.undo())}
-              >
-                Undo
-              </button>
-            )}
-          </div>
+        {tab === "chat" && (
+          <Chat turns={turns} thinking={busy} onExample={(example) => void say(example)} />
         )}
 
-        {tab === "today" && (
-          <>
+        {tab === "plan" && (
+          <div className="scroll">
             <h1 className="largetitle">
-              Today
+              Plan
               <span className="largetitle__sub">
-                {shortlist.length === 0
-                  ? "Nothing waiting"
+                {shortlist.length === 0 && scheduled.length === 0
+                  ? "Nothing yet"
                   : `${shortlist.length} to do · ${scheduled.length} booked`}
               </span>
             </h1>
 
-            {top ? (
+            {top && (
               <section className="hero">
                 <Mascot name="task_active" size="md" shape="squircle" decorative />
                 <div className="hero__body">
@@ -180,39 +212,17 @@ export default function App() {
                   type="button"
                   className="btn btn--accent"
                   disabled={busy}
-                  onClick={() => void run(() => api.act(top.id, "complete"))}
+                  onClick={() => void act(() => api.act(top.id, "complete"))}
                 >
                   Done
                 </button>
-              </section>
-            ) : (
-              <section className="empty">
-                <Mascot name="first_run_state" size="lg" shape="squircle" decorative />
-                <h2 className="empty__title">Tell me what is on your plate</h2>
-                <p className="empty__text">
-                  Write it the way you would say it. I work out the task, the time, and what
-                  deserves doing first.
-                </p>
-                <div className="examples">
-                  {EXAMPLES.map((example) => (
-                    <button
-                      key={example}
-                      type="button"
-                      className="example"
-                      onClick={() => send(example)}
-                    >
-                      “{example}”
-                    </button>
-                  ))}
-                </div>
               </section>
             )}
 
             {shortlist.length > 0 && (
               <section className="group">
                 <div className="group__label">
-                  To do
-                  <span className="group__note">ranked</span>
+                  To do<span className="group__note">ranked</span>
                 </div>
                 <div className="inset">
                   {shortlist.map((item) => (
@@ -221,9 +231,9 @@ export default function App() {
                       item={item}
                       today={view?.today ?? ""}
                       busy={busy}
-                      onComplete={() => void run(() => api.act(item.id, "complete"))}
-                      onPin={() => void run(() => api.act(item.id, "pin"))}
-                      onDrop={() => void run(() => api.act(item.id, "drop"))}
+                      onComplete={() => void act(() => api.act(item.id, "complete"))}
+                      onPin={() => void act(() => api.act(item.id, "pin"))}
+                      onDrop={() => void act(() => api.act(item.id, "drop"))}
                     />
                   ))}
                 </div>
@@ -231,37 +241,22 @@ export default function App() {
                   type="button"
                   className="btn btn--accent btn--full"
                   disabled={busy}
-                  onClick={() => void run(() => api.schedule())}
+                  onClick={() => void act(() => api.schedule())}
                 >
                   Put these in my calendar
                 </button>
               </section>
             )}
-          </>
-        )}
 
-        {tab === "calendar" && (
-          <>
-            <h1 className="largetitle">
-              Calendar
-              <span className="largetitle__sub">
-                {view?.calendar.connected ? "Synced with Google" : "On this device"}
-              </span>
-            </h1>
-
-            {scheduled.length === 0 ? (
-              <section className="empty">
-                <Mascot name="empty_state_windows" size="lg" shape="squircle" decorative />
-                <h2 className="empty__title">Nothing booked yet</h2>
-                <p className="empty__text">
-                  Add a few tasks with a time estimate, then say “plan my day” and I will fit them
-                  into your hours.
-                </p>
-              </section>
-            ) : (
+            {scheduled.length > 0 &&
               byDay(scheduled).map(([label, items]) => (
                 <section className="group" key={label}>
-                  <div className="daygroup">{label}</div>
+                  <div className="daygroup">
+                    {label}
+                    <span className="group__note">
+                      {view?.calendar.connected ? "in Google" : "on this device"}
+                    </span>
+                  </div>
                   <div className="inset">
                     {items.map((item) => (
                       <Row
@@ -269,22 +264,31 @@ export default function App() {
                         item={item}
                         today={view?.today ?? ""}
                         busy={busy}
-                        onComplete={() => void run(() => api.act(item.id, "complete"))}
-                        onDrop={() => void run(() => api.act(item.id, "drop"))}
+                        onComplete={() => void act(() => api.act(item.id, "complete"))}
+                        onDrop={() => void act(() => api.act(item.id, "drop"))}
                       />
                     ))}
                   </div>
                 </section>
-              ))
+              ))}
+
+            {shortlist.length === 0 && scheduled.length === 0 && (
+              <section className="empty">
+                <Mascot name="empty_state_windows" size="lg" shape="squircle" decorative />
+                <h2 className="empty__title">Nothing here yet</h2>
+                <p className="empty__text">
+                  Say something in Chat and it will show up here, ranked and ready to book.
+                </p>
+              </section>
             )}
-          </>
+          </div>
         )}
 
-        {tab === "setup" && hours && (
-          <>
+        {tab === "setup" && hours && view && (
+          <div className="scroll">
             <h1 className="largetitle">
               Setup
-              <span className="largetitle__sub">{view?.timezone}</span>
+              <span className="largetitle__sub">{view.timezone}</span>
             </h1>
 
             <section className="group">
@@ -296,8 +300,9 @@ export default function App() {
                     aria-label="Day starts at"
                     value={hours.start_hour}
                     onChange={(event) =>
-                      void run(() =>
-                        api.setHours({ ...hours, start_hour: Number(event.target.value) }),
+                      void act(
+                        () => api.setHours({ ...hours, start_hour: Number(event.target.value) }),
+                        false,
                       )
                     }
                   >
@@ -314,8 +319,9 @@ export default function App() {
                     aria-label="Day ends at"
                     value={hours.end_hour}
                     onChange={(event) =>
-                      void run(() =>
-                        api.setHours({ ...hours, end_hour: Number(event.target.value) }),
+                      void act(
+                        () => api.setHours({ ...hours, end_hour: Number(event.target.value) }),
+                        false,
                       )
                     }
                   >
@@ -334,13 +340,15 @@ export default function App() {
                       className="day"
                       aria-pressed={hours.weekdays.includes(index)}
                       onClick={() =>
-                        void run(() =>
-                          api.setHours({
-                            ...hours,
-                            weekdays: hours.weekdays.includes(index)
-                              ? hours.weekdays.filter((day) => day !== index)
-                              : [...hours.weekdays, index].sort((a, b) => a - b),
-                          }),
+                        void act(
+                          () =>
+                            api.setHours({
+                              ...hours,
+                              weekdays: hours.weekdays.includes(index)
+                                ? hours.weekdays.filter((day) => day !== index)
+                                : [...hours.weekdays, index].sort((a, b) => a - b),
+                            }),
+                          false,
                         )
                       }
                     >
@@ -357,8 +365,9 @@ export default function App() {
                     max={10}
                     value={hours.max_per_day}
                     onChange={(event) =>
-                      void run(() =>
-                        api.setHours({ ...hours, max_per_day: Number(event.target.value) }),
+                      void act(
+                        () => api.setHours({ ...hours, max_per_day: Number(event.target.value) }),
+                        false,
                       )
                     }
                   />
@@ -382,7 +391,7 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn--quiet"
-                      onClick={() => void run(() => api.disconnect())}
+                      onClick={() => void act(() => api.disconnect(), false)}
                     >
                       Disconnect
                     </button>
@@ -423,7 +432,17 @@ export default function App() {
                 </p>
               )}
             </section>
-          </>
+
+            {turns.length > 0 && (
+              <button
+                type="button"
+                className="btn btn--full"
+                onClick={() => setTurns([])}
+              >
+                Clear conversation
+              </button>
+            )}
+          </div>
         )}
       </main>
 
@@ -437,11 +456,12 @@ export default function App() {
               id="say"
               ref={input}
               className="composer__input"
-              placeholder="Add a task, or ask what is next…"
+              placeholder="Tell me what's on your plate…"
               value={text}
               autoComplete="off"
+              enterKeyHint="send"
               onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && send()}
+              onKeyDown={(event) => event.key === "Enter" && void say(text)}
             />
           </div>
           <button
@@ -449,14 +469,12 @@ export default function App() {
             className="composer__send"
             aria-label="Send"
             disabled={busy || !text.trim()}
-            onClick={() => send()}
+            onClick={() => void say(text)}
           >
             ↑
           </button>
         </div>
       </div>
-
-      <TabBar current={tab} booked={scheduled.length} onChange={setTab} />
-    </>
+    </div>
   );
 }

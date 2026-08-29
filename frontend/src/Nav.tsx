@@ -1,69 +1,104 @@
 import { Brand } from "./Brand";
 import { Mascot } from "./Mascot";
 
-export type Tab = "today" | "calendar" | "setup";
+export type Tab = "chat" | "plan" | "setup";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
-  { id: "today", label: "Today", glyph: "◎" },
-  { id: "calendar", label: "Calendar", glyph: "▦" },
+  { id: "chat", label: "Chat", glyph: "◍" },
+  { id: "plan", label: "Plan", glyph: "◎" },
   { id: "setup", label: "Setup", glyph: "⚙" },
 ];
 
-/** Frosted top bar. Brand on the left, one contextual action on the right. */
-export function NavBar({
+/**
+ * Navigation, in two shapes from one component.
+ *
+ * Narrow: a frosted top bar plus a frosted bottom tab bar, the way a phone app works.
+ * Wide: the same tabs become a side rail, so a desktop window is not a stretched phone.
+ *
+ * CSS decides which is visible, so there is no width listener and nothing to keep in sync.
+ */
+export function Nav({
+  current,
+  todo,
+  booked,
   canUndo,
   busy,
+  onChange,
   onUndo,
 }: {
+  current: Tab;
+  todo: number;
+  booked: number;
   canUndo: boolean;
   busy: boolean;
+  onChange: (tab: Tab) => void;
   onUndo: () => void;
 }) {
-  return (
-    <div className="navbar">
-      <Brand />
-      <div className="navbar__spacer" />
-      {canUndo && (
-        <button type="button" className="navbar__action" disabled={busy} onClick={onUndo}>
-          Undo
-        </button>
-      )}
-      <Mascot name="profile_icon" size="xs" decorative />
-    </div>
-  );
-}
+  function count(tab: Tab): number {
+    return tab === "plan" ? todo + booked : 0;
+  }
 
-/** Frosted bottom tab bar. */
-export function TabBar({
-  current,
-  booked,
-  onChange,
-}: {
-  current: Tab;
-  booked: number;
-  onChange: (tab: Tab) => void;
-}) {
   return (
-    <nav className="tabbar" aria-label="Sections">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          className="tab"
-          aria-current={current === tab.id ? "page" : undefined}
-          onClick={() => onChange(tab.id)}
-        >
-          <span className="tab__glyph" aria-hidden="true">
-            {tab.glyph}
-          </span>
-          {tab.id === "calendar" && booked > 0 && (
-            <span className="tab__badge" aria-hidden="true">
-              {booked}
+    <>
+      <header className="topbar">
+        <Brand />
+        <div className="topbar__spacer" />
+        {canUndo && (
+          <button type="button" className="topbar__action" disabled={busy} onClick={onUndo}>
+            Undo
+          </button>
+        )}
+        <Mascot name="profile_icon" size="xs" decorative />
+      </header>
+
+      <nav className="rail" aria-label="Sections">
+        <div className="rail__brand">
+          <Brand />
+        </div>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className="rail__item"
+            aria-current={current === tab.id ? "page" : undefined}
+            onClick={() => onChange(tab.id)}
+          >
+            <span className="rail__glyph" aria-hidden="true">
+              {tab.glyph}
             </span>
-          )}
-          <span className="tab__label">{tab.label}</span>
-        </button>
-      ))}
-    </nav>
+            <span className="rail__label">{tab.label}</span>
+            {count(tab.id) > 0 && <span className="rail__count">{count(tab.id)}</span>}
+          </button>
+        ))}
+        <div className="rail__spacer" />
+        {canUndo && (
+          <button type="button" className="rail__undo" disabled={busy} onClick={onUndo}>
+            Undo
+          </button>
+        )}
+      </nav>
+
+      <nav className="tabbar" aria-label="Sections">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className="tab"
+            aria-current={current === tab.id ? "page" : undefined}
+            onClick={() => onChange(tab.id)}
+          >
+            <span className="tab__glyph" aria-hidden="true">
+              {tab.glyph}
+            </span>
+            {count(tab.id) > 0 && (
+              <span className="tab__badge" aria-hidden="true">
+                {count(tab.id)}
+              </span>
+            )}
+            <span className="tab__label">{tab.label}</span>
+          </button>
+        ))}
+      </nav>
+    </>
   );
 }

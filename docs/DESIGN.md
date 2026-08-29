@@ -27,21 +27,43 @@ The accent is one line. Swapping to green `#30B15C` or indigo `#5E5CE6` is a sin
 
 ## Structure
 
-Two frosted bars with content between them, which is the Apple shape:
+Three sections — **Chat**, **Plan**, **Setup** — inside a shell that reshapes itself by CSS
+alone, with no width listener and nothing to keep in sync:
 
-- **Top bar** — sticky, `backdrop-filter: blur(24px)` over a translucent background. Brand on the
-  left, one contextual action on the right, the otter as an avatar.
-- **Bottom tab bar** — fixed, same material. Today, Calendar, Setup. The Calendar tab carries a
-  badge when work is booked.
-- **Composer** — fixed above the tab bar, same material again, `⌘K` to focus.
+- **Narrow** — frosted top bar, scrolling content, frosted composer, frosted bottom tab bar.
+- **Wide (900px and up)** — the same tabs become a left rail and the top bar disappears.
+
+Both navigations are always in the markup; the breakpoint decides which is visible. Those rules
+live at the *end* of the stylesheet on purpose: they override component defaults, and with equal
+specificity source order is what decides. Putting the breakpoint earlier meant a later
+`.tabbar { display: flex }` quietly won and the tab bar stayed on desktop.
 
 Content uses inset grouped lists: a rounded card with hairline dividers between rows, the way iOS
-settings look. Large title at the top of each tab.
+settings look.
 
-## Rules
+## It is a conversation
 
-**The composer is not a chat log.** You type, something changes, the screen reflects it. A
-scrolling transcript would mean re-reading your own messages to find your own tasks.
+Chat is the home, because talking to it *is* the idea. Your words on the right in accent blue,
+the otter's on the left with its face, and a typing indicator while it thinks.
+
+When the otter changes something the reply carries an **understood card** — title plus the fields
+it extracted. That card is how a wrong parse becomes obvious at a glance, which is what earns the
+right to have no confirmation step. Asking "what should I do first" is answered *in the
+conversation* rather than pointing at another tab.
+
+History lives in `localStorage`, capped at sixty turns. No table, no endpoint.
+
+## PWA
+
+Installable and it opens offline. `manifest.webmanifest` with maskable icons, and a hand-written
+service worker in `public/sw.js` — two rules and about forty lines, which is less machinery than a
+plugin.
+
+The shell is precached. **API responses never are:** a stale task list is worse than an honest
+error, and the app already says plainly when it cannot reach the backend.
+
+`viewport-fit=cover` plus `env(safe-area-inset-*)` so the frosted bars sit correctly under a notch
+and a home indicator. The composer input is 16px, which is what stops iOS zooming on focus.
 
 **The mascot is the character, not the wallpaper.** It appears where it means something — working
 at a laptop beside the current task, waving in the empty state, puzzled when a reference is
