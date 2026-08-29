@@ -58,8 +58,10 @@ def next_quota_reset(now: dt.datetime) -> dt.datetime:
 
 def backoff_seconds(attempt: int, *, jitter: Callable[[], float] = random.random) -> float:
     """Exponential backoff with jitter, so retries do not synchronise into a burst."""
-    raw = BASE_BACKOFF_SECONDS * (2 ** max(0, attempt - 1))
-    return min(MAX_BACKOFF_SECONDS, raw) * (0.5 + jitter() / 2)
+    raw = BASE_BACKOFF_SECONDS * float(2 ** max(0, attempt - 1))
+    capped = min(MAX_BACKOFF_SECONDS, raw)
+    # Half the delay is fixed and half is jittered, so retries never synchronise.
+    return float(capped * (0.5 + float(jitter()) / 2))
 
 
 class QuotaGovernor:
