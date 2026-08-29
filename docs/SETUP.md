@@ -2,8 +2,12 @@
 
 First-run instructions. Written for the author, six months from now, having forgotten all of it.
 
-Nothing here works until Phase 0 of `PRD.md` is complete. Until then this is the target contract
-that Phase 0 must satisfy.
+Sections 1, 3, 4, and 5 work today. Section 2 (Google OAuth) describes setup for Phase 3 and is
+not yet exercised by any code path: calendar reading and writing are not implemented. Section 6
+(focus windows) is also Phase 3.
+
+Cadence runs with no Gemini key and no Google account at all. In that configuration capture uses
+the rule-based parser and everything except calendar integration works.
 
 ## Prerequisites
 
@@ -88,8 +92,15 @@ uv run uvicorn cadence.main:app --reload --host 127.0.0.1 --port 8000
 cd frontend && npm install && npm run dev
 ```
 
-Open the frontend URL and complete the Google authorization once. Confirm your existing calendar
-events appear.
+The frontend needs the same shared secret as the backend:
+
+```bash
+echo "VITE_CADENCE_SHARED_SECRET=<same value as .env>" > frontend/.env.local
+```
+
+Open the frontend URL and type a sentence into the capture bar, for example
+`write the quarterly report, 3h, important, due friday`. It should appear on Today with a score
+you can expand. If every request returns 403, the two secrets do not match.
 
 Do not change `--host`. See `docs/SECURITY.md`.
 
@@ -107,6 +118,7 @@ whether the placed blocks get worked.
 
 | Symptom | Cause |
 | --- | --- |
+| Backend refuses to start, secret validation error | `CADENCE_SHARED_SECRET` is shorter than 32 characters. |
 | Sync stops after about a week | Refresh token expired. Consent screen is in Testing mode. See above. |
 | `redirect_uri_mismatch` | Redirect URI uses `localhost` instead of `127.0.0.1`, or the port differs. |
 | Every request rejected as 403 | Shared secret in the frontend build does not match `.env`. Rebuild the frontend. |

@@ -22,10 +22,15 @@ user-declared focus windows. Python FastAPI backend, React frontend, SQLite, Gem
 
 ## Current state
 
-The repository contains documentation only. No code exists yet. Phase 0 of
-`PRD.md` establishes the toolchain, so the commands below are the target contract that Phase 0
-must satisfy, not commands that work today. Do not report them as working until you have run
-them and seen output.
+**Phases 0 through 2 are built.** Capture, deterministic prioritisation, task CRUD, and the
+Today and Backlog views all work. The commands below run today.
+
+Not built: Google OAuth and calendar reading, focus windows, placement, calendar writes, the
+reranker, scheduled jobs, and the activity history view. The Windows and Activity screens are
+labelled previews with disabled controls. Do not treat them as working features.
+
+Phase 3 is gated behind the two-week trial in `PRD.md`. Do not start it without that gate
+being addressed.
 
 ## Commands
 
