@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cadence.adapters.database import Base, build_engine, build_session_factory
 from cadence.api.errors import register_error_handlers
 from cadence.api.routes_health import router as health_router
+from cadence.api.routes_plan import router as plan_router
 from cadence.api.routes_tasks import router as tasks_router
 from cadence.api.security import SHARED_SECRET_HEADER, LocalSecurityMiddleware
 from cadence.config import Settings
@@ -25,10 +26,12 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
     app.state.settings = runtime_settings
+    app.state.score_weights = runtime_settings.score_weights()
 
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(tasks_router)
+    app.include_router(plan_router)
 
     app.add_middleware(
         CORSMiddleware,

@@ -43,6 +43,10 @@ class TaskRepository(Protocol):
         """IDs of tasks with at least one incomplete blocker."""
         ...
 
+    def dependency_edges(self) -> tuple[tuple[str, str], ...]:
+        """All (blocker_id, blocked_id) pairs whose blocker is still incomplete."""
+        ...
+
     def add_dependency(self, *, blocker_id: str, blocked_id: str) -> None: ...
 
 

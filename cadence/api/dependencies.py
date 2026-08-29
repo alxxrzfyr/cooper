@@ -15,6 +15,8 @@ from fastapi import Depends, Request
 from sqlalchemy.orm import Session, sessionmaker
 
 from cadence.adapters.task_repository import SqlAlchemyTaskRepository
+from cadence.core.scoring import ScoreWeights
+from cadence.services.plan_service import PlanService
 from cadence.services.task_service import TaskService
 
 
@@ -53,3 +55,15 @@ def get_task_service(session: SessionDep) -> TaskService:
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
+
+
+def get_plan_service(session: SessionDep, request: Request) -> PlanService:
+    weights: ScoreWeights = request.app.state.score_weights
+    return PlanService(
+        repository=SqlAlchemyTaskRepository(session),
+        clock=SystemClock(),
+        weights=weights,
+    )
+
+
+PlanServiceDep = Annotated[PlanService, Depends(get_plan_service)]

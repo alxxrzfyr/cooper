@@ -62,6 +62,13 @@ class InMemoryTaskRepository:
                 blocked.add(blocked_id)
         return frozenset(blocked)
 
+    def dependency_edges(self) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (blocker_id, blocked_id)
+            for blocker_id, blocked_id in self._dependencies
+            if (blocker := self._tasks.get(blocker_id)) is not None and blocker.status != "done"
+        )
+
     def add_dependency(self, *, blocker_id: str, blocked_id: str) -> None:
         self._dependencies.append((blocker_id, blocked_id))
 

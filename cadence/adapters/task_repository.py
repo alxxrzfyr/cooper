@@ -106,6 +106,15 @@ class SqlAlchemyTaskRepository:
         )
         return frozenset(self._session.scalars(statement))
 
+    def dependency_edges(self) -> tuple[tuple[str, str], ...]:
+        statement = (
+            select(TaskDependencyModel.blocker_id, TaskDependencyModel.blocked_id)
+            .join(TaskModel, TaskModel.id == TaskDependencyModel.blocker_id)
+            .where(TaskModel.status != "done")
+            .order_by(TaskDependencyModel.blocker_id, TaskDependencyModel.blocked_id)
+        )
+        return tuple((row[0], row[1]) for row in self._session.execute(statement))
+
     def add_dependency(self, *, blocker_id: str, blocked_id: str) -> None:
         self._session.add(TaskDependencyModel(blocker_id=blocker_id, blocked_id=blocked_id))
         self._session.flush()
