@@ -66,6 +66,16 @@ class TaskService:
         self._repository.update(pinned)
         return pinned
 
+    def replace(self, task: Task) -> Task:
+        """Overwrite a task with a known-good state.
+
+        Used by undo to restore a snapshot wholesale. Deliberately not exposed over HTTP:
+        callers there go through the validated field-level paths.
+        """
+        self.get_or_raise(task.id)
+        self._repository.update(task)
+        return task
+
     def list(self, *, statuses: tuple[TaskStatus, ...] | None = None) -> tuple[Task, ...]:
         return self._repository.list(statuses=statuses)
 

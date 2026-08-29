@@ -23,3 +23,15 @@ class AmbiguousReferenceError(CadenceError):
     def __init__(self, message: str, candidates: tuple[str, ...]) -> None:
         super().__init__(message)
         self.candidates = candidates
+
+
+class ProviderError(CadenceError):
+    """A provider could not produce a usable intent.
+
+    Raised for transport failures, malformed output, and schema violations alike: the
+    caller's response is the same in every case, so the distinction buys nothing.
+    """
+
+
+class QuotaExhaustedError(ProviderError):
+    """The provider refused the request because a quota ran out."""

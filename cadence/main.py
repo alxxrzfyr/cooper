@@ -3,12 +3,30 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from cadence.adapters.database import Base, build_engine, build_session_factory
+from cadence.adapters.gemini_provider import GeminiProvider
+from cadence.adapters.gemini_transport import build_gemini_transport
 from cadence.api.errors import register_error_handlers
+from cadence.api.routes_capture import router as capture_router
 from cadence.api.routes_health import router as health_router
 from cadence.api.routes_plan import router as plan_router
 from cadence.api.routes_tasks import router as tasks_router
 from cadence.api.security import SHARED_SECRET_HEADER, LocalSecurityMiddleware
 from cadence.config import Settings
+from cadence.core.protocols import LLMProvider
+
+
+def build_llm_provider(settings: Settings) -> LLMProvider | None:
+    """Return the configured model provider, or None to run offline.
+
+    None is a supported production state, not an error: with no key the app still
+    captures, ranks, and (later) schedules using the rule-based parser.
+    """
+    if settings.llm_provider != "gemini" or settings.gemini_api_key is None:
+        return None
+    return GeminiProvider(
+        model_id=settings.model_compile,
+        transport=build_gemini_transport(settings.gemini_api_key.get_secret_value()),
+    )
 
 
 def create_app(settings: Settings | None = None, *, create_schema: bool = False) -> FastAPI:
@@ -27,11 +45,13 @@ def create_app(settings: Settings | None = None, *, create_schema: bool = False)
     app.state.session_factory = build_session_factory(engine)
     app.state.settings = runtime_settings
     app.state.score_weights = runtime_settings.score_weights()
+    app.state.llm_provider = build_llm_provider(runtime_settings)
 
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(tasks_router)
     app.include_router(plan_router)
+    app.include_router(capture_router)
 
     app.add_middleware(
         CORSMiddleware,

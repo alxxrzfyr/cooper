@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     weight_age: float = 0.10
     horizon_days: int = 14
 
+    # Provider selection. 'rule_based' runs with no network at all.
+    llm_provider: Literal["gemini", "rule_based"] = "rule_based"
+    gemini_api_key: SecretStr | None = None
+    # Model IDs live here because the Gemini lineup changes often. Never inline them.
+    model_compile: str = "gemini-flash-lite-latest"
+    timezone: str = "Asia/Singapore"
+
     def score_weights(self) -> ScoreWeights:
         return ScoreWeights(
             deadline=self.weight_deadline,
