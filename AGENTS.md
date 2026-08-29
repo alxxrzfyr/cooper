@@ -22,8 +22,14 @@ user-declared focus windows. Python FastAPI backend, React frontend, SQLite, Gem
 
 ## Current state
 
-**Phases 0 through 2 are built.** Capture, deterministic prioritisation, task CRUD, and the
-Today and Backlog views all work. The commands below run today.
+**Capture and prioritisation work. Calendar integration does not exist.** Task CRUD, the
+intent pipeline, deterministic ranking, and the Today and Backlog views all run today. The
+commands below run today.
+
+Phase 0 is partial by deliberate choice: acceptance criteria 1, 4, and 5 are met, but 2
+(OAuth with an encrypted refresh token) and 3 (cached calendar events) are deferred to
+Phase 3, where their first caller lives. Do not describe Phase 0 as done. See the table in
+`README.md`.
 
 Not built: Google OAuth and calendar reading, focus windows, placement, calendar writes, the
 reranker, scheduled jobs, and the activity history view. The Windows and Activity screens are

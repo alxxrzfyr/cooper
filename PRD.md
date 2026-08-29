@@ -41,6 +41,11 @@ Each phase is independently useful. Acceptance criteria are the definition of ph
 
 ### Phase 0: Foundation
 
+**Delivered state:** criteria 1, 4, and 5 are met. Criteria 2 and 3 are deferred to Phase 3.
+Nothing in Phases 1 or 2 reads or writes a calendar, so building the OAuth flow earlier would
+ship an untestable credential path long before its first caller. The deferral is recorded here
+rather than hidden: Phase 0 is partial, not complete.
+
 Stories:
 
 - As the user, I can start the backend and frontend with one documented command each.

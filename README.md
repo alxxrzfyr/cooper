@@ -8,18 +8,35 @@ Python FastAPI, React, SQLite, Google Gemini. Runs on localhost. Built for one p
 
 ## Status
 
-**Phases 0 through 2 are built and verified.** Capture, prioritisation, and the interface
-work today. Scheduling does not exist yet, and that is deliberate: `PRD.md` puts a binding
-two-week trial between Phase 2 and Phase 3.
+**Capture and prioritisation work end to end. Calendar integration does not exist yet.**
+
+Being precise, because the phase numbers alone would overstate this. `PRD.md` gives Phase 0
+five acceptance criteria:
+
+| Phase 0 criterion | State |
+| --- | --- |
+| 1 Full section 6 schema via `alembic upgrade head` | Done |
+| 2 OAuth flow storing an encrypted refresh token | **Not built** |
+| 3 Existing calendar events cached with sensitive fields absent | **Not built** |
+| 4 API refuses missing secret, unknown origin, unexpected host; binds `127.0.0.1` | Done |
+| 5 `import-linter` contract enforced in CI | Done |
+
+So the honest summary is:
 
 | Phase | State |
 | --- | --- |
-| 0 Foundation | Done. Schema, localhost hardening, manual task CRUD. |
+| 0 Foundation | Partial. Schema, localhost hardening, manual task CRUD. OAuth and calendar reading deferred to Phase 3, where the first code that needs them lives. |
 | 1 Capture | Done. Sentence to validated intent, parsed chip, undo. |
 | 2 Prioritise | Done. Deterministic scoring, Today and Backlog. |
-| 3 Schedule | Not started. Focus windows, placement, calendar writes. |
+| 3 Schedule | Not started. OAuth, calendar reading, focus windows, placement, calendar writes. |
 | 4 Intelligence | Not started. Reranker, nightly plan, digest. |
 | 5 Hardening | Not started. Quota governor, sync reconciliation. |
+
+Deferring OAuth is a deliberate call, not an oversight: nothing in Phases 1 or 2 reads or
+writes a calendar, so building the token flow now would ship an untestable credential path
+months before its first caller. The `calendar_event_cache` table exists with no column for
+descriptions, locations, meeting links, or attendee addresses, so the scrubbing guarantee is
+already structural.
 
 What works right now:
 
