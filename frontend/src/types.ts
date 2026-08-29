@@ -1,6 +1,7 @@
-/** Shapes the backend returns. Mirrors cadence/app.py. */
+/** Shapes the backend returns. Mirrors cooper/app.py. */
 
 export type Kind = "task" | "event";
+export type Category = "academics" | "work" | "organizations" | "personal";
 export type Status = "open" | "done" | "dropped";
 
 export interface Item {
@@ -10,6 +11,7 @@ export interface Item {
   notes: string | null;
   minutes: number | null;
   importance: number;
+  category: Category;
   due: string | null;
   start_at: string | null;
   end_at: string | null;
@@ -32,11 +34,12 @@ export interface Hours {
   timezone?: string;
 }
 
-/** An event read back from Google. `mine` marks ones Cadence created. */
+/** An event read back from Google. `mine` marks ones Cooper created. */
 export interface CalendarEvent {
   title: string;
   start_at: string;
   end_at: string;
+  category: Category;
   mine: boolean;
 }
 

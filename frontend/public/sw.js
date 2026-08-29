@@ -9,7 +9,7 @@
  * backend.
  */
 
-const CACHE = "cadence-shell-v1";
+const CACHE = "cooper-shell-v1";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {

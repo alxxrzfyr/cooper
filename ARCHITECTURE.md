@@ -6,8 +6,8 @@ about twenty minutes.
 ## Backend
 
 ```
-cadence/
-  config.py    ~50 lines   settings from .env; only CADENCE_SHARED_KEY is required
+cooper/
+  config.py    ~50 lines   settings from .env; only COOPER_SHARED_KEY is required
   db.py       ~250 lines   three tables, a session helper, the UTC column type
   brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
   planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
@@ -118,7 +118,7 @@ than guessed at.
 One user on one machine, so no login. That is only safe on localhost, so:
 
 - bind `127.0.0.1`
-- every route except `/health` and the OAuth callback needs `X-Cadence-Key`
+- every route except `/health` and the OAuth callback needs `X-Cooper-Key`
 - CORS pinned to one origin
 - the Google refresh token is encrypted with Fernet before it touches the database
 - the refusal is *returned* from middleware, not raised — exception handlers do not run for

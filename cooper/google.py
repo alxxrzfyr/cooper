@@ -23,7 +23,7 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/calendar/v3"
 SCOPE = "https://www.googleapis.com/auth/calendar.events"
-TAG = "cadence"
+TAG = "cooper"
 TIMEOUT = 20
 
 
@@ -87,8 +87,8 @@ class Calendar:
     def consent_url(self, state: str) -> str:
         if not self.configured:
             raise CalendarError(
-                "Google is not set up. Add CADENCE_GOOGLE_CLIENT_ID, "
-                "CADENCE_GOOGLE_CLIENT_SECRET and CADENCE_ENCRYPTION_KEY to .env."
+                "Google is not set up. Add COOPER_GOOGLE_CLIENT_ID, "
+                "COOPER_GOOGLE_CLIENT_SECRET and COOPER_ENCRYPTION_KEY to .env."
             )
         query = urllib.parse.urlencode(
             {
@@ -180,7 +180,7 @@ class Calendar:
         return out
 
     def add_block(self, *, item_id: str, title: str, start: dt.datetime, end: dt.datetime) -> str:
-        """Create an event Cadence owns. The id is derived so a retry updates, not duplicates."""
+        """Create an event Cooper owns. The id is derived so a retry updates, not duplicates."""
         event_id = f"{TAG}{item_id}"
         body = {
             "id": event_id,

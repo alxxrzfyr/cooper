@@ -37,7 +37,7 @@ export default function App() {
       setView(await api.today());
       setFailure(null);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Cannot reach Cadence.");
+      setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     }
   }, []);
 
@@ -156,9 +156,9 @@ export default function App() {
           <div className="banner" role="alert">
             <Mascot name="degraded_mode_state" size="sm" decorative />
             <div className="banner__body">
-              <span className="banner__title">Cadence isn&rsquo;t running</span>
+              <span className="banner__title">Cooper isn&rsquo;t running</span>
               <span className="banner__text">
-                Start it with <code>uv run uvicorn cadence.app:app --host 127.0.0.1</code>.
+                Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
               </span>
             </div>
             <button type="button" className="btn btn--quiet" onClick={() => void load()}>
@@ -184,7 +184,7 @@ export default function App() {
 
             {top && (
               <section className="hero">
-                <Mascot name="task_active" size="md" shape="squircle" decorative />
+                <Mascot name="task_active" size="md" decorative />
                 <div className="hero__body">
                   <span className="hero__eyebrow">Up next</span>
                   <h2 className="hero__title">{top.title}</h2>
@@ -236,7 +236,7 @@ export default function App() {
 
             {shortlist.length === 0 && (
               <section className="empty">
-                <Mascot name="empty_state_windows" size="lg" shape="squircle" decorative />
+                <Mascot name="empty_state_windows" size="lg" decorative />
                 <h2 className="empty__title">Nothing to do</h2>
                 <p className="empty__text">
                   {scheduled.length > 0
@@ -385,8 +385,8 @@ export default function App() {
                 {view.calendar.connected
                   ? "Booked work is written to Google. Your own events block scheduling."
                   : view.calendar.configured
-                    ? "Not connected. Cadence is using its own calendar, which works on its own."
-                    : "Cadence has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
+                    ? "Not connected. Cooper is using its own calendar, which works on its own."
+                    : "Cooper has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
               </p>
             </section>
 
@@ -425,7 +425,7 @@ export default function App() {
         <div className="composer__inner">
           <div className="composer__field">
             <label className="visually-hidden" htmlFor="say">
-              Say something to Cadence
+              Say something to Cooper
             </label>
             <input
               id="say"

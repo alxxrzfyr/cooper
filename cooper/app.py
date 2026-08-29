@@ -1,4 +1,4 @@
-"""Cadence: the whole web app.
+"""Cooper: the whole web app.
 
 One file for every route, because there are only a dozen and spreading them across a layered
 architecture is what made the previous attempt hard to follow.
@@ -21,13 +21,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from cadence.brain import Action, Brain
-from cadence.config import Settings
-from cadence.db import Change, Item, Store, aware, new_id, now
-from cadence.google import Calendar, CalendarError
-from cadence.planner import Hours, Slot, place, rank
+from cooper.brain import Action, Brain, guess_category
+from cooper.config import Settings
+from cooper.db import Change, Item, Store, aware, new_id, now
+from cooper.google import Calendar, CalendarError
+from cooper.planner import Hours, Slot, place, rank
 
-SECRET_HEADER = "X-Cadence-Key"
+SECRET_HEADER = "X-Cooper-Key"
 HOURS_SETTING = "hours"
 GOOGLE_SETTING = "google"
 
@@ -47,7 +47,7 @@ calendar = Calendar(
 )
 calendar.load_token((store.get_setting(GOOGLE_SETTING) or {}).get("token"))
 
-app = FastAPI(title="Cadence", docs_url=None, redoc_url=None)
+app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.origin],
@@ -153,7 +153,9 @@ def google_events(*, days: int = 14) -> list[dict[str, Any]]:
             "title": entry.title,
             "start_at": entry.start.isoformat(),
             "end_at": entry.end.isoformat(),
-            # `mine` marks events Cadence created, so the agenda does not show them twice.
+            # Google has no idea about our categories, so the title is all there is to go on.
+            "category": guess_category(entry.title),
+            # `mine` marks events Cooper created, so the agenda does not show them twice.
             "mine": entry.mine,
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
@@ -277,6 +279,7 @@ def add(action: Action) -> dict[str, Any]:
             title=action.title or "Untitled",
             minutes=action.minutes,
             importance=action.importance or 3,
+            category=action.category or "personal",
             due=_as_due(action.due),
             start_at=action.start,
             end_at=action.end,
@@ -569,7 +572,7 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
         return _page("Nothing to do", "Google sent no authorization code.")
     if not expected or state != expected:
         # Without this any page could finish an authorization on your behalf.
-        return _page("Wrong origin", "That callback did not come from Cadence.")
+        return _page("Wrong origin", "That callback did not come from Cooper.")
 
     app.state.oauth_state = None
     try:
@@ -578,7 +581,7 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
         calendar.load_token(calendar.seal_token(token))
     except CalendarError as failure:
         return _page("Could not connect", str(failure))
-    return _page("Calendar connected", f"Cadence can now use {email or 'your calendar'}.")
+    return _page("Calendar connected", f"Cooper can now use {email or 'your calendar'}.")
 
 
 @app.post("/api/google/disconnect")
@@ -591,7 +594,7 @@ def disconnect() -> dict[str, Any]:
 def _page(title: str, message: str) -> HTMLResponse:
     return HTMLResponse(
         f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Cadence</title><style>
+<title>Cooper</title><style>
 body{{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Rounded',system-ui,sans-serif;
 background:#F5F5F7;color:#1D1D1F;display:grid;place-items:center;height:100vh;margin:0}}
 main{{max-width:30rem;background:#fff;padding:2rem;border-radius:20px;

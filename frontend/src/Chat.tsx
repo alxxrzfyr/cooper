@@ -14,7 +14,7 @@ export interface Turn {
   at: number;
 }
 
-const STORE_KEY = "cadence.chat.v1";
+const STORE_KEY = "cooper.chat.v1";
 const KEEP = 60;
 
 /** Quiet longer than this earns a timestamp above the next group. */
@@ -256,7 +256,7 @@ const EXAMPLES = [
 function Opening({ onExample }: { onExample: (text: string) => void }) {
   return (
     <div className="opening">
-      <Mascot name="first_run_state" size="lg" shape="squircle" decorative />
+      <Mascot name="first_run_state" size="lg" decorative />
       <h2 className="opening__title">Just tell me what&rsquo;s on your plate</h2>
       <p className="opening__text">
         Write it the way you&rsquo;d say it out loud. I&rsquo;ll work out the task, the time, and

@@ -34,7 +34,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cadence"
+name = "cooper"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [

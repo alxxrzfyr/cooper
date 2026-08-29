@@ -1,18 +1,28 @@
 /*
- * Cadence theme.
+ * Cooper theme.
  *
  * Apple structure and materials, Google colour and shape. Two frosted bars, cards between them,
  * light and dark both first class.
  *
  * One thing worth knowing about the mascot art: it has an opaque warm ground shadow baked under
- * the feet. On a neutral surface that beige ellipse floats. So mascots are always placed inside
- * a shaped container that crops the ground away, never dropped straight onto the background.
+ * the feet. So `.mascot` fades the bottom of the image out with a mask, which lets Cooper stand
+ * straight on the page instead of sitting in a tinted chip.
  */
 
 :root {
   color-scheme: light dark;
 
   --accent: #0a84ff;
+
+  /* Category colour. `fill` carries white text, `line` is for outlines and dots. */
+  --c-academics: #4f46c8;
+  --c-academics-line: #4f46c8;
+  --c-work: #0b6bd3;
+  --c-work-line: #0b6bd3;
+  --c-organizations: #a85508;
+  --c-organizations-line: #a85508;
+  --c-personal: #1c7a4b;
+  --c-personal-line: #1c7a4b;
   --accent-press: #0060df;
   --accent-wash: rgba(10, 132, 255, 0.12);
   --green: #34c759;
@@ -53,6 +63,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --accent: #0a84ff;
+
+    /* Fills stay put; only the lines lift, so they stay visible on black. */
+    --c-academics-line: #8b86f0;
+    --c-work-line: #55a8f5;
+    --c-organizations-line: #e0913c;
+    --c-personal-line: #45b57e;
     --accent-press: #409cff;
     --accent-wash: rgba(10, 132, 255, 0.2);
 
@@ -178,6 +194,20 @@ select {
 
 .topbar__spacer {
   flex: 1;
+}
+
+/* Who you are talking to, on the chat tab. */
+.who {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.who__name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .topbar__action,
@@ -741,46 +771,39 @@ select {
 
 /* =================================================================== mascot
 
-   The art has an opaque warm ground shadow baked under the feet. On a neutral surface that
-   beige ellipse floats, so a mascot always sits in a shaped container that crops it away.
+   Cooper, with no container. The art has an opaque warm ground shadow baked under the feet, so
+   the bottom of the image is masked to transparent rather than cropped inside a tinted shape.
    ------------------------------------------------------------------------ */
 
 .mascot {
   display: block;
-  object-fit: cover;
-  object-position: 50% 12%;
-  background: var(--tint);
+  object-fit: contain;
   flex: none;
-}
-
-.mascot--round {
-  border-radius: 50%;
-}
-
-.mascot--squircle {
-  border-radius: 30%;
+  /* The art carries an opaque warm ground ellipse under the feet. Rather than hide it inside a
+     tinted circle, the bottom of the image is faded out, so Cooper stands straight on the page
+     on any background instead of sitting in a chip. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, rgba(0, 0, 0, 0.28) 91%, transparent 99%);
+  mask-image: linear-gradient(to bottom, #000 78%, rgba(0, 0, 0, 0.28) 91%, transparent 99%);
 }
 
 .mascot--xs {
-  width: 30px;
-  height: 30px;
-  object-position: 50% 4%;
+  width: 32px;
+  height: 32px;
 }
 
 .mascot--sm {
-  width: 38px;
-  height: 38px;
-  object-position: 50% 5%;
+  width: 42px;
+  height: 42px;
 }
 
 .mascot--md {
-  width: 66px;
-  height: 66px;
+  width: 72px;
+  height: 72px;
 }
 
 .mascot--lg {
-  width: clamp(88px, 26vw, 112px);
-  height: clamp(88px, 26vw, 112px);
+  width: clamp(96px, 28vw, 124px);
+  height: clamp(96px, 28vw, 124px);
 }
 
 /* ===================================================================== hero */
@@ -1267,15 +1290,36 @@ select {
   font-size: 13.5px;
 }
 
-/* Filled: Cadence put it there. Outlined: it came from your calendar. */
-.slot--cadence {
-  background: var(--accent);
+/*
+ * Colour says what kind of thing it is; fill says who put it there. Those are two questions,
+ * so they get two channels rather than fighting over one.
+ */
+.cat--academics {
+  --cat: var(--c-academics);
+  --cat-line: var(--c-academics-line);
+}
+.cat--work {
+  --cat: var(--c-work);
+  --cat-line: var(--c-work-line);
+}
+.cat--organizations {
+  --cat: var(--c-organizations);
+  --cat-line: var(--c-organizations-line);
+}
+.cat--personal {
+  --cat: var(--c-personal);
+  --cat-line: var(--c-personal-line);
+}
+
+/* Filled: Cooper put it there. Outlined: it came from your calendar. */
+.slot--cooper {
+  background: var(--cat, var(--accent));
   color: #fff;
 }
 
 .slot--google {
-  background: transparent;
-  border: 1.5px solid var(--hair);
+  background: color-mix(in srgb, var(--cat-line, var(--accent)) 12%, transparent);
+  border: 1.5px solid var(--cat-line, var(--hair));
   color: var(--text);
 }
 
@@ -1310,11 +1354,326 @@ select {
   flex: none;
 }
 
-.slot--cadence .iconbtn {
+.slot--google .slot__from {
+  color: var(--cat-line);
+}
+
+.slot--cooper .iconbtn {
   color: rgba(255, 255, 255, 0.75);
 }
 
-.slot--cadence .iconbtn:hover {
+.slot--cooper .iconbtn:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
+}
+
+
+/* ------------------------------------------------------------------ calendar ranges */
+
+.calbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+/* An iOS segmented control: the whole set of choices stays visible. */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--fill);
+  border-radius: 10px;
+}
+
+.segmented__item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--fast), color var(--fast);
+}
+
+.segmented__item.is-on {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.calnav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.calnav__label {
+  font-size: 14px;
+  font-weight: 650;
+  min-width: 9.5ch;
+  text-align: center;
+}
+
+.ghostbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ghostbtn:hover {
+  background: var(--fill);
+}
+
+/* ------------------------------------------------------------------ week */
+
+/* Seven columns do not fit a phone, so the grid scrolls sideways instead of crushing. */
+.weekscroll {
+  overflow-x: auto;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.weekgrid {
+  min-width: 640px;
+}
+
+/* The hour gutter and seven days, shared by the header and every hour line. */
+.weekgrid__headrow,
+.weekgrid__line {
+  display: grid;
+  grid-template-columns: 42px repeat(7, minmax(0, 1fr));
+}
+
+.weekgrid__headrow {
+  box-shadow: inset 0 -0.5px 0 var(--hair);
+}
+
+.weekgrid__line + .weekgrid__line {
+  box-shadow: inset 0 0.5px 0 var(--hair);
+}
+
+.weekgrid__line {
+  min-height: 34px;
+}
+
+.weekgrid__cell {
+  padding: 3px 3px 3px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  box-shadow: inset 0.5px 0 0 var(--hair);
+}
+
+.weekgrid__head {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 8px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: var(--dim);
+  box-shadow: inset 0.5px 0 0 var(--hair);
+}
+
+.weekgrid__head:hover {
+  background: var(--fill);
+}
+
+.weekgrid__name {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.weekgrid__num {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.weekgrid__head.is-today .weekgrid__num {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  min-width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+}
+
+/* In a week there is no room for time and title side by side, so the title wins. */
+.weekgrid .slot {
+  padding: 3px 5px;
+  font-size: 11.5px;
+  gap: 4px;
+}
+
+.weekgrid .slot__time {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ month */
+
+.monthgrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.monthgrid__head {
+  padding: 9px 0;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  box-shadow: inset 0 -0.5px 0 var(--hair);
+}
+
+.monthcell {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 82px;
+  padding: 5px 5px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  box-shadow: inset 0.5px 0.5px 0 var(--hair);
+  overflow: hidden;
+}
+
+.monthcell:hover {
+  background: var(--fill);
+}
+
+/*
+ * Days spilling in from the neighbouring month are context, so the date recedes. What is *on*
+ * them stays readable: dimming the whole cell hid the very thing a month view is for.
+ */
+.monthcell.is-outside .monthcell__num {
+  opacity: 0.4;
+}
+
+.monthcell.is-outside .pill {
+  opacity: 0.72;
+}
+
+.monthcell__num {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--dim);
+  align-self: flex-start;
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.monthcell.is-today .monthcell__num {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* A month has room for a name, not a time. Filled or outlined still says whose it is. */
+.pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 5px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill--cooper {
+  background: var(--cat);
+  color: #fff;
+}
+
+.pill--google {
+  background: color-mix(in srgb, var(--cat-line) 14%, transparent);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--cat-line);
+}
+
+.monthcell__more {
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--faint);
+}
+
+/* ------------------------------------------------------------------ legend */
+
+.legend {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.legend__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--cat);
+  flex: none;
+}
+
+@media (max-width: 599px) {
+  .monthcell {
+    min-height: 62px;
+    padding: 4px 3px 5px;
+  }
+
+  /* Titles do not fit a phone-width month cell, so the pill becomes a bar of pure colour. */
+  .monthcell .pill {
+    height: 5px;
+    padding: 0;
+    color: transparent;
+    border-radius: 3px;
+  }
+
+  .calnav__label {
+    min-width: 8ch;
+    font-size: 13px;
+  }
 }

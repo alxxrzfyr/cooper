@@ -14,19 +14,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 KEY = "test-key-that-is-long-enough-x"
-os.environ["CADENCE_SHARED_KEY"] = KEY
-os.environ["CADENCE_TIMEZONE"] = "Asia/Singapore"
+os.environ["COOPER_SHARED_KEY"] = KEY
+os.environ["COOPER_TIMEZONE"] = "Asia/Singapore"
 
-HEADERS = {"X-Cadence-Key": KEY}
+HEADERS = {"X-Cooper-Key": KEY}
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     """A fresh app against a throwaway database."""
-    monkeypatch.setenv("CADENCE_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("COOPER_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     import importlib
 
-    import cadence.app as module
+    import cooper.app as module
 
     importlib.reload(module)
     with TestClient(module.app) as open_client:
@@ -48,7 +48,7 @@ class TestSecurity:
         assert client.post("/api/say", json={"text": "hi"}).status_code == 403
 
     def test_a_wrong_key_is_refused(self, client: TestClient) -> None:
-        response = client.get("/api/today", headers={"X-Cadence-Key": "nope"})
+        response = client.get("/api/today", headers={"X-Cooper-Key": "nope"})
 
         assert response.status_code == 403
 
@@ -282,13 +282,13 @@ class TestGoogle:
         response = client.post("/api/google/connect", headers=HEADERS)
 
         assert response.status_code == 422
-        assert "CADENCE_GOOGLE_CLIENT_ID" in response.json()["detail"]
+        assert "COOPER_GOOGLE_CLIENT_ID" in response.json()["detail"]
 
     def test_a_forged_callback_is_refused(self, client: TestClient) -> None:
         response = client.get("/api/google/callback?code=abc&state=forged")
 
         assert response.status_code == 200
-        assert "did not come from Cadence" in response.text
+        assert "did not come from Cooper" in response.text
 
     def test_a_callback_error_is_shown(self, client: TestClient) -> None:
         response = client.get("/api/google/callback?error=access_denied")

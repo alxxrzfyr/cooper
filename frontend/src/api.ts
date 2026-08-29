@@ -7,12 +7,12 @@
 
 import { ApiError, type Hours, type Item, type Reply, type View } from "./types";
 
-const BASE = import.meta.env.VITE_CADENCE_API ?? "http://127.0.0.1:8000";
-const KEY_HEADER = "X-Cadence-Key";
+const BASE = import.meta.env.VITE_COOPER_API ?? "http://127.0.0.1:8000";
+const KEY_HEADER = "X-Cooper-Key";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set(KEY_HEADER, import.meta.env.VITE_CADENCE_KEY ?? "");
+  headers.set(KEY_HEADER, import.meta.env.VITE_COOPER_KEY ?? "");
   if (init?.body) headers.set("Content-Type", "application/json");
 
   const response = await fetch(`${BASE}${path}`, { ...init, headers });

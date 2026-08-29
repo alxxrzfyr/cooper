@@ -1,23 +1,31 @@
 /**
- * The otter.
+ * Cooper.
  *
- * Always rendered inside a shaped, tinted container. The source art has an opaque warm ground
- * shadow baked under the feet, which floats visibly on a neutral surface, so `object-fit: cover`
- * with the focus high in the frame crops it away. Dropping these straight onto the page is what
- * made them look pasted on.
+ * He is the app and the app is him, so he is never introduced as "the otter" — he has a name.
+ *
+ * The art carries an opaque warm ground ellipse under the feet. It used to be hidden by cropping
+ * every mascot inside a tinted circle, which made him look like a contact photo. Now the bottom
+ * of the image fades out in CSS instead, so he stands directly on the page.
  */
 
+/** What Cooper is doing in each piece of art, for anyone who cannot see it. */
 const ALT: Record<string, string> = {
-  profile_icon: "Cadence otter",
-  task_active: "Cadence otter working",
-  activity_summary: "Cadence otter reading",
-  empty_state_windows: "Cadence otter painting",
-  activity_history: "Cadence otter reading",
-  first_run_state: "Cadence otter waving",
-  degraded_mode_state: "Tired Cadence otter",
-  credential_expired_state: "Cadence otter and a disconnected calendar",
-  parse_ambiguity_state: "Puzzled Cadence otter",
-  task_too_large_state: "Cadence otter lifting something heavy",
+  profile_icon: "Cooper",
+  task_active: "Cooper, working",
+  activity_summary: "Cooper, reading",
+  empty_state_windows: "Cooper, painting",
+  activity_history: "Cooper, reading",
+  first_run_state: "Cooper, waving",
+  degraded_mode_state: "Cooper, tired",
+  credential_expired_state: "Cooper, holding a disconnected calendar",
+  parse_ambiguity_state: "Cooper, puzzled",
+  task_too_large_state: "Cooper, lifting something heavy",
+  cooper_avatar: "Cooper",
+  cooper_done: "Cooper, thumbs up",
+  cooper_scheduled: "Cooper, scheduling on a calendar",
+  cooper_thinking: "Cooper, thinking",
+  cooper_undo: "Cooper, holding an eraser",
+  cooper_laptop: "Cooper, working at a laptop",
 };
 
 export type MascotSize = "xs" | "sm" | "md" | "lg";
@@ -25,19 +33,17 @@ export type MascotSize = "xs" | "sm" | "md" | "lg";
 export function Mascot({
   name,
   size = "md",
-  shape = "round",
   decorative = false,
 }: {
   name: string;
   size?: MascotSize;
-  shape?: "round" | "squircle";
   decorative?: boolean;
 }) {
   return (
     <img
-      className={`mascot mascot--${shape} mascot--${size}`}
+      className={`mascot mascot--${size}`}
       src={`/assets/mascot/${name}.webp`}
-      alt={decorative ? "" : (ALT[name] ?? "Cadence otter")}
+      alt={decorative ? "" : (ALT[name] ?? "Cooper")}
       loading="lazy"
       decoding="async"
     />

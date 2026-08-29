@@ -12,7 +12,7 @@ Read `PRD.md`, then `ARCHITECTURE.md`. Both are short on purpose.
 
 ```bash
 uv sync
-uv run uvicorn cadence.app:app --reload --host 127.0.0.1
+uv run uvicorn cooper.app:app --reload --host 127.0.0.1
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 
@@ -57,7 +57,7 @@ These are in `PRD.md` as product rules. Here is what they mean in code.
 ## Working style
 
 TDD where the logic is real: parsing, ranking, placing, and anything about time. Skip it for
-markup. `tests/test_cadence.py` covers the pure functions, `tests/test_api.py` goes through HTTP.
+markup. `tests/test_cooper.py` covers the pure functions, `tests/test_api.py` goes through HTTP.
 
 Run the app and look at it before saying you are done. Three of the bugs in this codebase's
 history were invisible in tests and obvious on screen: a timezone shift that displayed 3pm as

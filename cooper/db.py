@@ -1,4 +1,4 @@
-"""Everything Cadence stores.
+"""Everything Cooper stores.
 
 Three tables. An item is a task or an event; the difference is whether the time is fixed.
 Settings hold your working hours and Google tokens. Changes exist only so the last action can
@@ -102,6 +102,10 @@ class Item(Base):
     end_at: Mapped[dt.datetime | None] = mapped_column(Utc, default=None)
     google_event_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
+    # Colour-coding only. Validated in brain.py rather than by a CheckConstraint, so that a
+    # database created before this column existed stays identical to a fresh one.
+    category: Mapped[str] = mapped_column(String(16), default="personal")
+
     status: Mapped[str] = mapped_column(String(8), default="open")
     pinned: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
@@ -119,6 +123,7 @@ class Item(Base):
             "notes": self.notes,
             "minutes": self.minutes,
             "importance": self.importance,
+            "category": self.category,
             "due": _iso(self.due),
             "start_at": _iso(self.start_at),
             "end_at": _iso(self.end_at),
@@ -172,7 +177,23 @@ class Store:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         self.engine = create_engine(url, connect_args=connect_args)
         Base.metadata.create_all(self.engine)
+        self._add_new_columns()
         self._factory = sessionmaker(bind=self.engine, expire_on_commit=False)
+
+    def _add_new_columns(self) -> None:
+        """Add columns that appeared after a database was created.
+
+        `create_all` only creates missing tables, so a column added to an existing install
+        would otherwise be silently absent and every read would fail. This is not a migration
+        tool: it only ever adds a nullable-with-default column, which is the only schema change
+        this app has needed.
+        """
+        with self.engine.begin() as connection:
+            existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(item)")}
+            if existing and "category" not in existing:
+                connection.exec_driver_sql(
+                    "ALTER TABLE item ADD COLUMN category VARCHAR(16) DEFAULT 'personal'"
+                )
 
     @contextmanager
     def session(self) -> Iterator[Session]:

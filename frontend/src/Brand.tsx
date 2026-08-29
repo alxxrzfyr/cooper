@@ -23,7 +23,7 @@ export function Brand() {
           fill="currentColor"
         />
       </svg>
-      <span className="brand__word">Cadence</span>
+      <span className="brand__word">Cooper</span>
     </span>
   );
 }

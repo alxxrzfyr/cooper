@@ -13,7 +13,7 @@ import dataclasses
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from cadence.db import Item, aware
+from cooper.db import Item, aware
 
 # Score weights. Tuned by feel, easy to change, and they sum to 1.
 W_DUE = 0.40

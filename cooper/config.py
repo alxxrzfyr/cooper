@@ -13,7 +13,7 @@ KEY_MIN = 24
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="CADENCE_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="COOPER_", extra="ignore")
 
     # The one required value. Short keys are refused because this header is the only thing
     # stopping a random web page from reaching the API.
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     origin: str = "http://127.0.0.1:5173"
-    database_url: str = "sqlite:///./cadence.db"
+    database_url: str = "sqlite:///./cooper.db"
     timezone: str = "Asia/Singapore"
 
     # Optional. Without a key the rule-based parser handles everything.

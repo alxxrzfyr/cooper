@@ -44,14 +44,22 @@ export function Nav({
   return (
     <>
       <header className="topbar">
-        <Brand />
+        {current === "chat" ? (
+          /* Whose thread this is, the way a messages app says it: face, then name. */
+          <div className="who">
+            <Mascot name="profile_icon" size="sm" decorative />
+            <span className="who__name">Cooper</span>
+          </div>
+        ) : (
+          <Brand />
+        )}
         <div className="topbar__spacer" />
         {canUndo && (
           <button type="button" className="topbar__action" disabled={busy} onClick={onUndo}>
             Undo
           </button>
         )}
-        <Mascot name="profile_icon" size="xs" decorative />
+        {current !== "chat" && <Mascot name="profile_icon" size="xs" decorative />}
       </header>
 
       <nav className="rail" aria-label="Sections">

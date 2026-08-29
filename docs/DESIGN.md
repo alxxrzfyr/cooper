@@ -75,13 +75,17 @@ Both of these made the interface look wrong on first attempt, and both are worth
 touching an image.
 
 **The mascot art has an opaque warm ground shadow baked under the feet**, roughly
-`rgb(218, 204, 190)`. Dropped straight onto a neutral surface, that beige ellipse floats and the
-otter looks pasted on. So a mascot is *always* inside a shaped container — `.mascot--round` or
-`.mascot--squircle` with `object-fit: cover` and the focus high in the frame, which crops the
-ground away. Never render one without a container.
+`rgb(218, 204, 190)`. Dropped straight onto a neutral surface, that beige ellipse floats and
+Cooper looks pasted on. This used to be solved by cropping him inside a tinted circle or
+squircle, which hid the ellipse but turned him into a contact photo in a chip.
 
-Do not try to fix this by editing the pixels. Removing the warm tones programmatically eats the
-shading and the outlines, and the result looks damaged. Containment is the fix.
+The fix now is a mask, not a container: `.mascot` fades the bottom of the image out
+(`mask-image: linear-gradient(to bottom, #000 78%, transparent 99%)`) with `object-fit: contain`,
+so the ground dissolves and Cooper stands directly on whatever is behind him, light or dark.
+There is no shape class. Do not reintroduce one.
+
+Do not try to fix this by editing the pixels either. Removing the warm tones programmatically
+eats the shading and the outlines, and the result looks damaged.
 
 **The supplied wordmark is a webp with dark ink baked in**, averaging `rgb(113, 123, 118)`, so it
 almost vanished on black. The brand is now inline SVG plus real text in `Brand.tsx`, which
@@ -103,7 +107,7 @@ checked before shipping.
 ## Copy
 
 Plain and specific. "Put these in my calendar", not "Schedule". "Do this first", not "Priority:
-high". Errors say what to do next: "Cadence is not running. Start it with…".
+high". Errors say what to do next: "Cooper is not running. Start it with…".
 
 ## Accessibility
 

@@ -1,4 +1,4 @@
-# Cadence: what it must do
+# Cooper: what it must do
 
 One user. One machine. A calendar you talk to.
 

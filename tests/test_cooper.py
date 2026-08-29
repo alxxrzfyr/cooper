@@ -13,11 +13,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-os.environ.setdefault("CADENCE_SHARED_KEY", "test-key-that-is-long-enough-x")
+os.environ.setdefault("COOPER_SHARED_KEY", "test-key-that-is-long-enough-x")
 
-from cadence.brain import parse_with_rules  # noqa: E402
-from cadence.db import Item, Store, new_id  # noqa: E402
-from cadence.planner import Hours, place, rank  # noqa: E402
+from cooper import brain  # noqa: E402
+from cooper.brain import parse_with_rules  # noqa: E402
+from cooper.db import Item, Store, new_id  # noqa: E402
+from cooper.planner import Hours, place, rank  # noqa: E402
 
 TZ = "Asia/Singapore"
 ZONE = ZoneInfo(TZ)
@@ -311,7 +312,7 @@ class TestStore:
         with store.session() as session:
             from sqlalchemy import select
 
-            from cadence.db import Change
+            from cooper.db import Change
 
             assert len(list(session.scalars(select(Change)))) <= 20
 
@@ -321,7 +322,7 @@ class TestStore:
             session.add(task(title="report", due=NOW))
 
         with store.session() as session:
-            from cadence.db import aware
+            from cooper.db import aware
 
             stored = store.open_items(session)[0]
             assert aware(stored.due) == NOW
@@ -372,3 +373,40 @@ class TestTimezones:
             payload = store.open_items(session)[0].to_dict()
             assert payload["start_at"] is not None
             assert dt.datetime.fromisoformat(payload["start_at"]).astimezone(ZONE).hour == 15
+
+
+class TestCategory:
+    """Colour-coding is only useful if the guess is right more often than not."""
+
+    @pytest.mark.parametrize(
+        ("sentence", "expected"),
+        [
+            ("revise for the midterm", "academics"),
+            ("cs101 lecture at 9am", "academics"),
+            ("finish the problem set", "academics"),
+            ("client meeting about the budget", "work"),
+            ("reply to Anna", "work"),
+            ("committee rehearsal", "organizations"),
+            ("volunteer at the fundraiser", "organizations"),
+            ("dentist thursday 3pm", "personal"),
+            ("buy groceries", "personal"),
+        ],
+    )
+    def test_words_decide_the_category(self, sentence: str, expected: str) -> None:
+        assert brain.guess_category(sentence) == expected
+
+    def test_anything_unrecognised_is_personal(self) -> None:
+        # A wrong colour is a small cost; inventing a category is a bigger one.
+        assert brain.guess_category("qwerty zzz") == "personal"
+
+    def test_the_rules_path_sets_a_category(self) -> None:
+        action = brain.parse_with_rules("revise for the exam, 2h", tz="Asia/Singapore")
+        assert action.category == "academics"
+
+    def test_a_category_the_model_invents_is_ignored(self) -> None:
+        action = brain._from_json(
+            {"verb": "add", "title": "client meeting", "category": "urgent"},
+            tz="UTC",
+            source="gemini",
+        )
+        assert action.category == "work"

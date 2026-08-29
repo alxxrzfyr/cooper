@@ -1,5 +1,5 @@
 [project]
-name = "cadence"
+name = "cooper"
 version = "0.2.0"
 description = "A personal calendar you talk to"
 requires-python = "==3.12.*"

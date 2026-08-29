@@ -1,4 +1,4 @@
-# Cadence
+# Cooper
 
 A calendar you talk to. Type what's on your plate, it works out the task and the time, tells
 you what to do first, and puts it in your Google Calendar.
@@ -31,18 +31,35 @@ Four things, and deliberately nothing else:
 3. **Get it booked.** The top of that list lands in real time, inside hours you chose.
 4. **Change your mind.** Undo the last thing.
 
-Four screens: **Chat** (where you talk to it), **Plan** (what to do, ranked), **Calendar** (a day
-timeline of what's booked), **Setup**.
+Four screens: **Chat** (where you talk to it), **Plan** (what to do, ranked), **Calendar** (a day,
+week or month of what's booked), **Setup**.
 
 Installs as a PWA and opens offline. Phone gets a bottom tab bar, desktop gets a side rail.
 
 ## Its own calendar, or yours
 
-Cadence has a calendar of its own and needs nothing to work. Connect Google and two things change:
+Cooper has a calendar of its own and needs nothing to work. Connect Google and two things change:
 your real events start blocking the scheduler, and booked work shows up in Google Calendar. The
-Calendar screen shows both — filled entries are ones Cadence placed, outlined ones came from you.
+Calendar screen shows both — filled entries are ones Cooper placed, outlined ones came from you.
 
 Local is always the source of truth. Google is a mirror.
+
+## Colour means something
+
+Everything lands in one of four categories, worked out from what you typed: **academics**,
+**work**, **organizations**, **personal**. That is the colour you see on the calendar, so a week
+is readable before you read any of it. Fill still says who put it there — solid is Cooper's,
+outlined is yours.
+
+```
+you: revise for the midterm, 2h    → academics
+you: client meeting tuesday 2pm    → work
+you: committee rehearsal wed 6pm   → organizations
+you: dentist thursday 3pm          → personal
+```
+
+Nothing to configure, and no fifth category to invent. Anything unrecognised is personal, which
+is a better default than a wrong guess.
 
 ## What it is not
 
@@ -57,12 +74,12 @@ You need Python 3.12, [uv](https://docs.astral.sh/uv/), and Node 20+.
 ```bash
 uv sync
 python -c "import secrets; print(secrets.token_urlsafe(24))"   # your key
-printf 'CADENCE_SHARED_KEY=<key>\nCADENCE_TIMEZONE=Asia/Singapore\n' > .env
-uv run uvicorn cadence.app:app --reload --host 127.0.0.1
+printf 'COOPER_SHARED_KEY=<key>\nCOOPER_TIMEZONE=Asia/Singapore\n' > .env
+uv run uvicorn cooper.app:app --reload --host 127.0.0.1
 
 # second terminal
 cd frontend && npm install
-printf 'VITE_CADENCE_KEY=<same key>\n' > .env.local
+printf 'VITE_COOPER_KEY=<same key>\n' > .env.local
 npm run dev
 ```
 
@@ -72,19 +89,19 @@ That's the whole setup. No migrations to run, no database to create, no API keys
 
 ### Optional: better parsing
 
-Set `CADENCE_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) and messier
+Set `COOPER_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) and messier
 sentences work. Without it a rule-based parser handles the common shapes, and ranking and
 scheduling never used a model anyway.
 
-Worth knowing: on the free tier Google may use your prompts to improve their products. Cadence
+Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
 sends only your own words and task titles, never event descriptions, locations, or attendees.
 
 ### Optional: Google Calendar
 
 ```
-CADENCE_GOOGLE_CLIENT_ID=...
-CADENCE_GOOGLE_CLIENT_SECRET=...
-CADENCE_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+COOPER_GOOGLE_CLIENT_ID=...
+COOPER_GOOGLE_CLIENT_SECRET=...
+COOPER_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 Create a Google Cloud project, enable the Calendar API, add an OAuth client of type **Web
@@ -100,7 +117,7 @@ Without these the calendar is simply off and everything else works.
 ## How it's built
 
 ```
-cadence/
+cooper/
   app.py       every route, and the only thing that writes to the database
   brain.py     sentence → validated action (Gemini, then regex)
   planner.py   what to do first, and where it fits
@@ -120,20 +137,24 @@ Three tables: `item` (a task or event — the difference is whether the time is 
 
 **The one rule worth knowing:** the model only ever *proposes* an action. `brain.py` validates
 it, `app.py` executes it. A wrong answer from Gemini gets refused, not applied. And when a
-reference is ambiguous, Cadence asks rather than picking — acting on the wrong task is worse
+reference is ambiguous, Cooper asks rather than picking — acting on the wrong task is worse
 than a question.
 
 ## Verified
 
 ```
-uv run pytest      92 passed
+uv run pytest      107 passed
 uv run ruff check  clean
-npm test           29 passed
+npm test           46 passed
 npm run build      ok
 ```
 
-Checked in a browser, light and dark: five sentences parsed, ranked, and placed at 09:00,
-10:10, 11:50 and 12:20 with proper gaps; a 3pm appointment landing at 3pm.
+Checked in a browser, light and dark, at 390px and 1180px: nine sentences parsed into all four
+categories, ranked, and placed inside working hours; a 3pm appointment landing at 3pm; day, week
+and month each showing the same items in the same colours.
+
+Worth knowing if you take screenshots of this: Chrome's `--force-dark-mode` does *not* set
+`prefers-color-scheme`, so it shows you Blink's auto-inversion rather than the real dark theme.
 
 ## Docs
 

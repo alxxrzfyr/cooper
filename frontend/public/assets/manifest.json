@@ -59,23 +59,59 @@
       "width": 194,
       "height": 159,
       "format": "webp"
+    },
+    "cooper_avatar": {
+      "file": "assets/mascot/cooper_avatar.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
+    },
+    "cooper_done": {
+      "file": "assets/mascot/cooper_done.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
+    },
+    "cooper_scheduled": {
+      "file": "assets/mascot/cooper_scheduled.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
+    },
+    "cooper_thinking": {
+      "file": "assets/mascot/cooper_thinking.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
+    },
+    "cooper_undo": {
+      "file": "assets/mascot/cooper_undo.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
+    },
+    "cooper_laptop": {
+      "file": "assets/mascot/cooper_laptop.webp",
+      "width": 1024,
+      "height": 1024,
+      "format": "webp"
     }
   },
   "brand": {
-    "cadence_logo": {
-      "file": "assets/brand/cadence_logo.webp",
+    "cooper_logo": {
+      "file": "assets/brand/cooper_logo.webp",
       "width": 110,
       "height": 25,
       "format": "webp"
     },
-    "cadence_icon": {
-      "file": "assets/brand/cadence_icon.webp",
+    "cooper_icon": {
+      "file": "assets/brand/cooper_icon.webp",
       "width": 24,
       "height": 25,
       "format": "webp"
     },
-    "cadence_wordmark": {
-      "file": "assets/brand/cadence_wordmark.webp",
+    "cooper_wordmark": {
+      "file": "assets/brand/cooper_wordmark.webp",
       "width": 86,
       "height": 22,
       "format": "webp"

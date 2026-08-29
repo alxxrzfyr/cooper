@@ -22,8 +22,10 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 Verb = Literal["add", "complete", "drop", "pin", "schedule", "show", "undo", "ask"]
+Category = Literal["academics", "work", "organizations", "personal"]
 
 VERBS = ("add", "complete", "drop", "pin", "schedule", "show", "undo", "ask")
+CATEGORIES = ("academics", "work", "organizations", "personal")
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 TIMEOUT = 20
@@ -41,6 +43,7 @@ SCHEMA: dict[str, Any] = {
         "start": {"type": "string", "description": "ISO datetime with offset"},
         "end": {"type": "string", "description": "ISO datetime with offset"},
         "kind": {"type": "string", "enum": ["task", "event"]},
+        "category": {"type": "string", "enum": list(CATEGORIES)},
         "question": {"type": "string"},
     },
 }
@@ -57,10 +60,17 @@ Verbs:
   undo      reverse the last change
   ask       you cannot tell what they mean, so ask a short question
 
+Categories, for colour-coding the calendar:
+  academics      classes, exams, readings, anything for a course
+  work           a job, clients, deadlines, paid work
+  organizations  clubs, committees, volunteering, community groups
+  personal       everything else, including health, errands and family
+
 Rules:
   Times are ISO with an offset. Dates are ISO.
   minutes is a whole number. importance is 1 to 5, 5 highest.
   Use "which" for words that identify an existing item, never invent an id.
+  Always set category when adding. Prefer personal if genuinely unclear.
   If the sentence is ambiguous, use "ask" rather than guessing.
 
 Today is {today} ({weekday}) in {tz}.
@@ -81,6 +91,7 @@ class Action:
     start: dt.datetime | None = None
     end: dt.datetime | None = None
     kind: str = "task"
+    category: str | None = None
     question: str | None = None
     source: str = "rules"
 
@@ -182,6 +193,7 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
         start=_datetime(payload.get("start"), tz),
         end=_datetime(payload.get("end"), tz),
         kind="event" if payload.get("kind") == "event" else "task",
+        category=_category(payload.get("category"), payload.get("title")),
         question=_clean(payload.get("question")),
         source=source,
     )
@@ -206,6 +218,13 @@ def _sanity_check(action: Action) -> Action:
     if action.start:
         action = dataclasses.replace(action, kind="event")
     return action
+
+
+def _category(value: Any, title: Any) -> str | None:
+    """Trust the model only if it names a category we actually have."""
+    if isinstance(value, str) and value.lower() in CATEGORIES:
+        return value.lower()
+    return guess_category(title) if isinstance(title, str) else None
 
 
 def _clean(value: Any) -> str | None:
@@ -249,6 +268,39 @@ IMPORTANCE_WORDS = {
     "minor": 2, "small": 2,
     "someday": 1, "whenever": 1, "later": 1,
 }  # fmt: skip
+
+# Ordered most specific first: a study group is academics before it is a group.
+CATEGORY_WORDS: dict[str, tuple[str, ...]] = {
+    "academics": (
+        "class", "classes", "lecture", "lectures", "exam", "exams", "midterm", "midterms",
+        "finals", "quiz", "homework", "assignment", "assignments", "thesis", "dissertation",
+        "study", "studying", "revise", "revision", "essay", "lab", "seminar", "professor",
+        "prof", "school", "university", "uni", "college", "tutorial", "coursework", "syllabus",
+        "semester", "defense", "reading", "readings", "problem set", "pset",
+    ),
+    "organizations": (
+        "org", "orgs", "club", "committee", "volunteer", "volunteering", "chapter", "society",
+        "council", "fundraiser", "community", "outreach", "rehearsal", "meetup", "assembly",
+        "membership", "officers", "alumni", "church", "ministry", "charity",
+    ),
+    "work": (
+        "work", "meeting", "standup", "client", "clients", "deadline", "report", "invoice",
+        "boss", "manager", "shift", "interview", "sprint", "deploy", "release", "budget",
+        "presentation", "deck", "proposal", "stakeholder", "payroll", "onboarding", "retro",
+        "sync", "quarterly", "kpi", "okr", "ticket", "email", "reply", "standup", "job",
+    ),
+}  # fmt: skip
+
+
+def guess_category(text: str) -> str:
+    """Which colour this belongs under. Personal is the honest default, not a guess."""
+    lowered = text.lower()
+    for category, words in CATEGORY_WORDS.items():
+        for word in words:
+            if re.search(rf"\b{re.escape(word)}\b", lowered):
+                return category
+    return "personal"
+
 
 _MINUTES = re.compile(r"\b(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\b")
 _CLOCK = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b(\d{1,2}):(\d{2})\b")
@@ -322,6 +374,9 @@ def parse_with_rules(sentence: str, *, tz: str) -> Action:
         due=due,
         start=start,
         kind="event" if start else "task",
+        # The whole sentence, not the trimmed title: the giveaway word is often the part
+        # that gets stripped out, as in "study, 2h, due friday".
+        category=guess_category(lowered),
     )
     return _sanity_check(action)
 

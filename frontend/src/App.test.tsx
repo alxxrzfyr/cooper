@@ -13,6 +13,7 @@ function ranked(overrides: Partial<Ranked> = {}): Ranked {
     notes: null,
     minutes: 90,
     importance: 4,
+    category: "work",
     due: null,
     start_at: null,
     end_at: null,
@@ -113,7 +114,7 @@ function stub(routes: Routes) {
 }
 
 beforeEach(() => {
-  vi.stubEnv("VITE_CADENCE_KEY", "test-key");
+  vi.stubEnv("VITE_COOPER_KEY", "test-key");
   // The conversation persists in localStorage, so each test starts from an empty one.
   localStorage.clear();
 });
@@ -161,7 +162,7 @@ describe("first impression", () => {
     stub({ failView: true });
     render(<App />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Cadence isn’t running");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Cooper isn’t running");
   });
 
   test("offline parsing is stated under setup without alarm", async () => {
@@ -177,12 +178,24 @@ describe("first impression", () => {
 });
 
 describe("the conversation", () => {
+  test("the thread says who you are talking to", async () => {
+    stub({});
+    render(<App />);
+    await screen.findByText(/Just tell me what/);
+
+    // The chat tab names its correspondent the way a messages app does: face, then name.
+    const who = document.querySelector(".who");
+    expect(who).not.toBeNull();
+    expect(who?.textContent).toBe("Cooper");
+    expect(who?.querySelector('img[src*="profile_icon"]')).not.toBeNull();
+  });
+
   test("your sentence appears as your own turn", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Say something to Cadence"), "write the report{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText("write the report")).toBeInTheDocument();
@@ -193,7 +206,7 @@ describe("the conversation", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Say something to Cadence"), "write the report{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText(/Added/)).toBeInTheDocument();
@@ -207,7 +220,7 @@ describe("the conversation", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Say something to Cadence"), "what should i do{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what should i do{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText(/Start with write the quarterly report/)).toBeInTheDocument();
@@ -218,7 +231,7 @@ describe("the conversation", () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
-    const field = screen.getByLabelText("Say something to Cadence");
+    const field = screen.getByLabelText("Say something to Cooper");
 
     await user.type(field, "write the report{Enter}");
 
@@ -237,7 +250,7 @@ describe("the conversation", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Say something to Cadence"), "done review{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "done review{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText(/matches 2 items/)).toBeInTheDocument();
@@ -248,7 +261,7 @@ describe("the conversation", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Say something to Cadence"), "write it{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write it{Enter}");
     await screen.findByRole("log", { name: "Conversation" });
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -258,7 +271,7 @@ describe("the conversation", () => {
     stub({});
     const first = render(<App />);
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Say something to Cadence"), "write the report{Enter}");
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
     await screen.findByRole("log", { name: "Conversation" });
     first.unmount();
 
@@ -272,7 +285,7 @@ describe("the conversation", () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
-    const field = screen.getByLabelText("Say something to Cadence");
+    const field = screen.getByLabelText("Say something to Cooper");
     field.blur();
 
     await user.keyboard("{Meta>}k{/Meta}");
@@ -474,6 +487,7 @@ describe("the calendar", () => {
       title: "Standup with the team",
       start_at: "2026-08-31T01:00:00+00:00",
       end_at: "2026-08-31T01:15:00+00:00",
+      category: "personal",
       mine: false,
       ...overrides,
     };
@@ -505,7 +519,7 @@ describe("the calendar", () => {
     expect(screen.getByText("write the quarterly report")).toBeInTheDocument();
   });
 
-  test("events Cadence created are not listed twice", async () => {
+  test("events Cooper created are not listed twice", async () => {
     // Our own blocks come back from Google too. `mine` marks them so only the local copy shows.
     const booked = { ...ranked(), id: "b1", title: "write the report", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
     stub({
@@ -519,6 +533,73 @@ describe("the calendar", () => {
     await openCalendar();
 
     expect(await screen.findAllByText("write the report")).toHaveLength(1);
+  });
+
+  test("the category decides the colour, not the source", async () => {
+    // Four categories, four colours. The class is what the stylesheet hangs the colour on, so
+    // it is the thing worth asserting.
+    const study = {
+      ...ranked(),
+      id: "s1",
+      title: "revise for the midterm",
+      category: "academics" as const,
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
+    stub({ view: view({ scheduled: [study], events: [event({ category: "organizations" })] }) });
+    render(<App />);
+
+    await openCalendar();
+
+    expect((await screen.findByText("revise for the midterm")).closest(".slot")).toHaveClass(
+      "cat--academics",
+    );
+    expect(screen.getByText("Standup with the team").closest(".slot")).toHaveClass(
+      "cat--organizations",
+    );
+  });
+
+  test("you can look at a week or a month instead of a day", async () => {
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
+    stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
+    const user = await openCalendar();
+
+    // A day is the default, so the range reads as a day.
+    expect(await screen.findByText("Today")).toBeInTheDocument();
+    // Today is on screen, so there is nothing to jump back to.
+    expect(screen.queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Month" }));
+    expect(await screen.findByText("August 2026")).toBeInTheDocument();
+    // A month cell says how much is on that day without showing times. The date part of the
+    // label is locale-ordered, so only the count is worth asserting on.
+    expect(screen.getByRole("button", { name: /1 thing$/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Week" }));
+    // Seven columns, one per day, each a way into that day.
+    expect(document.querySelectorAll(".weekgrid__head")).toHaveLength(7);
+  });
+
+  test("stepping away from today, and coming back", async () => {
+    stub({ view: view({ scheduled: [{ ...ranked(), start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" }] }) });
+    render(<App />);
+    const user = await openCalendar();
+
+    await user.click(await screen.findByRole("button", { name: "Next day" }));
+    expect(screen.getByText("Tomorrow")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(screen.getByText("Yesterday")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByText("Today")).toBeInTheDocument();
   });
 
   test("a Google event is marked as coming from Google", async () => {
@@ -609,7 +690,7 @@ describe("the mascot", () => {
     render(<App />);
 
     // Rendered twice on purpose: once in the top bar, once in the wide-screen rail.
-    expect((await screen.findAllByText("Cadence")).length).toBe(2);
+    expect((await screen.findAllByText("Cooper")).length).toBe(2);
   });
 
   test("every mascot image resolves and is contained", async () => {
@@ -625,10 +706,10 @@ describe("the mascot", () => {
     expect(images.length).toBeGreaterThan(0);
     for (const image of images) {
       expect(image.getAttribute("src")).toMatch(/\.webp$/);
-      // Sizing and cropping live in CSS. The size class fixes the box, so nothing shifts while
-      // loading, and the shape class crops the art's baked-in ground shadow.
+      // Sizing and the fade over the baked-in ground shadow live in CSS. The size class fixes the
+      // box so nothing shifts while loading. There is no shape class: Cooper is not in a chip.
       expect(image.className).toMatch(/mascot--(xs|sm|md|lg)/);
-      expect(image.className).toMatch(/mascot--(round|squircle)/);
+      expect(image.className).not.toMatch(/mascot--(round|squircle)/);
     }
   });
 });
