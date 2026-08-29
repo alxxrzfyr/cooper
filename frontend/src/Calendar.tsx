@@ -7,10 +7,19 @@ import type { CalendarEvent, Category, Item, View } from "./types";
 type Mode = "day" | "week" | "month";
 
 const MODES: Mode[] = ["day", "week", "month"];
-const MODE_LABEL: Record<Mode, string> = { day: "Day", week: "Week", month: "Month" };
+const MODE_LABEL: Record<Mode, string> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+};
 const MODE_KEY = "cooper.calview.v1";
 
-const CATEGORIES: Category[] = ["academics", "work", "organizations", "personal"];
+const CATEGORIES: Category[] = [
+  "academics",
+  "work",
+  "organizations",
+  "personal",
+];
 const CATEGORY_LABEL: Record<Category, string> = {
   academics: "Academics",
   work: "Work",
@@ -20,7 +29,10 @@ const CATEGORY_LABEL: Record<Category, string> = {
 
 const DAY_START = 7;
 const DAY_END = 22;
-const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + DAY_START);
+const HOURS = Array.from(
+  { length: DAY_END - DAY_START },
+  (_, index) => index + DAY_START,
+);
 const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"];
 const MONTH_ROWS = 6;
 
@@ -59,7 +71,10 @@ function sameDay(a: Date, b: Date): boolean {
 }
 
 function clock(at: Date): string {
-  return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return at.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function dayName(at: Date): string {
@@ -67,18 +82,27 @@ function dayName(at: Date): string {
 }
 
 function dayLabel(at: Date, today: Date): string {
-  const days = Math.round((startOfDay(at).getTime() - startOfDay(today).getTime()) / 86_400_000);
+  const days = Math.round(
+    (startOfDay(at).getTime() - startOfDay(today).getTime()) / 86_400_000,
+  );
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
-  return at.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+  return at.toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 /** What the arrows are currently pointing at. */
 function rangeLabel(mode: Mode, anchor: Date, today: Date): string {
   if (mode === "day") return dayLabel(anchor, today);
   if (mode === "month") {
-    return anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    return anchor.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
   }
   // Both ends spelled out. Abbreviating the first end reads as a typo once the locale puts the
   // month before the day, as in "24 – Aug 30".
@@ -101,7 +125,9 @@ function daysShown(mode: Mode, anchor: Date): Date[] {
     return Array.from({ length: 7 }, (_, index) => addDays(start, index));
   }
   const start = startOfWeek(startOfMonth(anchor));
-  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index));
+  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) =>
+    addDays(start, index),
+  );
 }
 
 // ------------------------------------------------------------------ entries
@@ -184,18 +210,33 @@ export function Calendar({
   const today = new Date(view.now);
   const [mode, setMode] = useState<Mode>(loadMode);
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(today));
+  const [picked, setPicked] = useState<Date | null>(null);
 
   const entries = agenda(view.scheduled, view.events);
   const days = daysShown(mode, anchor);
 
+  /*
+   * A month cell is too small for titles on a phone, so the day you tap is spelled out
+   * underneath. That is the only place the detail exists at this size, which is why tapping
+   * selects rather than navigating.
+   */
+  const dayOf = (() => {
+    if (picked && days.some((d) => sameDay(d, picked))) return picked;
+    if (days.some((d) => sameDay(d, today))) return startOfDay(today);
+    return startOfMonth(anchor);
+  })();
+
   function choose(next: Mode): void {
+    // Carry the day you were looking at, rather than dumping you on the first of the month.
+    if (next === "day" && mode === "month") setAnchor(dayOf);
     setMode(next);
     saveMode(next);
   }
 
-  function openDay(day: Date): void {
-    setAnchor(day);
-    choose("day");
+  function openDay(target: Date): void {
+    setAnchor(target);
+    setMode("day");
+    saveMode("day");
   }
 
   function working(day: Date, hour: number): boolean {
@@ -209,7 +250,8 @@ export function Calendar({
   function on(day: Date, hour?: number): Entry[] {
     return entries.filter(
       (entry) =>
-        sameDay(entry.start, day) && (hour === undefined || entry.start.getHours() === hour),
+        sameDay(entry.start, day) &&
+        (hour === undefined || entry.start.getHours() === hour),
     );
   }
 
@@ -248,7 +290,9 @@ export function Calendar({
           >
             ‹
           </button>
-          <span className="calnav__label">{rangeLabel(mode, anchor, today)}</span>
+          <span className="calnav__label">
+            {rangeLabel(mode, anchor, today)}
+          </span>
           <button
             type="button"
             className="iconbtn"
@@ -258,7 +302,11 @@ export function Calendar({
             ›
           </button>
           {days.some((day) => sameDay(day, today)) ? null : (
-            <button type="button" className="ghostbtn" onClick={() => setAnchor(startOfDay(today))}>
+            <button
+              type="button"
+              className="ghostbtn"
+              onClick={() => setAnchor(startOfDay(today))}
+            >
               Today
             </button>
           )}
@@ -286,8 +334,9 @@ export function Calendar({
           <Mascot name="cooper_reading" size="lg" decorative />
           <h2 className="empty__title">Nothing on the calendar</h2>
           <p className="empty__text">
-            Add a task with a time estimate and say &ldquo;plan my day&rdquo;, or give something an
-            exact time like &ldquo;dentist thursday 3pm&rdquo;.
+            Add a task with a time estimate and say &ldquo;plan my day&rdquo;,
+            or give something an exact time like &ldquo;dentist thursday
+            3pm&rdquo;.
           </p>
         </section>
       </div>
@@ -346,7 +395,9 @@ export function Calendar({
           <div className="daygrid">
             {HOURS.map((hour) => (
               <div className="daygrid__row" key={hour}>
-                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
+                <span className="daygrid__hour">
+                  {String(hour).padStart(2, "0")}
+                </span>
                 <div
                   className={`daygrid__slot ${working(anchor, hour) ? "daygrid__slot--open" : ""}`}
                 >
@@ -378,7 +429,9 @@ export function Calendar({
 
             {HOURS.map((hour) => (
               <div className="weekgrid__line" key={hour}>
-                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
+                <span className="daygrid__hour">
+                  {String(hour).padStart(2, "0")}
+                </span>
                 {days.map((day) => (
                   <div
                     key={day.toDateString()}
@@ -394,54 +447,77 @@ export function Calendar({
       ) : null}
 
       {mode === "month" ? (
-        <section className="group">
-          <div className="monthgrid">
-            {WEEKDAY_INITIALS.map((initial, index) => (
-              <span className="monthgrid__head" key={index} aria-hidden="true">
-                {initial}
-              </span>
-            ))}
-            {days.map((day) => {
-              const mine = on(day);
-              const outside = day.getMonth() !== anchor.getMonth();
-              return (
-                <button
-                  type="button"
-                  key={day.toDateString()}
-                  className={`monthcell ${outside ? "is-outside" : ""} ${
-                    sameDay(day, today) ? "is-today" : ""
-                  }`}
-                  aria-label={`${day.toLocaleDateString(undefined, {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
-                  onClick={() => openDay(day)}
+        <>
+          <section className="group">
+            <div className="monthgrid">
+              {WEEKDAY_INITIALS.map((initial, index) => (
+                <span
+                  className="monthgrid__head"
+                  key={index}
+                  aria-hidden="true"
                 >
-                  <span className="monthcell__num">{day.getDate()}</span>
-                  {mine.slice(0, 3).map((entry) => (
-                    <span
-                      className={`pill pill--${entry.source} cat--${entry.category}`}
-                      key={entry.key}
-                    >
-                      {entry.title}
-                    </span>
-                  ))}
-                  {mine.length > 3 ? (
-                    <span className="monthcell__more">+{mine.length - 3}</span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                  {initial}
+                </span>
+              ))}
+              {days.map((day) => {
+                const mine = on(day);
+                const outside = day.getMonth() !== anchor.getMonth();
+                return (
+                  <button
+                    type="button"
+                    key={day.toDateString()}
+                    aria-pressed={sameDay(day, dayOf)}
+                    className={`monthcell ${outside ? "is-outside" : ""} ${
+                      sameDay(day, today) ? "is-today" : ""
+                    } ${sameDay(day, dayOf) ? "is-picked" : ""}`}
+                    aria-label={`${day.toLocaleDateString(undefined, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
+                    onClick={() => setPicked(day)}
+                  >
+                    <span className="monthcell__num">{day.getDate()}</span>
+                    {mine.slice(0, 3).map((entry) => (
+                      <span
+                        className={`pill pill--${entry.source} cat--${entry.category}`}
+                        key={entry.key}
+                      >
+                        {entry.title}
+                      </span>
+                    ))}
+                    {mine.length > 3 ? (
+                      <span className="monthcell__more">
+                        +{mine.length - 3}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="daydetail">
+            <div className="daygroup">
+              {dayLabel(dayOf, today)}
+              <span className="group__note">
+                {on(dayOf).length} {on(dayOf).length === 1 ? "thing" : "things"}
+              </span>
+            </div>
+            {on(dayOf).length === 0 ? (
+              <p className="daydetail__none">Nothing on this day.</p>
+            ) : (
+              on(dayOf).map((entry) => block(entry, false))
+            )}
+          </section>
+        </>
       ) : null}
 
       <footer className="calfoot">
         {legend}
         <p className="hint">
-          Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
-          placed; outlined ones came from your calendar.
+          Colour is the category. Shaded hours are yours to book. Filled entries
+          are ones Cooper placed; outlined ones came from your calendar.
         </p>
       </footer>
     </div>
