@@ -39,6 +39,10 @@ class PlacementRules:
             raise DomainValidationError("buffer_minutes must not be negative")
 
 
+# A single shared instance, so the default is a value rather than a call in a signature.
+DEFAULT_RULES = PlacementRules()
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Placeable:
     """What placement needs to know about a task. Deliberately not the Task itself."""
@@ -107,7 +111,7 @@ def place(
     *,
     now: dt.datetime,
     busy: Iterable[Interval] = (),
-    rules: PlacementRules = PlacementRules(),
+    rules: PlacementRules = DEFAULT_RULES,
 ) -> PlacementResult:
     """Greedily first-fit the shortlist into declared window time.
 
