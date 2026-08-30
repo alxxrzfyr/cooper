@@ -22,7 +22,7 @@ Five things go wrong with my time, and they are the same problem wearing five ha
 
 ## The things it must do
 
-Requirements 1–4 work today. 5–7 are the build.
+Requirements 1–5 work today. 6 and 7 are the build.
 
 | # | Requirement | Done when |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ Requirements 1–4 work today. 5–7 are the build.
 
 ### What each of the new three means
 
-**5 — The dashboard.** The app opens here, not on the chat. Four things on it: the single next
+**5 — The dashboard.** *Built.* The app opens here, not on the chat. Four things on it: the single next
 thing to do, today's fixed events and booked blocks in one strip, anything overdue or running out
 of runway, and what has arrived from elsewhere since I last looked. The ranked list is a section
 on this screen, not an errand I run.
@@ -186,6 +186,10 @@ which case stop.
 
 ## Where it stands
 
-Requirements 1–4 work. Google Calendar needs my own Google Cloud credentials to write to a real
+Requirements 1–5 work. Google Calendar needs my own Google Cloud credentials to write to a real
 calendar; without them everything else runs and the calendar reports itself as off.
-Requirements 5–7 are not built. Nothing in the current code contradicts them.
+Requirements 6 and 7 are not built. Nothing in the current code contradicts them.
+
+Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
+an invented half-hour block, against what all three documents promised. The dashboard's "waiting
+for a time" group is what made keeping the promise safe, because skipping is no longer silent.

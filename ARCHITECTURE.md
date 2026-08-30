@@ -28,6 +28,9 @@ cooper/
   watcher.py   the timer loop that reads Gmail; the only part that runs unprompted
 ```
 
+None of these exist yet. Requirement 5 needed no backend change at all: the dashboard is built
+entirely from the `/api/today` payload the app already fetched.
+
 **`sources.py` is the load-bearing one.** Google events, Outlook meetings and events parsed out
 of email are all the same thing to the scheduler: `(start, end)` pairs that are already spoken
 for. `planner.place()` takes busy intervals and does not care where they came from. Build this
@@ -41,6 +44,7 @@ items and go through `rank()`, not through `sources.py`.
 ```
 frontend/src/
   App.tsx           one screen: banner, plan, setup, composer
+  Home.tsx          the dashboard, and the landing screen — next, today, attention, waiting
   Chat.tsx          the conversation, grouped into runs like a messages app
   Calendar.tsx      day, week and month, coloured by category
   Nav.tsx           top bar, bottom tabs, and the wide-screen rail
@@ -54,12 +58,13 @@ frontend/src/
 ## Frontend, planned
 
 ```
-  Home.tsx          the dashboard, and the landing screen — next, today, attention, arrived
   Form.tsx          Manual mode as fields rather than a sentence
 ```
 
-The ranked list becomes a section of `Home.tsx` rather than its own destination. Reusing `Row.tsx`
-is the point; the dashboard is a new arrangement of things that already render.
+`Home.tsx` reuses `Row.tsx` and the `slot` classes from `Calendar.tsx`, because the dashboard is a
+new arrangement of things that already render rather than a new set of components. The one piece
+of real logic in it is deciding what counts as today, which is done from the local calendar day so
+it cannot drift with the viewer's zone.
 
 ## Data
 

@@ -31,8 +31,9 @@ Four things, and deliberately nothing else:
 3. **Get it booked.** The top of that list lands in real time, inside hours you chose.
 4. **Change your mind.** Undo the last thing.
 
-Four screens: **Chat** (where you talk to it), **Plan** (what to do, ranked), **Calendar** (a day,
-week or month of what's booked), **Settings**.
+Five screens: **Home** (your day at a glance, and where it opens), **Chat** (where you talk to
+it), **Plan** (what to do, ranked), **Calendar** (a day, week or month of what's booked),
+**Settings**.
 
 Light by default, because a calendar is a document. Dark and "follow my machine" are both one tap
 away under Settings.
@@ -103,12 +104,8 @@ second user, it does not belong here.
 
 ## What's coming
 
-Three more requirements are specified in `PRD.md` and not yet built. They are listed here so the
+Two more requirements are specified in `PRD.md` and not yet built. They are listed here so the
 gap between the docs and the code is obvious rather than discovered.
-
-**A dashboard.** The app opens on the chat today, which is a place to do things rather than a
-place to see things. Planned: one screen with what's next, today's strip, anything overdue, and
-what arrived while you were away.
 
 **Manual mode as a form.** Right now Manual means typing a sentence and having simple rules read
 it — the typing without the smartness. It should be fields: title, deadline, length, category,
@@ -195,6 +192,7 @@ cooper/
   config.py    settings
 frontend/src/
   App.tsx      one screen
+  Home.tsx     the dashboard: next, today, attention, waiting
   Chat.tsx     the conversation
   Calendar.tsx day, week, month
   Nav.tsx      tab bar, side rail
@@ -216,9 +214,9 @@ than a question.
 ## Verified
 
 ```
-uv run pytest      129 passed
+uv run pytest      130 passed
 uv run ruff check  clean
-npm test           61 passed
+npm test           68 passed
 npm run build      ok
 ```
 
