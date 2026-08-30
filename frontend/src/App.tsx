@@ -632,7 +632,11 @@ export default function App() {
                 <div className="field">
                   <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
                   <span className="tag">
-                    {serverModelAvailable ? "configured" : geminiKey.trim() ? "this browser" : "no key"}
+                    {serverModelAvailable
+                      ? "configured"
+                      : geminiKey.trim()
+                        ? "this browser"
+                        : "no key"}
                   </span>
                 </div>
                 <div className="field field--stacked">

@@ -1,9 +1,5 @@
 /*
  * Cooper theme.
- *
- * Apple structure and materials, Google colour and shape. Two frosted bars, cards between them,
- * light and dark both first class.
- *
  * One thing worth knowing about the mascot art: it is cut out to transparency by
  * `tools/mascot_cutout.py`, square with even margins, so Cooper drops straight onto any
  * background at any size. No container, no mask, no crop.
@@ -238,7 +234,7 @@ select {
 }
 
 .who__name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--wordmark-start);

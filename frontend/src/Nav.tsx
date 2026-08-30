@@ -46,7 +46,7 @@ export function Nav({
       <header className="topbar">
         {/* Who you are talking to, the way a messages app says it: face, then name. */}
         <div className="who">
-          <Mascot name="cooper_avatar" size="sm" decorative />
+          <Mascot name="cooper_avatar" size="xs" decorative />
           <span className="who__name">Cooper</span>
         </div>
         <div className="topbar__spacer" />
@@ -66,7 +66,7 @@ export function Nav({
       <nav className="rail" aria-label="Sections">
         <div className="rail__brand">
           <div className="who">
-            <Mascot name="cooper_avatar" size="sm" decorative />
+            <Mascot name="cooper_avatar" size="xs" decorative />
             <span className="who__name">Cooper</span>
           </div>
         </div>

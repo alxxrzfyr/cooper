@@ -1237,7 +1237,7 @@ describe("the mascot", () => {
     stub({});
     render(<App />);
 
-    await screen.findByText("Cooper");
+    await screen.findAllByText("Cooper");
 
     const identityMascots = document.querySelectorAll(".who .mascot");
     expect(identityMascots).toHaveLength(2);
