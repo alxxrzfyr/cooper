@@ -32,9 +32,26 @@ Four things, and deliberately nothing else:
 4. **Change your mind.** Undo the last thing.
 
 Four screens: **Chat** (where you talk to it), **Plan** (what to do, ranked), **Calendar** (a day,
-week or month of what's booked), **Setup**.
+week or month of what's booked), **Settings**.
+
+Light by default, because a calendar is a document. Dark and "follow my machine" are both one tap
+away under Settings.
 
 Installs as a PWA and opens offline. Phone gets a bottom tab bar, desktop gets a side rail.
+
+## Tasks and events are different, and that's the whole idea
+
+An **event** already has a time. The dentist chose it, not you. It goes straight on the calendar.
+
+A **task** has no time yet — just a size and a deadline. `write the report, 90m, due friday`
+tells you what and when-by, but not *when*. So tasks wait in a ranked list until you say
+"plan my day", and then Cooper finds real gaps in your working hours and drops them in.
+
+That's why there's a list *and* a calendar. The list is what you owe. The calendar is when you
+pay it.
+
+An errand is just a task you never sized. `buy milk` gets ranked and shown, and never eats a
+calendar block, because Cooper skips anything with no estimate rather than inventing one.
 
 ## Its own calendar, or yours
 
@@ -61,11 +78,63 @@ you: dentist thursday 3pm          → personal
 Nothing to configure, and no fifth category to invent. Anything unrecognised is personal, which
 is a better default than a wrong guess.
 
+Green and red are not on that list on purpose. They mean the same two things everywhere: green is
+done or added, red is deleted. So a reply in the chat is green when something landed, red when
+something went away, blue when Cooper answered a question rather than doing something, and amber
+when it needs you.
+
+## Two ways to talk to it
+
+Chat has a **Manual** and an **AI** switch, and Manual is the default.
+
+Manual is the rule-based parser. It runs offline, costs nothing, and handles the sentences you
+actually type. AI hands the sentence to Gemini and can also answer questions about your own tasks:
+"what should I focus on this week", "is there room for the gym tomorrow". Answers are text only —
+they can never change your calendar, and Cooper declines anything that is not about your own work.
+
+Manual exists because the free tier has a daily limit and most sentences do not need a model. With
+no key at all the AI switch disables itself and everything else still works.
+
 ## What it is not
 
 Not a team tool. No accounts, no sharing, no projects, no boards, no reports, no streaks.
 No audit log, because nobody audits their own calendar. If a feature only makes sense with a
 second user, it does not belong here.
+
+## What's coming
+
+Three more requirements are specified in `PRD.md` and not yet built. They are listed here so the
+gap between the docs and the code is obvious rather than discovered.
+
+**A dashboard.** The app opens on the chat today, which is a place to do things rather than a
+place to see things. Planned: one screen with what's next, today's strip, anything overdue, and
+what arrived while you were away.
+
+**Manual mode as a form.** Right now Manual means typing a sentence and having simple rules read
+it — the typing without the smartness. It should be fields: title, deadline, length, category,
+importance. AI mode stays the one you talk to, and gains bulk verbs ("drop everything I finished
+last week"), which show you the list before acting.
+
+**Commitments you made elsewhere.** Meetings and classes and events you RSVP'd to should block
+your time before Cooper schedules anything into it. Four sources, one idea:
+
+| Source | What arrives |
+| --- | --- |
+| Google Calendar | your events — *works today* |
+| Outlook / Teams | your meetings |
+| Teams classes | assignments, which join the ranked list |
+| Gmail | Luma, Meetup and Eventbrite confirmations |
+
+Luma, Meetup and Eventbrite aren't integrated directly — they email you, so Gmail is the bridge
+and one connection covers all three.
+
+Everything except assignments arrives as the same thing: time already spoken for. Assignments are
+tasks with due dates, so the existing score handles them with no special case.
+
+Read-only, all of it. Cooper never RSVPs for you and never creates a meeting.
+
+Accounts, Postgres and hosting are a separate, later, deliberate piece of work. SQLite stays until
+then, because it needs no account, no bill, and no network.
 
 ## Running it
 
@@ -126,10 +195,14 @@ cooper/
   config.py    settings
 frontend/src/
   App.tsx      one screen
+  Chat.tsx     the conversation
+  Calendar.tsx day, week, month
+  Nav.tsx      tab bar, side rail
   Row.tsx      a task or event
-  HoursSheet.tsx  when you can be booked
-  Mascot.tsx   the otter
+  Mascot.tsx   Cooper
   theme.css    Apple structure, Google colour, light and dark
+tools/
+  mascot_cutout.py  raw art in, cut-out square webp out
 ```
 
 Three tables: `item` (a task or event — the difference is whether the time is fixed),
@@ -143,9 +216,9 @@ than a question.
 ## Verified
 
 ```
-uv run pytest      107 passed
+uv run pytest      129 passed
 uv run ruff check  clean
-npm test           46 passed
+npm test           61 passed
 npm run build      ok
 ```
 
@@ -153,15 +226,16 @@ Checked in a browser, light and dark, at 390px and 1180px: nine sentences parsed
 categories, ranked, and placed inside working hours; a 3pm appointment landing at 3pm; day, week
 and month each showing the same items in the same colours.
 
-Worth knowing if you take screenshots of this: Chrome's `--force-dark-mode` does *not* set
-`prefers-color-scheme`, so it shows you Blink's auto-inversion rather than the real dark theme.
+Worth knowing if you take screenshots of this: the theme is a choice under Settings, not a
+reading of your machine, so a browser flag will not switch it. Chrome's `--force-dark-mode` in
+particular shows you Blink's auto-inversion rather than the real dark theme.
 
 ## Docs
 
 | File | What's in it |
 | --- | --- |
-| `PRD.md` | What it must do, and what it must never grow into |
-| `ARCHITECTURE.md` | The six files, the three tables, the rules |
+| `PRD.md` | The seven requirements, and what it must never grow into |
+| `ARCHITECTURE.md` | The files, the three tables, the rules |
 | `AGENTS.md` | For anyone, human or otherwise, changing this code |
 | `CLAUDE.md` | Points at `AGENTS.md` |
 | `docs/DESIGN.md` | The look, and why it looks like that |
