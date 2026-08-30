@@ -58,11 +58,14 @@ def test_both_model_prompts_name_cooper_as_a_jolly_otter(
     )
 
     cooper.read("write the report", [])
-    monkeypatch.setattr(cooper, "_generate", lambda prompt, **kwargs: (prompts.append(prompt), "Start there.")[1])
+    monkeypatch.setattr(
+        cooper, "_generate", lambda prompt, **kwargs: (prompts.append(prompt), "Start there.")[1]
+    )
     cooper.answer("what is next", [])
 
     assert len(prompts) == 2
     assert all("Cooper" in prompt and "jolly" in prompt and "otter" in prompt for prompt in prompts)
+
 
 def test_an_obvious_command_does_not_spend_a_gemini_call(
     self, monkeypatch: pytest.MonkeyPatch
@@ -93,6 +96,7 @@ def test_a_model_answer_with_prompt_leakage_is_discarded(
 
     assert cooper.answer("what is next", []) is None
 
+
 def test_a_model_answer_over_sixty_words_is_discarded(
     self, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -100,6 +104,7 @@ def test_a_model_answer_over_sixty_words_is_discarded(
     monkeypatch.setattr(cooper, "_generate", lambda prompt, **kwargs: "word " * 61)
 
     assert cooper.answer("what is next", []) is None
+
 
 def test_answer_prompt_contains_at_most_twenty_four_items(
     self, monkeypatch: pytest.MonkeyPatch
@@ -213,6 +218,7 @@ def test_ai_request_can_use_a_browser_key_without_changing_global_brain(
     assert seen
     assert "user-secret" not in response.text
     assert module.brain.using_model is False
+
 
 def test_manual_request_ignores_a_browser_gemini_key(
     self, client: TestClient, monkeypatch: pytest.MonkeyPatch
