@@ -264,15 +264,16 @@ than a question.
 ## Verified
 
 ```
-uv run pytest      236 passed
-uv run ruff check  clean
-npm test           85 passed
-npm run build      ok
+uv run pytest                 279 passed
+uv run ruff check .           clean
+uv run ruff format --check .  clean
+npm test -- --run             100 passed
+npm run format:check          clean
+npm run build                 ok
 ```
 
-Checked in a browser, light and dark, at 390px and 1180px: nine sentences parsed into all four
-categories, ranked, and placed inside working hours; a 3pm appointment landing at 3pm; day, week
-and month each showing the same items in the same colours.
+Also checked: Alembic upgrade against a disposable SQLite database, `/health`, and authenticated
+local `/api/today` on `127.0.0.1`.
 
 Worth knowing if you take screenshots of this: the theme is a choice under Settings, not a
 reading of your machine, so a browser flag will not switch it. Chrome's `--force-dark-mode` in
