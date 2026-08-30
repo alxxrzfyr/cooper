@@ -117,29 +117,26 @@ second user, it does not belong here.
 
 ## What's coming
 
-Two more requirements are specified in `PRD.md` and not yet built. They are listed here so the
-gap between the docs and the code is obvious rather than discovered.
-
-**Manual mode as a form.** Right now Manual means typing a sentence and having simple rules read
-it — the typing without the smartness. It should be fields: title, deadline, length, category,
-importance. AI mode stays the one you talk to, and gains bulk verbs ("drop everything I finished
-last week"), which show you the list before acting.
+The local capture form and the Google ecosystem are built. The remaining requirement-7 sources
+are deliberately future work and will plug into the same busy-time pipe:
 
 **Commitments you made elsewhere.** Meetings and classes and events you RSVP'd to should block
 your time before Cooper schedules anything into it. Four sources, one idea:
 
-| Source          | What arrives                              |
-| --------------- | ----------------------------------------- |
-| Google Calendar | your events — _works today_               |
-| Outlook / Teams | your meetings                             |
-| Teams classes   | assignments, which join the ranked list   |
-| Gmail           | Luma, Meetup and Eventbrite confirmations |
+| Source          | What arrives                                              |
+| --------------- | --------------------------------------------------------- |
+| Google Calendar | your events — _works today_                               |
+| Outlook / Teams | your meetings — _future_                                  |
+| Teams classes   | assignments, which join the ranked list — _future_        |
+| Gmail           | Luma, Meetup and Eventbrite confirmations — _works today_ |
 
 Luma, Meetup and Eventbrite aren't integrated directly — they email you, so Gmail is the bridge
 and one connection covers all three.
 
 Everything except assignments arrives as the same thing: time already spoken for. Assignments are
-tasks with due dates, so the existing score handles them with no special case.
+tasks with due dates, so the existing score handles them with no special case. The Gmail watcher
+is read-only, reconciles moves and cancellations, and exposes its last check in Settings. Bulk
+verbs still need their conversation surface in AI mode.
 
 Read-only, all of it. Cooper never RSVPs for you and never creates a meeting.
 

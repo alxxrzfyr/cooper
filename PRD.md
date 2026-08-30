@@ -22,7 +22,8 @@ Five things go wrong with my time, and they are the same problem wearing five ha
 
 ## The things it must do
 
-Requirements 1–6 work today. 7 is the build, and its shared pipe is already in place.
+Requirements 1–6 work today. Requirement 7 is partly built: Google Calendar and the Gmail
+confirmation watcher are live; Outlook and Teams remain future sources.
 
 | #   | Requirement                                     | Done when                                                                               |
 | --- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -65,10 +66,10 @@ Everything except assignments arrives as the same thing: time that is already sp
 the scheduler must route around. Assignments are the exception and arrive as tasks with due
 dates, which the existing score already knows how to rank.
 
-The pipe this depends on is built. `sources.py` already turns every commitment into one list of
-busy intervals the scheduler routes around, today from Google and Cooper's own blocks. Adding
-Outlook, Teams and email-parsed events is appending a producer to that list, not a rewrite. What
-is missing is those producers, and each is blocked on a credential or a scope I have to decide.
+The pipe this depends on is built. `sources.py` turns every commitment into one list of busy
+intervals the scheduler routes around: Google Calendar, Cooper's own blocks, and confirmed
+Gmail events today. Adding Outlook and Teams is appending producers to that list, not a rewrite;
+those integrations still need an Azure app registration and read scopes.
 
 Luma, Meetup and Eventbrite are not integrated directly. They send email, so Gmail is the bridge
 and one connection covers all three — and covers Teams assignments too, when a school tenant
@@ -98,12 +99,11 @@ These are not features. They are the reasons I can leave it alone.
    model. Nothing else may — not attendees, not other people's addresses, not the contents of my
    calendar entries.
 
-   **Email is the exception, and it is a knowing one.** Parsing a confirmation email means
-   sending its body to a model, and those bodies contain locations and other people's names.
-   The price of not maintaining three fragile scrapers. Therefore: only messages matching a
-   known sender is parsed, only the fields in requirement 7 are extracted, the body is never
-   stored after parsing, and no email content is ever logged. If this cannot hold, the Gmail
-   source comes out.
+   **Email is the exception, and it is a knowing one.** A deterministic parser reads a
+   confirmation body in memory, and those bodies can contain locations and other people's names.
+   Therefore: only messages matching a known sender are parsed, only the fields in requirement 7
+   are extracted, the body is never stored after parsing, and no email content is ever logged. If
+   this cannot hold, the Gmail source comes out.
 
 7. **A background process must be visibly alive.** The email watcher is the first part of Cooper
    that runs while I am not looking, and so the first part that can fail silently. Last-checked
@@ -170,10 +170,11 @@ Not a schedule. A dependency chain.
 2. **Manual as a form, and bulk verbs.** Small, and it changes daily use.
 3. **One busy-time pipe.** The shared idea behind requirement 7. Build it once with Google, the
    source it already has.
-4. **Outlook and Teams meetings.** Cheap once the pipe exists. Then Teams assignments, which
-   feed the ranked list rather than the calendar.
-5. **The email watcher.** Luma, Meetup, Eventbrite. Roughly half the total work, and the only
-   item that needs a rule rewritten to allow it.
+4. **The email watcher.** Luma, Meetup and Eventbrite. Built on the Google grant; it is a fixed
+   timer and loop, not a job system.
+5. **Outlook and Teams meetings.** Next, once an Azure app registration and the narrow read
+   scopes are a deliberate decision. Teams assignments then feed the ranked list rather than the
+   calendar.
 6. **Accounts, Postgres and hosting.** One piece of work, not spread out. Only when someone else
    actually needs in.
 
@@ -194,15 +195,16 @@ which case stop.
 
 ## Where it stands
 
-Requirements 1–5 work. Google Calendar needs my own Google Cloud credentials to write to a real
-calendar; without them everything else runs and the calendar reports itself as off.
+Requirements 1–6 work. Google Calendar and Gmail are optional: without my own Google Cloud
+credentials the app stays fully local and reports both services as off.
 
-Requirement 7's shared pipe (`sources.py`) is built and feeds the scheduler. The remote producers
-that fill it are not, and are blocked on decisions only I can make: Outlook and Teams need an
-Azure app registration and read scopes for calendars and, where the tenant allows it, classes.
-The Gmail watcher needs a restricted mail scope, which is the expensive one — free for me in
-testing, a paid annual audit once anyone else uses it. Bulk verbs also still need their
-conversation surface in AI mode.
+Requirement 7's shared pipe (`sources.py`) now feeds Google Calendar, Cooper blocks, and
+read-only Luma, Meetup and Eventbrite confirmations from Gmail into scheduling. Gmail events
+reconcile when they move or cancel, and the one timer/loop reports its last check in the app.
+The remaining remote producers are Outlook and Teams; they need an Azure app registration and
+narrow calendar/class read scopes before they are deliberately added. Gmail uses a restricted
+read-only scope — free for a personal app in testing, with a paid annual audit once anyone else
+uses it. Bulk verbs also still need their conversation surface in AI mode.
 
 Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
 an invented half-hour block, against what all three documents promised. The dashboard's "waiting

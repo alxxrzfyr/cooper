@@ -1,8 +1,8 @@
 # Architecture
 
-Nine files do everything that exists today. Read them in this order and you will understand the
-whole app in about twenty minutes. What is planned is marked as planned; nothing below describes
-code that is not there.
+The small set of files below does everything that exists today. Read them in this order and you
+will understand the whole app in about twenty minutes. Future integrations are marked explicitly;
+nothing below describes code that is not there.
 
 ## Backend, today
 
@@ -12,27 +12,27 @@ cooper/
   db.py       ~250 lines   three tables, a session helper, the UTC column type
   brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
   planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
-  google.py   ~280 lines   Calendar over REST; no SDK
-  app.py      ~580 lines   every route; the only thing that writes to the database
+  google.py   ~390 lines   Calendar and Gmail over REST; no SDK
+  sources.py  ~100 lines   one busy-time pipe for every commitment source
+  watcher.py  ~250 lines   one fixed Gmail sync timer
+  app.py      ~1,180 lines every route; the only thing that writes to the database
 ```
 
-## Backend, planned
+## Backend, future
 
-Four new files, one per idea in requirement 7 and its neighbours. If any of these can be a
-smaller change to a file above instead, do that.
+Microsoft/Teams remains a deliberately separate future integration. It will add a read-only
+producer without changing the planner or the existing Google/Gmail boundaries.
 
 ```
 cooper/
-  sources.py   the busy-time pipe: every remote commitment becomes one list of busy intervals
-  microsoft.py Graph over REST; mirrors google.py in shape — meetings, then class assignments
-  watcher.py   the timer loop that reads Gmail; the only part that runs unprompted
+  microsoft.py Graph over REST; meetings and class assignments when an Azure app is configured
 ```
 
-`sources.py` now exists and is the built half of requirement 7: it turns every commitment into
-one list of busy intervals the planner routes around, today from Google and Cooper's own blocks.
-`microsoft.py` and `watcher.py` do not exist yet and are blocked on a credential and a scope
-decision. Requirement 5 needed no backend change at all, and requirement 6's form reuses the
-existing add path rather than adding a second writer.
+`sources.py` turns every commitment into one list of busy intervals the planner routes around.
+Today it combines Google Calendar, Cooper's own blocks, and reconciled Gmail confirmations.
+`watcher.py` reads Gmail on one fixed interval and reports its last check through the dashboard;
+it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
+second writer.
 
 **`sources.py` is the load-bearing one.** Google events, Outlook meetings and events parsed out
 of email are all the same thing to the scheduler: `(start, end)` pairs that are already spoken
@@ -59,11 +59,9 @@ frontend/src/
   theme.css         tokens, light and dark
 ```
 
-## Frontend, planned
-
-```
-
-```
+There is no frontend work currently planned beyond the existing Calendar/Gmail status and
+read-only event surfaces. New provider UI should extend those surfaces rather than creating a
+parallel settings or event model.
 
 `Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
 `add` the sentence path uses, and runs it through the public `validate` in `brain.py`. A typed
@@ -91,20 +89,20 @@ start_at end_at google_event_id
 status pinned created_at done_at
 ```
 
-Planned columns:
+Owned external columns:
 
 ```
 owner_id      who this belongs to; one value today, cheap now and brutal later
-source        where it came from: "me", "google", "microsoft", "email"
-source_ref    the id it has over there, so an update finds it again
+source        where it came from: "me" or the read-only Gmail bridge
+source_ref    the provider event reference, so a move or cancellation finds it again
 ```
 
 `google_event_id` and `source_ref` are not the same thing and must not be merged.
 `google_event_id` is an event Cooper _wrote_. `source_ref` is an event Cooper _read_. One is a
 mirror Cooper owns, the other is a fact it does not.
 
-**`setting`** — key/value. Working hours, encrypted tokens, and the watcher's last-seen marker
-and last-checked time. Planned: keyed by owner, not global.
+**`setting`** — key/value. Working hours, the encrypted Google token, Gmail watcher health, and
+the watcher's last-checked marker. It is still one local owner's store.
 
 **`change`** — `label`, `item_id`, `before`. Enough to undo the last thing, pruned to twenty
 rows. Not an audit log. Planned: `owner_id`.
