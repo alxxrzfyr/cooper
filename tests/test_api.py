@@ -160,6 +160,31 @@ class TestTheTwoModes:
 
 
 class TestGmailReconciliation:
+    def test_sync_route_is_protected(self, client: TestClient) -> None:
+        assert client.post("/api/google/sync").status_code == 403
+
+    def test_sync_route_is_a_safe_offline_noop_and_projects_health(
+        self, client: TestClient
+    ) -> None:
+        response = client.post("/api/google/sync", headers=HEADERS)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["summary"] == {
+            "created": 0,
+            "updated": 0,
+            "dropped": 0,
+            "skipped": 0,
+            "error": None,
+        }
+        gmail = body["view"]["gmail"]
+        assert gmail["configured"] is False
+        assert gmail["connected"] is False
+        assert isinstance(gmail["last_checked"], str)
+        assert gmail["last_error"] is None
+        assert gmail["imported"] == 0
+        assert gmail["skipped"] == 0
+
     def test_sync_reconciles_imported_events_without_undo_history(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

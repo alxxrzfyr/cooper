@@ -240,7 +240,15 @@ def sync_gmail_once() -> SyncSummary:
     checked_at = now()
     try:
         messages = gmail.list_messages(
-            after=checked_at - dt.timedelta(days=settings.gmail_lookback_days), max_results=100
+            # Gmail's bound is evaluated against a fresh clock inside the client. Its query is
+            # day-granular, so this second preserves the requested window while avoiding a
+            # race at the exact lower boundary when the client checks a fresh clock.
+            after=(
+                checked_at
+                - dt.timedelta(days=settings.gmail_lookback_days)
+                + dt.timedelta(seconds=1)
+            ),
+            max_results=100,
         )
     except CalendarError:
         summary = SyncSummary(error="Gmail could not be reached.")
@@ -377,6 +385,8 @@ def today_view() -> dict[str, Any]:
         ]
         change = store.last_change(session)
         undo_label = change.label if change else None
+    gmail_health = store.get_setting(GMAIL_SETTING) or {}
+    gmail_counts = gmail_health.get("counts") or {}
 
     return {
         "now": at.isoformat(),
@@ -397,6 +407,14 @@ def today_view() -> dict[str, Any]:
             "configured": calendar.configured,
             "connected": calendar.connected,
             "email": (store.get_setting(GOOGLE_SETTING) or {}).get("email"),
+        },
+        "gmail": {
+            "configured": gmail.configured,
+            "connected": gmail.connected,
+            "last_checked": gmail_health.get("last_checked"),
+            "last_error": gmail_health.get("last_error"),
+            "imported": gmail_counts.get("created", 0),
+            "skipped": gmail_counts.get("skipped", 0),
         },
     }
 
@@ -1137,6 +1155,12 @@ def disconnect() -> dict[str, Any]:
         store.set_setting(GOOGLE_SETTING, {})
         calendar.load_token(None)
     return {"view": today_view()}
+
+
+@app.post("/api/google/sync")
+def sync_google() -> dict[str, Any]:
+    summary = sync_gmail_once()
+    return {"summary": dataclasses.asdict(summary), "view": today_view()}
 
 
 def _page(title: str, message: str) -> HTMLResponse:

@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from cooper.google import GmailMessage
-from cooper.watcher import EmailProposal, parse_confirmation
+from cooper.watcher import EmailProposal, Watcher, parse_confirmation
 
 NOW = dt.datetime(2026, 8, 30, 12, tzinfo=dt.UTC)
 
@@ -181,3 +181,42 @@ Private body text that must not survive parsing.
         "cancelled",
     }
     assert "Private body text" not in repr(proposal)
+
+
+class StopAfterWaits:
+    def __init__(self, count: int) -> None:
+        self.remaining = count
+        self.intervals: list[int] = []
+
+    def is_set(self) -> bool:
+        return self.remaining == 0
+
+    def wait(self, seconds: int) -> bool:
+        self.intervals.append(seconds)
+        self.remaining -= 1
+        return self.is_set()
+
+
+def test_watcher_invokes_the_app_callback_once_per_fixed_interval() -> None:
+    calls: list[None] = []
+    stop = StopAfterWaits(2)
+    watcher = Watcher(lambda: calls.append(None) or object(), interval_seconds=300)
+
+    watcher.run_forever(stop)
+
+    assert calls == [None, None]
+    assert stop.intervals == [300, 300]
+
+
+def test_watcher_does_not_retry_a_failed_sync_before_its_next_interval() -> None:
+    calls: list[None] = []
+    stop = StopAfterWaits(1)
+    watcher = Watcher(
+        lambda: calls.append(None) or object(),
+        interval_seconds=300,
+    )
+
+    watcher.run_forever(stop)
+
+    assert calls == [None]
+    assert stop.intervals == [300]

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://127.0.0.1:8000/api/google/callback"
     calendar_id: str = "primary"
     gmail_lookback_days: int = Field(default=14, ge=1, le=30)
+    gmail_poll_interval_seconds: int = Field(default=300, ge=60, le=86_400)
     encryption_key: SecretStr | None = None
 
     def key(self) -> str:

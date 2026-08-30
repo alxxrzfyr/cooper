@@ -173,6 +173,7 @@ sends only your own words and task titles, never event descriptions, locations, 
 COOPER_GOOGLE_CLIENT_ID=...
 COOPER_GOOGLE_CLIENT_SECRET=...
 COOPER_GMAIL_LOOKBACK_DAYS=14
+COOPER_GMAIL_POLL_INTERVAL_SECONDS=300
 COOPER_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
@@ -184,7 +185,9 @@ Calendar uses its event scope; Gmail uses the restricted, read-only Gmail scope.
 your own app in Testing mode, but a published app for other people needs Google's security review.
 **The one trap:** a consent screen left in Testing mode expires refresh tokens after seven days.
 Sync will stop and it will look exactly like a bug in the code. It isn't. Publish the app or
-reconnect weekly. Once the Gmail watcher is configured, start it with `python -m cooper.watcher`.
+reconnect weekly. Once the Gmail watcher is configured, start one watcher with
+`python -m cooper.watcher`; it checks at the fixed interval above. You can also use the protected
+`POST /api/google/sync` route for one immediate check.
 
 Without these the calendar is simply off and everything else works.
 

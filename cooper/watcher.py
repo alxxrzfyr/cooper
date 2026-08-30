@@ -6,12 +6,18 @@ import dataclasses
 import datetime as dt
 import html
 import re
+import threading
+from collections.abc import Callable
 from email.utils import parseaddr
 from html.parser import HTMLParser
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cooper.google import GmailMessage
+
+if TYPE_CHECKING:
+    from cooper.app import SyncSummary
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -22,6 +28,22 @@ class EmailProposal:
     start: dt.datetime | None
     end: dt.datetime | None
     cancelled: bool
+
+
+class Watcher:
+    """Run the app-owned Gmail sync on one fixed interval."""
+
+    def __init__(self, run_once: Callable[[], SyncSummary], interval_seconds: int) -> None:
+        if interval_seconds < 1:
+            raise ValueError("Watcher interval must be positive.")
+        self._run_once = run_once
+        self._interval_seconds = interval_seconds
+
+    def run_forever(self, stop_event: threading.Event | None = None) -> None:
+        stop = stop_event or threading.Event()
+        while not stop.is_set():
+            self._run_once()
+            stop.wait(self._interval_seconds)
 
 
 _SENDER_DOMAINS = {
@@ -216,3 +238,14 @@ def _unambiguous_local(naive: dt.datetime, zone: ZoneInfo) -> dt.datetime | None
 
 def _normalize(value: str) -> str:
     return " ".join(value.split())
+
+
+def main() -> None:
+    """Start the one app-owned sync loop without importing the app at module load time."""
+    from cooper.app import settings, sync_gmail_once
+
+    Watcher(sync_gmail_once, settings.gmail_poll_interval_seconds).run_forever()
+
+
+if __name__ == "__main__":
+    main()
