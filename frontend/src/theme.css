@@ -447,12 +447,16 @@ select {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: flex-end;
+  /* The input is a single line, so the send button centres on it. flex-end was for a growing
+     textarea that never arrived, and it pinned the arrow to the bottom with an uneven gap. */
+  align-items: center;
   gap: 6px;
   background: var(--card);
   border: 0.5px solid var(--hair);
   border-radius: var(--pill);
-  padding: 3px 4px 3px 15px;
+  /* Symmetric ends, with a touch more room on the button's side so the arrow sits off the edge
+     rather than jammed into the corner. */
+  padding: 4px 8px 4px 16px;
 }
 
 .composer__field:focus-within {
@@ -1256,6 +1260,25 @@ select {
   width: 76px;
 }
 
+/* Every select in the app — Settings' working hours and the Manual form alike — gets the same
+   reset and one drawn chevron. Native dropdown arrows differ on every platform, which is the
+   inconsistency this removes. Defined once here so the two screens can never drift apart. */
+.field select,
+.taskform select.field__input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  background-color: var(--sunken);
+}
+
 .daypick {
   display: flex;
   gap: 5px;
@@ -1485,11 +1508,25 @@ button.slot:active {
 
 .calbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   margin: 0 0 12px;
+  min-width: 0;
+}
+
+/*
+ * The range switcher and the nav cluster are two fixed-content groups, not two things that can
+ * give up width: "Day"/"Week"/"Month" cannot shrink below their own label, and neither can the
+ * arrows or "Today". Squeezing both onto one line on a phone is what made them overlap. Wrapping
+ * the bar, rather than shrinking either child, is what actually fits a 320px screen: the range
+ * switcher gets its own row and the nav gets the next one, and nothing overlaps at any width.
+ */
+.calbar > .segmented,
+.calbar > .calnav {
+  flex: none;
+  min-width: 0;
 }
 
 /*
@@ -1549,13 +1586,15 @@ button.slot:active {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: none;
 }
 
 .calnav__label {
   font-size: 14px;
   font-weight: 650;
-  min-width: 9.5ch;
+  min-width: 13ch;
   text-align: center;
+  white-space: nowrap;
 }
 
 .ghostbtn {
@@ -1809,8 +1848,13 @@ button.slot:active {
     border-radius: 3px;
   }
 
+  .calbar {
+    /* Each cluster centred on its own line once the bar wraps. */
+    justify-content: center;
+  }
+
   .calnav__label {
-    min-width: 8ch;
+    min-width: 12ch;
     font-size: 13px;
   }
 }
@@ -2321,6 +2365,12 @@ button.slot:active {
 
 .taskform .field__input:disabled {
   opacity: 0.5;
+}
+
+/* The form's selects are full-width and left-aligned; the shared chevron rule higher up handles
+   the reset and the drawn arrow, so both screens' dropdowns match. */
+.taskform select.field__input {
+  padding-right: 34px;
 }
 
 .taskform .field + .field {
