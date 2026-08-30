@@ -333,6 +333,37 @@ describe("manual and ai", () => {
     });
   });
 
+  test("does not discard saved AI mode before model availability loads", async () => {
+    localStorage.setItem("cooper.mode.v1", "ai");
+    stub({ view: view({ using_model: true }) });
+    render(<App />);
+    await openChat();
+
+    expect(await screen.findByRole("button", { name: "AI" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("clearing a browser key refreshes deployment model availability", async () => {
+    const calls = stub({
+      view: view({ using_model: true }),
+      todayView: view({ using_model: false }),
+    });
+    localStorage.setItem("cooper.gemini_key.v1", "AIza-browser-key");
+    render(<App />);
+    const user = await openAi();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "add a note{Enter}");
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    expect(screen.getByText("this browser")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "AI" })).toBeDisabled());
+    expect(calls.filter((call) => call.url.includes("/api/today")).length).toBeGreaterThan(1);
+  });
+
   test("with no model key, AI cannot be chosen", async () => {
     // The app has to work with no key at all, so the switch disables rather than failing later.
     stub({ view: view({ using_model: false }) });
