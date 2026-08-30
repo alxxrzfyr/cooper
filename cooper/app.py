@@ -605,6 +605,19 @@ def _as_due(day: dt.date | None) -> dt.datetime | None:
     return dt.datetime.combine(day, dt.time(23, 59), tzinfo=zone)
 
 
+def _local(moment: dt.datetime | None) -> dt.datetime | None:
+    """Tag a naive datetime as the configured zone; leave an aware one as it was sent.
+
+    The form's date and time inputs are wall-clock in the user's own zone. Pydantic parses them
+    to a naive datetime, and storing that as-is means UTC — a 3pm event lands at 3pm UTC, in the
+    evening. This mirrors what brain._datetime does for the sentence path, so both entry points
+    agree.
+    """
+    if moment is None:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=ZoneInfo(settings.timezone))
+
+
 # ------------------------------------------------------------- direct item routes
 
 
@@ -626,8 +639,12 @@ def create(body: NewItem) -> dict[str, Any]:
         # rather than forcing the person to categorise their own errand.
         category=body.category or guess_category(body.title),
         due=body.due,
-        start=body.start,
-        end=body.end,
+        # A time from the form is a wall-clock time in the user's own zone. The sentence path
+        # tags naive times with the configured zone; the form must do the same, or a 3pm event
+        # gets stored as 3pm UTC and shows up in the evening. An offset the client did send is
+        # trusted as given.
+        start=_local(body.start),
+        end=_local(body.end),
         source="form",
     )
     # The same validation the model's output goes through: an event that ends before it starts

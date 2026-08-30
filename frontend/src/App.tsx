@@ -90,6 +90,16 @@ export default function App() {
 
   useEffect(() => saveTurns(turns), [turns]);
 
+  // AI mode is only usable with a model key. A mode saved from a session that had one — or a key
+  // that was later removed — must not strand the user in a conversation that cannot answer and
+  // with no form to add through. When the backend says AI is off, fall back to Manual.
+  useEffect(() => {
+    if (view && !view.using_model && mode === "ai") {
+      setMode("manual");
+      saveMode("manual");
+    }
+  }, [view, mode]);
+
   const load = useCallback(async () => {
     try {
       setView(await api.today());

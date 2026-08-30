@@ -52,8 +52,12 @@ export function Form({
     // A date plus a time is an event with a fixed start. A date alone is a task's deadline. This
     // is the one place the form decides between the app's two kinds, and it does it from whether
     // a clock time was given rather than by asking.
-    const start =
-      due && time ? new Date(`${due}T${time}`).toISOString() : undefined;
+    //
+    // Sent as a naive wall-clock string (no Z, no offset): these inputs are the time in your own
+    // day, and the backend tags them with Cooper's configured zone. Calling toISOString() would
+    // reinterpret the time through the browser's timezone and could shift the event by hours. The
+    // end is left to the backend, which gives a start with no end a sensible default duration.
+    const start = due && time ? `${due}T${time}:00` : undefined;
 
     const item: NewItem = {
       title: title.trim(),

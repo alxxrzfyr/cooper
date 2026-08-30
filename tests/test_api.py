@@ -551,6 +551,21 @@ class TestManualForm:
 
         assert body["kind"] == "undone"
 
+    def test_a_form_time_is_local_not_utc(self, client: TestClient) -> None:
+        # A naive time from the form is wall-clock in the configured zone. Storing it as UTC was
+        # the bug: a 3pm event landed at 3pm UTC, which is 11pm in Asia/Singapore.
+        body = self.form(client, title="dentist", start="2026-09-01T15:00:00")
+
+        assert body["item"]["start_at"] == "2026-09-01T15:00:00+08:00"
+        # A start with no end gets a sensible default rather than being refused.
+        assert body["item"]["end_at"] == "2026-09-01T16:00:00+08:00"
+
+    def test_a_form_time_with_an_offset_is_trusted(self, client: TestClient) -> None:
+        # If the client does send an offset, it is respected rather than re-tagged.
+        body = self.form(client, title="call", start="2026-09-01T15:00:00+00:00")
+
+        assert body["item"]["start_at"] == "2026-09-01T15:00:00+00:00"
+
 
 class TestBulk:
     """Requirement 6's other half: bulk verbs that show the list before acting."""

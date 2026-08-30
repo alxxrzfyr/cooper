@@ -107,32 +107,38 @@ function stub(routes: Routes) {
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
 
+      const currentView = routes.view ?? view();
+      // Every mutation on the real backend returns today_view(), so its `using_model` always
+      // matches /api/today. Reflecting that here keeps the app from seeing a reply whose view
+      // disagrees with the load — which would, for instance, flip AI mode off mid-conversation.
+      const withView = (r: Reply): Reply => ({ ...r, view: currentView });
+
       if (url.includes("/api/today")) {
         return routes.failView
           ? json({ detail: "connection refused" }, 500)
-          : json(routes.view ?? view());
+          : json(currentView);
       }
       if (url.includes("/api/say")) {
         const configured = routes.say ?? reply();
         return "status" in configured
           ? json({ detail: configured.detail }, configured.status)
-          : json(configured);
+          : json(withView(configured));
       }
       if (url.includes("/api/schedule")) {
-        return json({ placed: [{ item_id: "a1" }], view: routes.view ?? view() });
+        return json({ placed: [{ item_id: "a1" }], view: currentView });
       }
       if (url.includes("/api/undo")) {
-        return json(reply({ kind: "undone", message: "Undid: Added." }));
+        return json(withView(reply({ kind: "undone", message: "Undid: Added." })));
       }
       if (url.includes("/api/hours")) {
-        return json({ view: routes.view ?? view() });
+        return json({ view: currentView });
       }
       if (url.includes("/api/items/")) {
-        return json(reply({ kind: "completed", message: "Completed." }));
+        return json(withView(reply({ kind: "completed", message: "Completed." })));
       }
       if (url.endsWith("/api/items")) {
         // Manual mode's form add: same Reply shape as a parsed add.
-        return json(reply({ kind: "added", message: "Added “write the report”." }));
+        return json(withView(reply({ kind: "added", message: "Added “write the report”." })));
       }
       return json({});
     }),
@@ -1151,5 +1157,21 @@ describe("manual mode as a form", () => {
     await openChat();
 
     expect(await screen.findByRole("button", { name: "Add it" })).toBeDisabled();
+  });
+
+  test("a stale AI mode falls back to Manual when there is no key", async () => {
+    // AI could have been the saved mode from a session that had a key, or the key was removed.
+    // Without one, staying in AI strands the user in a conversation that cannot answer and with
+    // no form to add through, so the app drops back to the form.
+    localStorage.setItem("cooper.mode.v1", "ai");
+    stub({ view: view({ using_model: false }) });
+    render(<App />);
+    await openChat();
+
+    expect(await screen.findByLabelText("What")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manual" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });
