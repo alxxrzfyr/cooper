@@ -9,13 +9,20 @@ import {
   type SyncSummary,
   type View,
 } from "./types";
+import { auth, firebaseConfigured } from "./firebase";
 
-const BASE = import.meta.env.VITE_COOPER_API ?? "http://127.0.0.1:8000";
+const BASE = import.meta.env.VITE_COOPER_API ?? "";
 const KEY_HEADER = "X-Cooper-Key";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set(KEY_HEADER, import.meta.env.VITE_COOPER_KEY ?? "");
+  if (firebaseConfigured) {
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token) throw new ApiError(401, "Sign in to continue.");
+    headers.set("Authorization", `Bearer ${token}`);
+  } else {
+    headers.set(KEY_HEADER, import.meta.env.VITE_COOPER_KEY ?? "");
+  }
   if (init?.body) headers.set("Content-Type", "application/json");
 
   const response = await fetch(`${BASE}${path}`, { ...init, headers });

@@ -5,9 +5,16 @@ import { applyAppearance, type Appearance, readAppearance, saveAppearance } from
 import { api } from "./api";
 import { Calendar } from "./Calendar";
 import { Chat, loadMode, loadTurns, saveMode, saveTurns, type Mode, type Turn } from "./Chat";
-import { Mascot, type MascotName } from "./Mascot";
+import {
+  firebaseConfigured,
+  signInWithGoogle,
+  signOutUser,
+  subscribeToAuth,
+  type FirebaseUser,
+} from "./firebase";
 import { Home } from "./Home";
 import { Form } from "./Form";
+import { Mascot, type MascotName } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
 import { TaskFrame } from "./Frame";
@@ -115,6 +122,25 @@ interface Notice {
   message: string;
 }
 
+type AuthState =
+  | { kind: "local" }
+  | { kind: "loading" }
+  | { kind: "signed-out" }
+  | { kind: "signed-in"; user: FirebaseUser };
+
+function SignInSurface({ busy, onSignIn }: { busy: boolean; onSignIn: () => void }) {
+  return (
+    <div className="scroll auth-screen">
+      <Mascot name="cooper_waving" size="lg" decorative />
+      <h1 className="largetitle">Sign in</h1>
+      <p className="empty__text">Use your approved Google account to open Cooper.</p>
+      <button type="button" className="btn" disabled={busy} onClick={onSignIn}>
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+
 /** Explain priority using the item's deadline and score details. */
 function why(item: Item): string {
   if (!item.due) return "no deadline";
@@ -127,7 +153,74 @@ function why(item: Item): string {
   return `due in ${days} days`;
 }
 
+const LOADING_LABEL: Record<Exclude<Tab, "chat">, string> = {
+  home: "Loading Cooper’s day",
+  calendar: "Loading Cooper’s calendar",
+  settings: "Loading Cooper’s settings",
+};
+
+/** Content-shaped placeholders for the data-backed screens while the shared view loads. */
+function LoadingSurface({ tab }: { tab: Exclude<Tab, "chat"> }) {
+  return (
+    <div
+      className={`scroll skeleton-screen skeleton-screen--${tab}`}
+      role="status"
+      aria-label={LOADING_LABEL[tab]}
+      aria-busy="true"
+    >
+      <div className="skeleton-screen__heading" aria-hidden="true">
+        <span className="skeleton skeleton--title" />
+        <span className="skeleton skeleton--subtitle" />
+      </div>
+
+      {tab === "calendar" ? (
+        <div className="skeleton-screen__calendar" aria-hidden="true">
+          <span className="skeleton skeleton--toolbar" />
+          <div className="skeleton-screen__calendar-grid">
+            {Array.from({ length: 14 }, (_, index) => (
+              <span className="skeleton skeleton--calendar-cell" key={index} />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          {tab === "home" && (
+            <div className="skeleton-screen__hero" aria-hidden="true">
+              <span className="skeleton skeleton--avatar" />
+              <div className="skeleton-screen__copy">
+                <span className="skeleton skeleton--eyebrow" />
+                <span className="skeleton skeleton--hero-title" />
+                <span className="skeleton skeleton--meta" />
+              </div>
+              <span className="skeleton skeleton--button" />
+            </div>
+          )}
+          <div className="skeleton-screen__sections" aria-hidden="true">
+            {Array.from({ length: tab === "settings" ? 4 : 3 }, (_, section) => (
+              <div className="skeleton-screen__section" key={section}>
+                <span className="skeleton skeleton--label" />
+                <div className="skeleton-screen__rows">
+                  {Array.from({ length: tab === "settings" ? 2 : 3 }, (_, row) => (
+                    <div className="skeleton-screen__row" key={row}>
+                      <span className="skeleton skeleton--dot" />
+                      <span className="skeleton skeleton--row-title" />
+                      <span className="skeleton skeleton--row-meta" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
+  const [authState, setAuthState] = useState<AuthState>(
+    firebaseConfigured ? { kind: "loading" } : { kind: "local" },
+  );
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
   const [serverModelAvailable, setServerModelAvailable] = useState(false);
@@ -146,6 +239,26 @@ export default function App() {
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
+  const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
+  const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
+
+  useEffect(() => {
+    if (!firebaseConfigured) return;
+    return subscribeToAuth((user) => {
+      setAuthState(user ? { kind: "signed-in", user } : { kind: "signed-out" });
+      setView(null);
+      setLoadResolved(user === null);
+    });
+  }, []);
+
+  const returnToSignIn = useCallback(() => {
+    if (!firebaseConfigured) return false;
+    setView(null);
+    setFailure(null);
+    setAuthState({ kind: "signed-out" });
+    void signOutUser();
+    return true;
+  }, []);
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
@@ -212,21 +325,25 @@ export default function App() {
   }, [canUseAi, loadResolved, mode]);
 
   const load = useCallback(async () => {
+    if (!canLoadProtectedData) return;
+    setLoadResolved(false);
+    setFailure(null);
     try {
       const nextView = await api.today();
       setView(nextView);
       setServerModelAvailable(nextView.using_model);
       setFailure(null);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401 && returnToSignIn()) return;
       setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     } finally {
       setLoadResolved(true);
     }
-  }, []);
+  }, [canLoadProtectedData, returnToSignIn]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (canLoadProtectedData) void load();
+  }, [canLoadProtectedData, load]);
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -283,6 +400,7 @@ export default function App() {
         }
       } catch (error) {
         if (error instanceof ApiError) {
+          if (error.status === 401 && returnToSignIn()) return;
           const kind = error.status === 409 ? "question" : "note";
           reply({
             text: error.message,
@@ -298,7 +416,7 @@ export default function App() {
         setBusy(false);
       }
     },
-    [announce, busy, geminiKey, mode],
+    [announce, busy, geminiKey, mode, returnToSignIn],
   );
 
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
@@ -314,6 +432,7 @@ export default function App() {
         }
       } catch (error) {
         if (error instanceof ApiError) {
+          if (error.status === 401 && returnToSignIn()) return;
           const kind = error.status === 409 ? "question" : "note";
           announce(kind, error.message);
         } else {
@@ -325,7 +444,7 @@ export default function App() {
         setBusy(false);
       }
     },
-    [announce],
+    [announce, returnToSignIn],
   );
 
   /** Manual mode's form: post the fields and let Cooper narrate it into the conversation. */
@@ -339,6 +458,7 @@ export default function App() {
   const shortlist = view?.shortlist ?? [];
   const scheduled = view?.scheduled ?? [];
   const hours = view?.hours;
+  const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
 
   return (
     <div className="app">
@@ -353,7 +473,22 @@ export default function App() {
       />
 
       <main className="main">
-        {failure && (
+        {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
+
+        {firebaseConfigured && authState.kind === "signed-out" && (
+          <SignInSurface
+            busy={busy}
+            onSignIn={() => {
+              setBusy(true);
+              void signInWithGoogle().catch((error: unknown) => {
+                setBusy(false);
+                setFailure(error instanceof Error ? error.message : "Could not start sign in.");
+              });
+            }}
+          />
+        )}
+
+        {canLoadProtectedData && failure && (
           <div className="banner" role="alert">
             <Mascot name="cooper_tired" size="sm" decorative />
             <div className="banner__body">
@@ -368,7 +503,7 @@ export default function App() {
           </div>
         )}
 
-        {tab === "home" && view && (
+        {canLoadProtectedData && tab === "home" && view && (
           <Home
             view={view}
             busy={busy}
@@ -382,7 +517,11 @@ export default function App() {
           />
         )}
 
-        {tab === "chat" && (
+        {canLoadProtectedData && !loadResolved && !view && loadingTab && (
+          <LoadingSurface tab={loadingTab} />
+        )}
+
+        {canLoadProtectedData && tab === "chat" && (
           <Chat
             turns={turns}
             thinking={busy}
@@ -397,7 +536,7 @@ export default function App() {
           />
         )}
 
-        {tab === "calendar" && view && (
+        {canLoadProtectedData && tab === "calendar" && view && (
           <Calendar
             view={view}
             busy={busy}
@@ -407,7 +546,7 @@ export default function App() {
           />
         )}
 
-        {tab === "settings" && hours && view && (
+        {canLoadProtectedData && tab === "settings" && hours && view && (
           <div className="scroll">
             <h1 className="largetitle">
               Settings
@@ -435,6 +574,25 @@ export default function App() {
                 Light unless you say otherwise. System follows whatever your machine is doing.
               </p>
             </section>
+
+            {firebaseConfigured && (
+              <section className="group">
+                <div className="group__label">Account</div>
+                <div className="inset">
+                  <div className="field">
+                    <span className="field__label">Signed in</span>
+                    <span className="tag">{signedInEmail ?? "Google account"}</span>
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      onClick={() => void signOutUser()}
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="group">
               <div className="group__label">Working hours</div>
@@ -662,7 +820,7 @@ export default function App() {
               </div>
               <p className="hint" id="gemini-key-hint">
                 {canUseAi
-                  ? "Your key stays in this browser and is sent only with AI messages. Manual mode stays offline."
+                  ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
                   : "Works fine without a key. Add one for messier sentences. Ranking never uses a model."}
               </p>
             </section>
@@ -726,7 +884,7 @@ export default function App() {
         </div>
       )}
 
-      {detail && (
+      {canLoadProtectedData && detail && (
         <TaskFrame
           item={detail}
           today={view?.today ?? ""}
@@ -743,7 +901,7 @@ export default function App() {
         the free-text box would be a second, contradictory way in — hidden there. Everywhere else
         it stays as quick capture, routing through whatever mode is set.
       */}
-      {!(tab === "chat" && mode === "manual") && (
+      {canLoadProtectedData && !(tab === "chat" && mode === "manual") && (
         <div className="composer">
           <div className="composer__inner">
             <div className="composer__field">
