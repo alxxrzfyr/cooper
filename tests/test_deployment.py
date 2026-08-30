@@ -40,10 +40,12 @@ def test_frontend_env_example_contains_only_public_values() -> None:
 def test_dockerfile_runs_migrations_before_cloud_run_server() -> None:
     text = (ROOT / "Dockerfile").read_text()
 
-    migration = text.index("uv run alembic upgrade head")
-    server = text.index("uv run uvicorn cooper.app:app")
+    migration = text.index("uv run --frozen --no-dev --no-sync alembic upgrade head")
+    server = text.index("uv run --frozen --no-dev --no-sync uvicorn cooper.app:app")
 
     assert migration < server
+    assert "uv run alembic upgrade head" not in text
+    assert "uv run uvicorn cooper.app:app" not in text
     assert "--host 0.0.0.0" in text
     assert "--port ${PORT:-8080}" in text
     assert "COOPER_GOOGLE_CLIENT_SECRET=" not in text
