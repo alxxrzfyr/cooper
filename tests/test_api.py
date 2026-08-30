@@ -755,6 +755,21 @@ class TestDirectActions:
 
         assert body["item"]["status"] == "done"
 
+    def test_an_id_action_does_not_resolve_a_duplicate_title(self, client: TestClient) -> None:
+        import cooper.app as module
+
+        first = say(client, "same title, 30m")["item"]["id"]
+        second = say(client, "same title, 30m")["item"]["id"]
+
+        response = client.post(f"/api/items/{first}/complete", headers=HEADERS)
+
+        assert response.status_code == 200
+        with module.store.session() as session:
+            first_row = session.get(module.Item, first)
+            second_row = session.get(module.Item, second)
+            assert first_row is not None and first_row.status == "done"
+            assert second_row is not None and second_row.status == "open"
+
     def test_an_unknown_item_is_not_found(self, client: TestClient) -> None:
         assert client.patch("/api/items/nope", json={}, headers=HEADERS).status_code == 404
 
