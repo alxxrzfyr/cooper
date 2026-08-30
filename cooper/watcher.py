@@ -244,7 +244,9 @@ def main() -> None:
     """Start the one app-owned sync loop without importing the app at module load time."""
     from cooper.app import settings, sync_gmail_once
 
-    Watcher(sync_gmail_once, settings.gmail_poll_interval_seconds).run_forever()
+    Watcher(
+        lambda: sync_gmail_once(settings.owner_id), settings.gmail_poll_interval_seconds
+    ).run_forever()
 
 
 if __name__ == "__main__":

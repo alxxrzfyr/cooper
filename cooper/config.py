@@ -17,8 +17,9 @@ KEY_MIN = 24
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="COOPER_", extra="ignore")
 
-    # The shared key protects the local API from unrelated browser pages.
-    shared_key: SecretStr = Field(min_length=KEY_MIN)
+    # The shared key protects the local API from unrelated browser pages. Firebase mode does
+    # not use it.
+    shared_key: SecretStr | None = None
     auth_mode: Literal["local", "firebase"] = "local"
     firebase_project_id: str | None = None
     allowed_emails: Annotated[tuple[str, ...], NoDecode] = ()
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
     encryption_key: SecretStr | None = None
 
     def key(self) -> str:
-        return self.shared_key.get_secret_value()
+        return self.shared_key.get_secret_value() if self.shared_key else ""
 
     def gemini_key(self) -> str | None:
         return self.gemini_api_key.get_secret_value() if self.gemini_api_key else None
@@ -68,6 +69,13 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("shared_key", mode="before")
+    @classmethod
+    def _blank_shared_key_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("allowed_emails", mode="before")
     @classmethod
     def _parse_allowed_emails(cls, value: object) -> tuple[str, ...]:
@@ -81,6 +89,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Settings:
+        if self.auth_mode == "local" and len(self.key()) < KEY_MIN:
+            raise ValueError(
+                f"COOPER_SHARED_KEY must be at least {KEY_MIN} characters when "
+                "COOPER_AUTH_MODE=local"
+            )
         if self.auth_mode == "firebase":
             if not self.firebase_project_id:
                 raise ValueError(

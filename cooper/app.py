@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from cooper import sources
-from cooper.auth import AuthFailure, check_allowed_email, verify_firebase_token
+from cooper.auth import AuthFailure, AuthIdentity, check_allowed_email, verify_firebase_token
 from cooper.brain import (
     Action,
     Brain,
@@ -70,7 +70,8 @@ calendar = Calendar(
     encryption_key=settings.encryption(),
     calendar_id=settings.calendar_id,
 )
-calendar.load_token((store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("token"))
+if settings.auth_mode == "local":
+    calendar.load_token((store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("token"))
 gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
 
 app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
@@ -116,6 +117,7 @@ async def guard(request: Request, call_next: Any) -> Any:
         supplied = request.headers.get(SECRET_HEADER, "")
         if not secrets.compare_digest(supplied, settings.key()):
             return JSONResponse({"detail": "Wrong or missing key."}, status_code=403)
+        request.state.identity = AuthIdentity(settings.owner_id, "local")
         return await call_next(request)
 
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -133,6 +135,13 @@ async def guard(request: Request, call_next: Any) -> Any:
 
     request.state.identity = identity
     return await call_next(request)
+
+
+def request_owner(request: Request) -> AuthIdentity:
+    identity = getattr(request.state, "identity", None)
+    if not isinstance(identity, AuthIdentity):
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    return identity
 
 
 class Say(BaseModel):
@@ -189,25 +198,25 @@ class BulkIn(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=100)
 
 
-def current_hours() -> Hours:
-    saved = store.get_setting(settings.owner_id, HOURS_SETTING)
+def current_hours(owner_id: str) -> Hours:
+    saved = store.get_setting(owner_id, HOURS_SETTING)
     if saved:
         return Hours.from_setting({**saved, "timezone": settings.timezone})
     return Hours(timezone=settings.timezone)
 
 
-def _is_local_item(item: Item) -> bool:
+def _is_local_item(item: Item, owner_id: str) -> bool:
     """Return whether Cooper owns an item and may change it."""
-    return item.source == "me" and item.owner_id == settings.owner_id
+    return item.source == "me" and item.owner_id == owner_id
 
 
-def _require_local_item(item: Item) -> None:
+def _require_local_item(item: Item, owner_id: str) -> None:
     """Reject attempts to mutate an item managed by an external source."""
-    if not _is_local_item(item):
+    if not _is_local_item(item, owner_id):
         raise HTTPException(status_code=409, detail="Only items created in Cooper can be changed.")
 
 
-def find(session: Any, words: str) -> Item | None:
+def find(session: Any, owner_id: str, words: str) -> Item | None:
     """Match an item by words the user typed. Exact, then contained, then nothing.
 
     Returning None rather than a best guess is deliberate: acting on the wrong task is worse
@@ -217,7 +226,7 @@ def find(session: Any, words: str) -> Item | None:
     if not needle:
         return None
     # External commitments remain visible but are changed only by their source sync.
-    items = [item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)]
+    items = [item for item in store.open_items(session, owner_id) if _is_local_item(item, owner_id)]
 
     for item in items:
         if item.id == words or item.title.lower() == needle:
@@ -242,9 +251,13 @@ def find(session: Any, words: str) -> Item | None:
     return loose[0] if len(loose) == 1 else None
 
 
-def google_events(*, days: int = 14) -> list[dict[str, Any]]:
+def _calendar_connected(owner_id: str) -> bool:
+    return settings.auth_mode == "local" and owner_id == settings.owner_id and calendar.connected
+
+
+def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
     """Your real calendar, reduced to times and titles. Empty when Google is off."""
-    if not calendar.connected:
+    if not _calendar_connected(owner_id):
         return []
     try:
         entries = calendar.busy(days=days)
@@ -264,16 +277,17 @@ def google_events(*, days: int = 14) -> list[dict[str, Any]]:
     ]
 
 
-def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
+def busy_windows(owner_id: str, *, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
     """Times already committed, from every source. The gathering itself lives in sources.py.
 
     Kept as a one-line wrapper so the schedulers below read the same as before and there is one
     obvious place — sources.py — where a new commitment source is added.
     """
-    return sources.busy_windows(store, calendar, settings.owner_id, at=now(), days=days)
+    source_calendar = calendar if _calendar_connected(owner_id) else None
+    return sources.busy_windows(store, owner_id, source_calendar, at=now(), days=days)
 
 
-def sync_gmail_once() -> SyncSummary:
+def sync_gmail_once(owner_id: str) -> SyncSummary:
     """Read and reconcile recent confirmation proposals without touching a remote calendar.
 
     Gmail message ids and bodies remain inside the transport/parser boundary.  This function only
@@ -291,7 +305,7 @@ def sync_gmail_once() -> SyncSummary:
         )
     except CalendarError:
         summary = SyncSummary(error="Gmail could not be reached.")
-        _record_gmail_health(checked_at, summary)
+        _record_gmail_health(owner_id, checked_at, summary)
         return summary
 
     proposals: list[EmailProposal] = []
@@ -307,12 +321,14 @@ def sync_gmail_once() -> SyncSummary:
         else:
             proposals.append(proposal)
 
-    summary = _reconcile_gmail_proposals(proposals, skipped=skipped)
-    _record_gmail_health(checked_at, summary)
+    summary = _reconcile_gmail_proposals(owner_id, proposals, skipped=skipped)
+    _record_gmail_health(owner_id, checked_at, summary)
     return summary
 
 
-def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int = 0) -> SyncSummary:
+def _reconcile_gmail_proposals(
+    owner_id: str, proposals: list[EmailProposal], *, skipped: int = 0
+) -> SyncSummary:
     """Apply Gmail proposals in one local transaction; imported changes are never undoable."""
     created = updated = dropped = 0
     with store.session() as session:
@@ -344,7 +360,7 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
 
             row = session.scalars(
                 select(Item).where(
-                    Item.owner_id == settings.owner_id,
+                    Item.owner_id == owner_id,
                     Item.source == "gmail",
                     Item.source_ref == proposal.source_ref,
                 )
@@ -364,7 +380,7 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
                 session.add(
                     Item(
                         id=new_id(),
-                        owner_id=settings.owner_id,
+                        owner_id=owner_id,
                         source="gmail",
                         source_ref=proposal.source_ref,
                         kind="event",
@@ -399,10 +415,10 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
     return SyncSummary(created=created, updated=updated, dropped=dropped, skipped=skipped)
 
 
-def _record_gmail_health(checked_at: dt.datetime, summary: SyncSummary) -> None:
+def _record_gmail_health(owner_id: str, checked_at: dt.datetime, summary: SyncSummary) -> None:
     """Keep watcher health and safe counters, never Gmail bodies or message ids."""
     store.set_setting(
-        settings.owner_id,
+        owner_id,
         GMAIL_SETTING,
         {
             "last_checked": checked_at.isoformat(),
@@ -417,13 +433,13 @@ def _record_gmail_health(checked_at: dt.datetime, summary: SyncSummary) -> None:
     )
 
 
-def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
+def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, Any]:
     at = now()
-    hours = current_hours()
+    hours = current_hours(owner_id)
     zone = ZoneInfo(settings.timezone)
 
     with store.session() as session:
-        items = store.open_items(session, settings.owner_id)
+        items = store.open_items(session, owner_id)
         ranked = rank(items, at=at)
         scheduled = [
             item.to_dict()
@@ -432,9 +448,9 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
                 key=lambda entry: aware(entry.start_at) or at,
             )
         ]
-        change = store.last_change(session, settings.owner_id)
+        change = store.last_change(session, owner_id)
         undo_label = change.label if change else None
-    gmail_health = store.get_setting(settings.owner_id, GMAIL_SETTING) or {}
+    gmail_health = store.get_setting(owner_id, GMAIL_SETTING) or {}
     gmail_counts = gmail_health.get("counts") or {}
 
     return {
@@ -446,17 +462,17 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
         ],
         "scheduled": scheduled,
         "hours": hours.as_setting(),
-        "events": google_events(),
+        "events": google_events(owner_id),
         "undo": undo_label,
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
             "configured": calendar.configured,
-            "connected": calendar.connected,
-            "email": (store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("email"),
+            "connected": _calendar_connected(owner_id),
+            "email": (store.get_setting(owner_id, GOOGLE_SETTING) or {}).get("email"),
         },
         "gmail": {
             "configured": gmail.configured,
-            "connected": gmail.connected,
+            "connected": _calendar_connected(owner_id) and gmail.connected,
             "last_checked": gmail_health.get("last_checked"),
             "last_error": gmail_health.get("last_error"),
             "imported": gmail_counts.get("created", 0),
@@ -471,19 +487,20 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/today")
-def get_today() -> dict[str, Any]:
-    return today_view()
+def get_today(request: Request) -> dict[str, Any]:
+    return today_view(request_owner(request).uid)
 
 
 @app.post("/api/say")
-def say(body: Say) -> dict[str, Any]:
+def say(body: Say, request: Request) -> dict[str, Any]:
     """The main entry point: one sentence in, one change out."""
+    owner_id = request_owner(request).uid
     ai = body.mode == "ai"
     browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
     request_brain = brain.with_api_key(browser_key) if browser_key else brain
     with store.session() as session:
-        open_items = store.open_items(session, settings.owner_id)
-        open_items = [item for item in open_items if _is_local_item(item)]
+        open_items = store.open_items(session, owner_id)
+        open_items = [item for item in open_items if _is_local_item(item, owner_id)]
         recent = [item.title for item in reversed(open_items)][:8]
         summaries = [_summarise(item) for item in open_items] if ai else []
 
@@ -497,14 +514,14 @@ def say(body: Say) -> dict[str, Any]:
                 "kind": "answered",
                 "message": answered,
                 "source": "gemini",
-                "view": today_view(using_model=request_brain.using_model),
+                "view": today_view(owner_id, using_model=request_brain.using_model),
             }
 
-    result = run(action)
+    result = run(owner_id, action)
     return {
         **result,
         "source": action.source,
-        "view": today_view(using_model=request_brain.using_model),
+        "view": today_view(owner_id, using_model=request_brain.using_model),
     }
 
 
@@ -531,7 +548,7 @@ def _summarise(item: Item) -> str:
     return " · ".join(bits)
 
 
-def run(action: Action) -> dict[str, Any]:
+def run(owner_id: str, action: Action) -> dict[str, Any]:
     if action.is_question:
         return {"kind": "question", "message": action.question or "Could you rephrase that?"}
 
@@ -539,10 +556,10 @@ def run(action: Action) -> dict[str, Any]:
         return {"kind": "shown", "message": "Here is what is next."}
 
     if action.verb == "undo":
-        return undo_last()
+        return undo_last(owner_id)
 
     if action.verb == "schedule":
-        placed = schedule_now()
+        placed = schedule_now(owner_id)
         if not placed:
             return {
                 "kind": "note",
@@ -555,19 +572,19 @@ def run(action: Action) -> dict[str, Any]:
         }
 
     if action.verb == "add":
-        return add(action)
+        return add(owner_id, action)
 
     if action.verb == "batch":
-        return add_batch(action)
+        return add_batch(owner_id, action)
 
-    return change_existing(action)
+    return change_existing(owner_id, action)
 
 
-def add(action: Action) -> dict[str, Any]:
+def add(owner_id: str, action: Action) -> dict[str, Any]:
     with store.session() as session:
         item = Item(
             id=new_id(),
-            owner_id=settings.owner_id,
+            owner_id=owner_id,
             source="me",
             kind=action.kind,
             title=action.title or "Untitled",
@@ -583,14 +600,14 @@ def add(action: Action) -> dict[str, Any]:
         session.flush()
         store.record(
             session,
-            settings.owner_id,
+            owner_id,
             label=f"Added “{item.title}”",
             item=item,
             before=None,
         )
         payload = item.to_dict()
 
-    if action.kind == "event" and action.start and action.end and calendar.connected:
+    if action.kind == "event" and action.start and action.end and _calendar_connected(owner_id):
         try:
             event_id = calendar.add_block(
                 item_id=payload["id"],
@@ -599,7 +616,7 @@ def add(action: Action) -> dict[str, Any]:
                 end=action.end,
             )
             with store.session() as session:
-                stored = store.get_item(session, settings.owner_id, payload["id"])
+                stored = store.get_item(session, owner_id, payload["id"])
                 if stored:
                     stored.google_event_id = event_id
         except CalendarError as error:
@@ -611,7 +628,7 @@ def add(action: Action) -> dict[str, Any]:
 
     # Sized tasks are placed immediately when they have no fixed start.
     if action.kind == "task" and not action.start:
-        booked = place_one(payload["id"])
+        booked = place_one(owner_id, payload["id"])
         if booked is not None:
             payload = booked
             when = to_local(booked["start_at"])
@@ -636,7 +653,9 @@ def add(action: Action) -> dict[str, Any]:
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
 
 
-def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str, Any] | None:
+def place_one(
+    owner_id: str, item_id: str, *, earliest: dt.datetime | None = None
+) -> dict[str, Any] | None:
     """Book one task into the first gap in your hours, no earlier than `earliest`.
 
     Returns the stored item, or None if it would not fit inside the week.
@@ -651,12 +670,12 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
     at = now()
     if earliest is not None and earliest > at:
         at = earliest
-    hours = current_hours()
-    busy = busy_windows()
+    hours = current_hours(owner_id)
+    busy = busy_windows(owner_id)
 
     with store.session() as session:
-        item = store.get_item(session, settings.owner_id, item_id)
-        if item is None or not _is_local_item(item) or item.start_at is not None:
+        item = store.get_item(session, owner_id, item_id)
+        if item is None or not _is_local_item(item, owner_id) or item.start_at is not None:
             return None
 
         slots = place(rank([item], at=at), busy=busy, hours=hours, at=at, days=7)
@@ -669,7 +688,7 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
         session.flush()
         payload = item.to_dict()
 
-    if calendar.connected:
+    if _calendar_connected(owner_id):
         with contextlib.suppress(CalendarError):
             event_id = calendar.add_block(
                 item_id=slot.item_id,
@@ -678,7 +697,7 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
                 end=slot.end,
             )
             with store.session() as session:
-                stored = store.get_item(session, settings.owner_id, item_id)
+                stored = store.get_item(session, owner_id, item_id)
                 if stored:
                     stored.google_event_id = event_id
                     payload = stored.to_dict()
@@ -692,7 +711,7 @@ def to_local(iso: str) -> str:
     return moment.strftime("%a %H:%M")
 
 
-def add_batch(action: Action) -> dict[str, Any]:
+def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
     """Several related tasks from one sentence, created and booked in the order given.
 
     Mirrors `bulk()`: several items change, but it is recorded as one `Change`, so a single undo
@@ -713,7 +732,7 @@ def add_batch(action: Action) -> dict[str, Any]:
         for step in steps:
             item = Item(
                 id=new_id(),
-                owner_id=settings.owner_id,
+                owner_id=owner_id,
                 source="me",
                 kind="task",
                 title=step.title or "Untitled",
@@ -729,20 +748,20 @@ def add_batch(action: Action) -> dict[str, Any]:
         # One change row lets undo remove the whole batch.
         store.record(
             session,
-            settings.owner_id,
+            owner_id,
             label=f"Added {len(created)} tasks",
             item=None,
             before={"batch": created},
         )
         payloads = {}
         for item_id in created:
-            item = store.get_item(session, settings.owner_id, item_id)
+            item = store.get_item(session, owner_id, item_id)
             if item is not None:
                 payloads[item_id] = item.to_dict()
 
     booked: list[dict[str, Any]] = []
     for item_id in created:
-        result = place_one(item_id, earliest=floor)
+        result = place_one(owner_id, item_id, earliest=floor)
         payload = result if result is not None else payloads[item_id]
         booked.append(payload)
         if payload["start_at"]:
@@ -769,19 +788,19 @@ def add_batch(action: Action) -> dict[str, Any]:
     }
 
 
-def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, Any]:
+def change_existing(owner_id: str, action: Action, *, item_id: str | None = None) -> dict[str, Any]:
     with store.session() as session:
         item = (
-            store.get_item(session, settings.owner_id, item_id)
+            store.get_item(session, owner_id, item_id)
             if item_id is not None
-            else find(session, action.which or "")
+            else find(session, owner_id, action.which or "")
         )
         if item is None or item.status != "open":
             return {
                 "kind": "question",
                 "message": f"I could not find “{action.which}”. Which one did you mean?",
             }
-        _require_local_item(item)
+        _require_local_item(item, owner_id)
 
         before = item.to_dict()
         # Each verb gets its own kind rather than a shared "changed", because the interface
@@ -800,7 +819,7 @@ def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, 
             label = f"{'Pinned' if item.pinned else 'Unpinned'} “{item.title}”"
             kind = "pinned"
 
-        store.record(session, settings.owner_id, label=label, item=item, before=before)
+        store.record(session, owner_id, label=label, item=item, before=before)
         payload = item.to_dict()
         event_id = item.google_event_id if item.status != "open" else None
 
@@ -811,34 +830,38 @@ def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, 
     return {"kind": kind, "message": label + ".", "item": payload}
 
 
-def schedule_now() -> list[Slot]:
+def schedule_now(owner_id: str) -> list[Slot]:
     at = now()
-    hours = current_hours()
-    busy = busy_windows()
+    hours = current_hours(owner_id)
+    busy = busy_windows(owner_id)
 
     with store.session() as session:
         ranked = rank(
-            [item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)],
+            [
+                item
+                for item in store.open_items(session, owner_id)
+                if _is_local_item(item, owner_id)
+            ],
             at=at,
         )
         slots = place(ranked, busy=busy, hours=hours, at=at, days=7)
         if not slots:
             return []
         for slot in slots:
-            item = store.get_item(session, settings.owner_id, slot.item_id)
+            item = store.get_item(session, owner_id, slot.item_id)
             if item is None:
                 continue
             item.start_at = slot.start
             item.end_at = slot.end
         store.record(
             session,
-            settings.owner_id,
+            owner_id,
             label=f"Scheduled {len(slots)} task{'s' if len(slots) != 1 else ''}",
             item=None,
             before={"scheduled": [slot.item_id for slot in slots]},
         )
 
-    if calendar.connected:
+    if _calendar_connected(owner_id):
         for slot in slots:
             try:
                 event_id = calendar.add_block(
@@ -848,7 +871,7 @@ def schedule_now() -> list[Slot]:
                     end=slot.end,
                 )
                 with store.session() as session:
-                    item = store.get_item(session, settings.owner_id, slot.item_id)
+                    item = store.get_item(session, owner_id, slot.item_id)
                     if item:
                         item.google_event_id = event_id
             except CalendarError:
@@ -857,16 +880,16 @@ def schedule_now() -> list[Slot]:
     return slots
 
 
-def undo_last() -> dict[str, Any]:
+def undo_last(owner_id: str) -> dict[str, Any]:
     with store.session() as session:
-        change = store.last_change(session, settings.owner_id)
+        change = store.last_change(session, owner_id)
         if change is None:
             return {"kind": "note", "message": "Nothing to undo."}
 
         before = change.before or {}
         if change.item_id and not before:
             # The change created the item, so undoing means removing it.
-            item = store.get_item(session, settings.owner_id, change.item_id)
+            item = store.get_item(session, owner_id, change.item_id)
             if item is not None:
                 event_id = item.google_event_id
                 session.delete(item)
@@ -874,12 +897,12 @@ def undo_last() -> dict[str, Any]:
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
         elif change.item_id:
-            item = store.get_item(session, settings.owner_id, change.item_id)
+            item = store.get_item(session, owner_id, change.item_id)
             if item is not None:
                 _restore(item, before)
         elif "scheduled" in before:
             for item_id in before["scheduled"]:
-                item = store.get_item(session, settings.owner_id, item_id)
+                item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
                 if item.google_event_id:
@@ -894,14 +917,14 @@ def undo_last() -> dict[str, Any]:
                 item_id = snapshot.get("id")
                 if not isinstance(item_id, str):
                     continue
-                item = store.get_item(session, settings.owner_id, item_id)
+                item = store.get_item(session, owner_id, item_id)
                 if item is not None:
                     _restore(item, snapshot)
         elif "batch" in before:
             # A batch create: every step was a new item, so undo removes all of them, the same
             # as undoing a single add removes the one item it created.
             for item_id in before["batch"]:
-                item = store.get_item(session, settings.owner_id, item_id)
+                item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
                 event_id = item.google_event_id
@@ -958,13 +981,14 @@ def _local(moment: dt.datetime | None) -> dt.datetime | None:
 
 
 @app.post("/api/items")
-def create(body: NewItem) -> dict[str, Any]:
+def create(body: NewItem, request: Request) -> dict[str, Any]:
     """Manual mode's form: fields in, item out, no parsing and no model.
 
     It builds an Action by hand and hands it to the same `add` the sentence path uses, so a
     typed task is booked into working hours exactly like a parsed one, goes through the same
     undo hook, and reaches Google the same way. There is deliberately no second write path.
     """
+    owner_id = request_owner(request).uid
     action = Action(
         verb="add",
         title=body.title.strip(),
@@ -990,8 +1014,8 @@ def create(body: NewItem) -> dict[str, Any]:
     action = validate(action)
     if action.is_question:
         raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
-    result = add(action)
-    return {**result, "source": "form", "view": today_view()}
+    result = add(owner_id, action)
+    return {**result, "source": "form", "view": today_view(owner_id)}
 
 
 class BulkMatch(BaseModel):
@@ -999,7 +1023,7 @@ class BulkMatch(BaseModel):
 
 
 @app.post("/api/bulk/match")
-def bulk_match(body: BulkMatch) -> dict[str, Any]:
+def bulk_match(body: BulkMatch, request: Request) -> dict[str, Any]:
     """Find every open item a phrase matches, so the user sees the list before acting.
 
     A bulk verb is destructive at a scale undo cannot fix, so it is a two-step reply the way an
@@ -1009,10 +1033,11 @@ def bulk_match(body: BulkMatch) -> dict[str, Any]:
     Matching is deliberately looser than `find()`, which asks when a phrase is ambiguous — here
     hitting several items is the intent, not a problem.
     """
+    owner_id = request_owner(request).uid
     needle = " ".join(body.words.lower().split())
     with store.session() as session:
         items = [
-            item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)
+            item for item in store.open_items(session, owner_id) if _is_local_item(item, owner_id)
         ]
         hits = [item for item in items if needle in item.title.lower()]
         payload = [item.to_dict() for item in hits]
@@ -1020,20 +1045,21 @@ def bulk_match(body: BulkMatch) -> dict[str, Any]:
 
 
 @app.post("/api/bulk")
-def bulk(body: BulkIn) -> dict[str, Any]:
+def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
     """Complete or drop several items at once, by the exact ids the user just saw.
 
     Recorded as one change so a single undo reverses the whole batch, which is the correction a
     bulk verb needs. Ids are matched exactly, never re-parsed, so the confirmation acts on
     precisely what was shown and nothing that arrived since.
     """
+    owner_id = request_owner(request).uid
     done_google: list[str] = []
     touched: list[str] = []
     with store.session() as session:
         before: list[dict[str, Any]] = []
         for item_id in body.ids:
-            item = store.get_item(session, settings.owner_id, item_id)
-            if item is None or item.status != "open" or not _is_local_item(item):
+            item = store.get_item(session, owner_id, item_id)
+            if item is None or item.status != "open" or not _is_local_item(item, owner_id):
                 continue
             before.append(item.to_dict())
             if body.verb == "complete":
@@ -1046,12 +1072,16 @@ def bulk(body: BulkIn) -> dict[str, Any]:
             touched.append(item.title)
 
         if not touched:
-            return {"kind": "note", "message": "Nothing matched to change.", "view": today_view()}
+            return {
+                "kind": "note",
+                "message": "Nothing matched to change.",
+                "view": today_view(owner_id),
+            }
 
         verb_past = "Completed" if body.verb == "complete" else "Dropped"
         label = f"{verb_past} {len(touched)} item{'s' if len(touched) != 1 else ''}"
         # One change row for the batch: undo puts the whole set back in a single step.
-        store.record(session, settings.owner_id, label=label, item=None, before={"bulk": before})
+        store.record(session, owner_id, label=label, item=None, before={"bulk": before})
 
     for event_id in done_google:
         with contextlib.suppress(CalendarError):
@@ -1062,17 +1092,18 @@ def bulk(body: BulkIn) -> dict[str, Any]:
         "kind": kind,
         "message": label + ".",
         "chip": touched[:10],
-        "view": today_view(),
+        "view": today_view(owner_id),
     }
 
 
 @app.patch("/api/items/{item_id}")
-def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
+def edit(item_id: str, body: ItemIn, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
     with store.session() as session:
-        item = store.get_item(session, settings.owner_id, item_id)
+        item = store.get_item(session, owner_id, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
-        _require_local_item(item)
+        _require_local_item(item, owner_id)
         before = item.to_dict()
         if body.title is not None:
             item.title = body.title.strip() or item.title
@@ -1084,32 +1115,34 @@ def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
             item.notes = body.notes
         store.record(
             session,
-            settings.owner_id,
+            owner_id,
             label=f"Edited “{item.title}”",
             item=item,
             before=before,
         )
         payload = item.to_dict()
-    return {"item": payload, "view": today_view()}
+    return {"item": payload, "view": today_view(owner_id)}
 
 
 @app.post("/api/items/{item_id}/{verb}")
-def act(item_id: str, verb: str) -> dict[str, Any]:
+def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
     if verb not in ("complete", "drop", "pin"):
         raise HTTPException(status_code=404, detail="Unknown action.")
     with store.session() as session:
-        item = store.get_item(session, settings.owner_id, item_id)
+        item = store.get_item(session, owner_id, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
-        _require_local_item(item)
+        _require_local_item(item, owner_id)
         title = item.title
-    result = change_existing(Action(verb=verb, which=title), item_id=item_id)  # type: ignore[arg-type]
-    return {**result, "view": today_view()}
+    result = change_existing(owner_id, Action(verb=verb, which=title), item_id=item_id)  # type: ignore[arg-type]
+    return {**result, "view": today_view(owner_id)}
 
 
 @app.post("/api/schedule")
-def do_schedule() -> dict[str, Any]:
-    slots = schedule_now()
+def do_schedule(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    slots = schedule_now(owner_id)
     return {
         "placed": [
             {
@@ -1121,17 +1154,19 @@ def do_schedule() -> dict[str, Any]:
             }
             for slot in slots
         ],
-        "view": today_view(),
+        "view": today_view(owner_id),
     }
 
 
 @app.post("/api/undo")
-def do_undo() -> dict[str, Any]:
-    return {**undo_last(), "view": today_view()}
+def do_undo(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    return {**undo_last(owner_id), "view": today_view(owner_id)}
 
 
 @app.put("/api/hours")
-def set_hours(body: HoursIn) -> dict[str, Any]:
+def set_hours(body: HoursIn, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
     if body.end_hour <= body.start_hour:
         raise HTTPException(status_code=422, detail="Your day has to end after it starts.")
     if not body.weekdays:
@@ -1139,7 +1174,7 @@ def set_hours(body: HoursIn) -> dict[str, Any]:
     if any(day < 0 or day > 6 for day in body.weekdays):
         raise HTTPException(status_code=422, detail="Days must be 0 (Monday) to 6 (Sunday).")
     store.set_setting(
-        settings.owner_id,
+        owner_id,
         HOURS_SETTING,
         {
             "start_hour": body.start_hour,
@@ -1148,16 +1183,17 @@ def set_hours(body: HoursIn) -> dict[str, Any]:
             "max_per_day": body.max_per_day,
         },
     )
-    return {"view": today_view()}
+    return {"view": today_view(owner_id)}
 
 
 @app.get("/api/changes")
-def changes() -> dict[str, Any]:
+def changes(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
     with store.session() as session:
         rows = list(
             session.scalars(
                 select(Change)
-                .where(Change.owner_id == settings.owner_id)
+                .where(Change.owner_id == owner_id)
                 .order_by(Change.at.desc(), Change.id.desc())
                 .limit(20)
             )
@@ -1176,7 +1212,8 @@ def changes() -> dict[str, Any]:
 
 
 @app.post("/api/google/connect")
-def connect() -> dict[str, str]:
+def connect(request: Request) -> dict[str, str]:
+    request_owner(request)
     state = secrets.token_urlsafe(16)
     app.state.oauth_state = state
     try:
@@ -1207,21 +1244,24 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 
 
 @app.post("/api/google/disconnect")
-def disconnect() -> dict[str, Any]:
+def disconnect(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
     try:
         calendar.revoke()
     except CalendarError:
         pass
     finally:
-        store.set_setting(settings.owner_id, GOOGLE_SETTING, {})
-        calendar.load_token(None)
-    return {"view": today_view()}
+        store.set_setting(owner_id, GOOGLE_SETTING, {})
+        if owner_id == settings.owner_id:
+            calendar.load_token(None)
+    return {"view": today_view(owner_id)}
 
 
 @app.post("/api/google/sync")
-def sync_google() -> dict[str, Any]:
-    summary = sync_gmail_once()
-    return {"summary": dataclasses.asdict(summary), "view": today_view()}
+def sync_google(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    summary = sync_gmail_once(owner_id)
+    return {"summary": dataclasses.asdict(summary), "view": today_view(owner_id)}
 
 
 def _page(title: str, message: str) -> HTMLResponse:

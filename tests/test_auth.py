@@ -72,9 +72,7 @@ def test_firebase_identity_rejects_expired_tokens(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(
         "firebase_admin.auth.verify_id_token",
         lambda token, **kwargs: _claims(
-            exp=int(
-                (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).timestamp()
-            )
+            exp=int((dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).timestamp())
         ),
     )
 
@@ -98,3 +96,20 @@ def test_firebase_mode_requires_an_allowlist(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_firebase_mode_does_not_require_a_shared_key() -> None:
+    settings = Settings(
+        _env_file=None,
+        shared_key=None,
+        auth_mode="firebase",
+        firebase_project_id="project",
+        allowed_emails=("friend@example.com",),
+    )
+
+    assert settings.shared_key is None
+
+
+def test_local_mode_requires_a_long_shared_key() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, shared_key="short", auth_mode="local")

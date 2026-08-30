@@ -10,12 +10,16 @@ from __future__ import annotations
 import datetime as dt
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from cooper.auth import AuthIdentity
 from cooper.db import Change
 from cooper.google import CalendarError
 from cooper.watcher import EmailProposal
@@ -25,6 +29,43 @@ os.environ["COOPER_SHARED_KEY"] = KEY
 os.environ["COOPER_TIMEZONE"] = "Asia/Singapore"
 
 HEADERS = {"X-Cooper-Key": KEY}
+
+
+@contextmanager
+def configured_client(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    *,
+    owner_id: str = "local",
+    shared_key: str | None = KEY,
+    auth_mode: str = "local",
+    allowed_emails: str = "friend@example.com",
+) -> Iterator[tuple[Any, TestClient]]:
+    monkeypatch.setenv("COOPER_DATABASE_URL", database_url)
+    monkeypatch.setenv("COOPER_TIMEZONE", "Asia/Singapore")
+    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "")
+    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_ID", "")
+    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_SECRET", "")
+    monkeypatch.setenv("COOPER_AUTH_MODE", auth_mode)
+    monkeypatch.setenv("COOPER_OWNER_ID", owner_id)
+    if shared_key is None:
+        monkeypatch.setenv("COOPER_SHARED_KEY", "")
+    else:
+        monkeypatch.setenv("COOPER_SHARED_KEY", shared_key)
+    if auth_mode == "firebase":
+        monkeypatch.setenv("COOPER_FIREBASE_PROJECT_ID", "project")
+        monkeypatch.setenv("COOPER_ALLOWED_EMAILS", allowed_emails)
+    else:
+        monkeypatch.delenv("COOPER_FIREBASE_PROJECT_ID", raising=False)
+        monkeypatch.delenv("COOPER_ALLOWED_EMAILS", raising=False)
+
+    import importlib
+
+    import cooper.app as module
+
+    module = importlib.reload(module)
+    with TestClient(module.app) as open_client:
+        yield module, open_client
 
 
 @pytest.fixture
@@ -37,16 +78,10 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     Google key in `.env`. A test that needs a key sets it with monkeypatch, which is the honest
     way to say so.
     """
-    monkeypatch.setenv("COOPER_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
-    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "")
-    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_ID", "")
-    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_SECRET", "")
-    import importlib
-
-    import cooper.app as module
-
-    importlib.reload(module)
-    with TestClient(module.app) as open_client:
+    with configured_client(monkeypatch, f"sqlite:///{tmp_path / 'api.db'}") as (
+        _module,
+        open_client,
+    ):
         yield open_client
 
 
@@ -157,7 +192,7 @@ class TestTheTwoModes:
             end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
             cancelled=False,
         )
-        assert module._reconcile_gmail_proposals([proposal]).created == 1
+        assert module._reconcile_gmail_proposals("local", [proposal]).created == 1
 
         prompts: list[str] = []
         monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
@@ -324,7 +359,7 @@ class TestGmailReconciliation:
             lambda _message, **_kwargs: proposal,
         )
 
-        first = module.sync_gmail_once()
+        first = module.sync_gmail_once("local")
         today = client.get("/api/today", headers=HEADERS).json()
 
         assert (first.created, first.updated, first.dropped, first.skipped) == (1, 0, 0, 0)
@@ -334,8 +369,8 @@ class TestGmailReconciliation:
         with module.store.session() as session:
             assert list(session.scalars(select(Change))) == []
 
-        assert module.sync_gmail_once().created == 0
-        assert module.sync_gmail_once().updated == 0
+        assert module.sync_gmail_once("local").created == 0
+        assert module.sync_gmail_once("local").updated == 0
 
     def test_sync_updates_moves_and_cancellations_by_provider_reference(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -354,7 +389,7 @@ class TestGmailReconciliation:
             cancelled=False,
         )
         monkeypatch.setattr(module, "parse_confirmation", lambda _message, **_kwargs: current)
-        module.sync_gmail_once()
+        module.sync_gmail_once("local")
 
         current = EmailProposal(
             provider="meetup",
@@ -364,7 +399,7 @@ class TestGmailReconciliation:
             end=dt.datetime(2026, 9, 12, 14, tzinfo=dt.UTC),
             cancelled=False,
         )
-        moved = module.sync_gmail_once()
+        moved = module.sync_gmail_once("local")
         current = EmailProposal(
             provider="meetup",
             title="Python Manila — moved",
@@ -373,7 +408,7 @@ class TestGmailReconciliation:
             end=None,
             cancelled=True,
         )
-        cancelled = module.sync_gmail_once()
+        cancelled = module.sync_gmail_once("local")
 
         assert (moved.created, moved.updated, moved.dropped) == (0, 1, 0)
         assert (cancelled.created, cancelled.updated, cancelled.dropped) == (0, 0, 1)
@@ -401,7 +436,7 @@ class TestGmailReconciliation:
             lambda _action: pytest.fail("email validation must not invent an end time"),
         )
 
-        summary = module._reconcile_gmail_proposals([proposal])
+        summary = module._reconcile_gmail_proposals("local", [proposal])
 
         assert (summary.created, summary.updated, summary.dropped, summary.skipped) == (0, 0, 0, 1)
         with module.store.session() as session:
@@ -421,7 +456,7 @@ class TestGmailReconciliation:
             end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
             cancelled=False,
         )
-        assert module._reconcile_gmail_proposals([proposal]).created == 1
+        assert module._reconcile_gmail_proposals("local", [proposal]).created == 1
         with module.store.session() as session:
             gmail_id = session.scalars(
                 select(module.Item.id).where(module.Item.source == "gmail")
@@ -482,13 +517,13 @@ class TestGmailReconciliation:
 
         monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: [object()])
         monkeypatch.setattr(module, "parse_confirmation", lambda _message, **_kwargs: None)
-        skipped = module.sync_gmail_once()
+        skipped = module.sync_gmail_once("local")
         monkeypatch.setattr(
             module.gmail,
             "list_messages",
             lambda **_kwargs: (_ for _ in ()).throw(CalendarError("mail unavailable")),
         )
-        failed = module.sync_gmail_once()
+        failed = module.sync_gmail_once("local")
 
         assert skipped.skipped == 1
         assert failed.error == "Gmail could not be reached."
@@ -497,6 +532,255 @@ class TestGmailReconciliation:
         assert health["last_checked"]
         assert health["last_error"] == "Gmail could not be reached."
         assert health["counts"] == {"created": 0, "updated": 0, "dropped": 0, "skipped": 0}
+
+
+class TestRequestOwnership:
+    def test_local_request_identity_is_set_after_shared_key_auth(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'owners.db'}",
+            owner_id="alice",
+            shared_key="alice-key-that-is-long-enough",
+        ) as (module, client):
+
+            @module.app.get("/identity-probe")
+            def identity_probe(request: Request) -> dict[str, str | None]:
+                helper = getattr(module, "request_owner", None)
+                identity = helper(request) if helper else None
+                return {
+                    "uid": getattr(identity, "uid", None),
+                    "email": getattr(identity, "email", None),
+                }
+
+            response = client.get(
+                "/identity-probe", headers={"X-Cooper-Key": "alice-key-that-is-long-enough"}
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"uid": "alice", "email": "local"}
+
+    def test_local_routes_do_not_cross_items_history_or_undo_between_configured_owners(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        database_url = f"sqlite:///{tmp_path / 'owners.db'}"
+        alice_headers = {"X-Cooper-Key": "alice-key-that-is-long-enough"}
+        bob_headers = {"X-Cooper-Key": "bob-key-that-is-long-enough-x"}
+
+        with configured_client(
+            monkeypatch,
+            database_url,
+            owner_id="alice",
+            shared_key="alice-key-that-is-long-enough",
+        ) as (_module, alice):
+            alice_item = alice.post(
+                "/api/items",
+                json={"title": "alice report", "minutes": 30},
+                headers=alice_headers,
+            ).json()["item"]
+            assert alice_item["owner_id"] == "alice"
+            assert alice.get("/api/changes", headers=alice_headers).json()["changes"]
+
+        with configured_client(
+            monkeypatch,
+            database_url,
+            owner_id="bob",
+            shared_key="bob-key-that-is-long-enough-x",
+        ) as (_module, bob):
+            assert bob.get("/api/today", headers=bob_headers).json()["shortlist"] == []
+            assert bob.get("/api/changes", headers=bob_headers).json()["changes"] == []
+            assert (
+                bob.post(f"/api/items/{alice_item['id']}/complete", headers=bob_headers).status_code
+                == 404
+            )
+            assert bob.post("/api/undo", headers=bob_headers).json()["kind"] == "note"
+            bob_item = bob.post(
+                "/api/items",
+                json={"title": "bob task", "minutes": 30, "owner_id": "alice"},
+                headers=bob_headers,
+            ).json()["item"]
+            assert bob_item["owner_id"] == "bob"
+
+        with configured_client(
+            monkeypatch,
+            database_url,
+            owner_id="alice",
+            shared_key="alice-key-that-is-long-enough",
+        ) as (_module, alice):
+            view = alice.get("/api/today", headers=alice_headers).json()
+
+        assert [row["title"] for row in view["shortlist"]] == ["alice report"]
+        assert view["undo"] == "Added “alice report”"
+
+    def test_firebase_shared_key_is_not_accepted(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            monkeypatch.setattr(
+                module.store,
+                "open_items",
+                lambda *_args, **_kwargs: pytest.fail("unauthenticated request reached storage"),
+            )
+
+            response = client.get("/api/today", headers=HEADERS)
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid authentication token"}
+
+    def test_firebase_unlisted_email_is_forbidden_before_store_query(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key="test-key-that-is-long-enough-x",
+            allowed_emails="friend@example.com",
+        ) as (module, client):
+            monkeypatch.setattr(
+                module,
+                "verify_firebase_token",
+                lambda _token, *, project_id: AuthIdentity(
+                    uid="stranger", email="stranger@example.com"
+                ),
+            )
+            monkeypatch.setattr(
+                module.store,
+                "open_items",
+                lambda *_args, **_kwargs: pytest.fail("forbidden request reached storage"),
+            )
+
+            response = client.get("/api/today", headers={"Authorization": "Bearer verified"})
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": "Account is not allowed"}
+
+    def test_firebase_routes_use_verified_uid_for_items_settings_and_history(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+            allowed_emails="friend@example.com",
+        ) as (module, client):
+            monkeypatch.setattr(
+                module,
+                "verify_firebase_token",
+                lambda _token, *, project_id: AuthIdentity(
+                    uid="firebase-user", email="friend@example.com"
+                ),
+            )
+            with module.store.session() as session:
+                mine = module.Item(
+                    id=module.new_id(),
+                    owner_id="firebase-user",
+                    title="owned report",
+                    minutes=30,
+                    created_at=module.now(),
+                )
+                other = module.Item(
+                    id=module.new_id(),
+                    owner_id="someone-else",
+                    title="other report",
+                    minutes=30,
+                    created_at=module.now(),
+                )
+                session.add_all([mine, other])
+                session.flush()
+                module.store.record(
+                    session, "firebase-user", label="Added owned report", item=mine, before=None
+                )
+                module.store.record(
+                    session, "someone-else", label="Added other report", item=other, before=None
+                )
+            module.store.set_setting(
+                "firebase-user",
+                module.HOURS_SETTING,
+                {"start_hour": 10, "end_hour": 12, "weekdays": [0, 1], "max_per_day": 1},
+            )
+            module.store.set_setting(
+                "someone-else",
+                module.HOURS_SETTING,
+                {"start_hour": 6, "end_hour": 7, "weekdays": [2], "max_per_day": 4},
+            )
+
+            auth_headers = {"Authorization": "Bearer verified"}
+            today = client.get("/api/today", headers=auth_headers).json()
+            history = client.get("/api/changes", headers=auth_headers).json()
+            created = client.post(
+                "/api/items",
+                json={"title": "from firebase", "minutes": 30, "owner_id": "someone-else"},
+                headers=auth_headers,
+            ).json()
+
+        assert [row["title"] for row in today["shortlist"]] == ["owned report"]
+        assert today["hours"]["start_hour"] == 10
+        assert [row["label"] for row in history["changes"]] == ["Added owned report"]
+        assert created["item"]["owner_id"] == "firebase-user"
+
+    def test_firebase_prompt_context_uses_verified_owner_only(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+            allowed_emails="friend@example.com",
+        ) as (module, client):
+            monkeypatch.setattr(
+                module,
+                "verify_firebase_token",
+                lambda _token, *, project_id: AuthIdentity(
+                    uid="firebase-user", email="friend@example.com"
+                ),
+            )
+            with module.store.session() as session:
+                session.add(
+                    module.Item(
+                        id=module.new_id(),
+                        owner_id="firebase-user",
+                        title="owned report",
+                        minutes=30,
+                        created_at=module.now(),
+                    )
+                )
+                session.add(
+                    module.Item(
+                        id=module.new_id(),
+                        owner_id="local",
+                        title="local secret",
+                        minutes=30,
+                        created_at=module.now(),
+                    )
+                )
+            prompts: list[str] = []
+            monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+            monkeypatch.setattr(
+                module.brain,
+                "_generate",
+                lambda prompt, **kwargs: prompts.append(prompt) or "Start with owned report.",
+            )
+
+            response = client.post(
+                "/api/say",
+                json={"text": "what is on my plate", "mode": "ai"},
+                headers={"Authorization": "Bearer verified"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["kind"] == "answered"
+        assert prompts
+        assert "owned report" in prompts[0]
+        assert "local secret" not in prompts[0]
 
 
 class TestSecurity:

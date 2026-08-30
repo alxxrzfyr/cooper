@@ -44,9 +44,9 @@ class _Blocks(Protocol):
     def busy(self, *, days: int) -> object: ...
 
 
-def collect_google(calendar: Calendar, *, days: int) -> list[Interval]:
+def collect_google(calendar: Calendar | None, *, days: int) -> list[Interval]:
     """Busy intervals from Google Calendar, or nothing if it is off or unreachable."""
-    if not calendar.connected:
+    if calendar is None or not calendar.connected:
         return []
     spans: list[Interval] = []
     # A calendar problem must not stop planning; it only means less awareness of what is booked.
@@ -82,7 +82,7 @@ def collect_gmail(store: Store, owner_id: str, *, at: dt.datetime) -> list[Inter
 
 
 def busy_windows(
-    store: Store, calendar: Calendar, owner_id: str, *, at: dt.datetime, days: int = 14
+    store: Store, owner_id: str, calendar: Calendar | None, *, at: dt.datetime, days: int = 14
 ) -> list[Interval]:
     """Every commitment, from every source, as one list of intervals the planner routes around.
 

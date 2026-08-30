@@ -169,9 +169,71 @@ class TestCommitmentSources:
             connected = False
 
         assert sources.collect_local(store, "local", at=NOW) == [(local_start, local_end)]
-        assert sources.busy_windows(store, OfflineCalendar(), "local", at=NOW) == [
+        assert sources.busy_windows(store, "local", OfflineCalendar(), at=NOW) == [
             (gmail_start, gmail_end),
             (local_start, local_end),
+        ]
+
+    def test_commitment_sources_are_scoped_to_owner(self, store: Store) -> None:
+        """Dropping the owner filter from a source collector leaks another account's calendar."""
+        mine_gmail_start = NOW + dt.timedelta(days=1)
+        mine_local_start = NOW + dt.timedelta(days=2)
+        other_gmail_start = NOW + dt.timedelta(days=3)
+        other_local_start = NOW + dt.timedelta(days=4)
+        with store.session() as session:
+            session.add(
+                task(
+                    owner_id="u1",
+                    kind="event",
+                    title="my imported event",
+                    source="gmail",
+                    source_ref="gmail:mine",
+                    start_at=mine_gmail_start,
+                    end_at=mine_gmail_start + dt.timedelta(hours=1),
+                )
+            )
+            session.add(
+                task(
+                    owner_id="u1",
+                    kind="event",
+                    title="my local block",
+                    start_at=mine_local_start,
+                    end_at=mine_local_start + dt.timedelta(hours=1),
+                )
+            )
+            session.add(
+                task(
+                    owner_id="u2",
+                    kind="event",
+                    title="their imported event",
+                    source="gmail",
+                    source_ref="gmail:theirs",
+                    start_at=other_gmail_start,
+                    end_at=other_gmail_start + dt.timedelta(hours=1),
+                )
+            )
+            session.add(
+                task(
+                    owner_id="u2",
+                    kind="event",
+                    title="their local block",
+                    start_at=other_local_start,
+                    end_at=other_local_start + dt.timedelta(hours=1),
+                )
+            )
+
+        class OfflineCalendar:
+            connected = False
+
+        assert sources.collect_gmail(store, "u1", at=NOW) == [
+            (mine_gmail_start, mine_gmail_start + dt.timedelta(hours=1))
+        ]
+        assert sources.collect_local(store, "u1", at=NOW) == [
+            (mine_local_start, mine_local_start + dt.timedelta(hours=1))
+        ]
+        assert sources.busy_windows(store, "u1", OfflineCalendar(), at=NOW) == [
+            (mine_gmail_start, mine_gmail_start + dt.timedelta(hours=1)),
+            (mine_local_start, mine_local_start + dt.timedelta(hours=1)),
         ]
 
 
