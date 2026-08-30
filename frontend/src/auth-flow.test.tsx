@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const firebaseMock = vi.hoisted(() => {
   type TestFirebaseUser = {
+    uid: string;
     email: string | null;
     getIdToken: () => Promise<string>;
   };
@@ -12,19 +13,22 @@ const firebaseMock = vi.hoisted(() => {
   let observer: AuthCallback | null = null;
 
   return {
+    authMode: "local" as "local" | "firebase",
     configured: false,
     currentUser: null as TestFirebaseUser | null,
     signInWithGoogle: vi.fn<() => Promise<void>>(async () => undefined),
     signOutUser: vi.fn<() => Promise<void>>(async () => undefined),
     reset() {
+      this.authMode = "local";
       this.configured = false;
       this.currentUser = null;
       observer = null;
       this.signInWithGoogle.mockClear();
       this.signOutUser.mockClear();
     },
-    user(token: string, email = "friend@example.com"): TestFirebaseUser {
+    user(token: string, email = "friend@example.com", uid = token): TestFirebaseUser {
       return {
+        uid,
         email,
         getIdToken: () => Promise.resolve(token),
       };
@@ -43,11 +47,19 @@ const firebaseMock = vi.hoisted(() => {
 });
 
 vi.mock("./firebase", () => ({
+  get clientAuthMode() {
+    return firebaseMock.authMode;
+  },
   get firebaseConfigured() {
-    return firebaseMock.configured;
+    return firebaseMock.authMode === "firebase" && firebaseMock.configured;
+  },
+  get firebaseConfigError() {
+    return firebaseMock.authMode === "firebase" && !firebaseMock.configured
+      ? "Firebase auth is selected, but the public Firebase config is incomplete."
+      : null;
   },
   get auth() {
-    if (!firebaseMock.configured) return null;
+    if (firebaseMock.authMode !== "firebase" || !firebaseMock.configured) return null;
     return {
       get currentUser() {
         return firebaseMock.currentUser;
@@ -60,9 +72,9 @@ vi.mock("./firebase", () => ({
 }));
 
 import App from "./App";
-import type { View } from "./types";
+import type { Reply, View } from "./types";
 
-function view(): View {
+function view(overrides: Partial<View> = {}): View {
   return {
     now: "2026-08-31T01:00:00+00:00",
     today: "2026-08-31",
@@ -87,6 +99,17 @@ function view(): View {
       imported: 0,
       skipped: 0,
     },
+    ...overrides,
+  };
+}
+
+function reply(overrides: Partial<Reply> = {}): Reply {
+  return {
+    kind: "answered",
+    message: "Added secret from A.",
+    source: "rules",
+    view: view({ using_model: true }),
+    ...overrides,
   };
 }
 
@@ -133,6 +156,7 @@ describe("public auth flow", () => {
   });
 
   test("Firebase mode waits for auth before loading protected data", async () => {
+    firebaseMock.authMode = "firebase";
     firebaseMock.configured = true;
     const fetch = vi.fn(async () => json(view()));
     vi.stubGlobal("fetch", fetch);
@@ -149,6 +173,7 @@ describe("public auth flow", () => {
   });
 
   test("signed-out Firebase users can start Google sign-in", async () => {
+    firebaseMock.authMode = "firebase";
     firebaseMock.configured = true;
     vi.stubGlobal(
       "fetch",
@@ -171,6 +196,7 @@ describe("public auth flow", () => {
   });
 
   test("signed-in Firebase requests use the bearer token", async () => {
+    firebaseMock.authMode = "firebase";
     firebaseMock.configured = true;
     const calls: Headers[] = [];
     vi.stubGlobal(
@@ -190,6 +216,7 @@ describe("public auth flow", () => {
   });
 
   test("an expired Firebase token returns to sign-in", async () => {
+    firebaseMock.authMode = "firebase";
     firebaseMock.configured = true;
     vi.stubGlobal(
       "fetch",
@@ -198,6 +225,81 @@ describe("public auth flow", () => {
 
     render(<App />);
     await emitFirebaseUser(firebaseMock.user("expired-token"));
+
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
+  });
+
+  test("Firebase mode with incomplete config fails closed", () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = false;
+    const fetch = vi.fn(async () => json(view()));
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Check Firebase setup");
+    expect(screen.getByText(/public Firebase config is incomplete/)).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("switching Firebase accounts clears the prior chat", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        return url.includes("/api/say") ? json(reply()) : json(view({ using_model: true }));
+      }),
+    );
+
+    render(<App />);
+    const user = userEvent.setup();
+    await emitFirebaseUser(firebaseMock.user("token-a", "a@example.com", "uid-a"));
+
+    await user.click((await screen.findAllByRole("button", { name: /Chat|Cooper/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: /AI|Ask/ }));
+    await user.type(screen.getByLabelText("Say something to Cooper"), "secret from A{Enter}");
+
+    expect(await screen.findByText("secret from A")).toBeInTheDocument();
+    expect(localStorage.getItem("cooper.chat.v1")).toContain("secret from A");
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Sign out" }));
+    await emitFirebaseUser(firebaseMock.user("token-b", "b@example.com", "uid-b"));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("cooper.chat.v1")).not.toContain("secret from A");
+    });
+
+    await user.click((await screen.findAllByRole("button", { name: /Chat|Cooper/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: /AI|Ask/ }));
+
+    expect(screen.queryByText("secret from A")).not.toBeInTheDocument();
+    expect(localStorage.getItem("cooper.chat.v1")).not.toContain("secret from A");
+  });
+
+  test("Google Connect 401 returns Firebase users to sign-in", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/google/connect")) {
+          return json({ detail: "Invalid authentication token" }, 401);
+        }
+        return json(view({ calendar: { configured: true, connected: false, email: null } }));
+      }),
+    );
+
+    render(<App />);
+    const user = userEvent.setup();
+    await emitFirebaseUser(firebaseMock.user("expired-token"));
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Connect" }));
 
     expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
     expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);

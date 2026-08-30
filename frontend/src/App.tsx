@@ -6,6 +6,7 @@ import { api } from "./api";
 import { Calendar } from "./Calendar";
 import { Chat, loadMode, loadTurns, saveMode, saveTurns, type Mode, type Turn } from "./Chat";
 import {
+  firebaseConfigError,
   firebaseConfigured,
   signInWithGoogle,
   signOutUser,
@@ -124,6 +125,7 @@ interface Notice {
 
 type AuthState =
   | { kind: "local" }
+  | { kind: "config-error"; message: string }
   | { kind: "loading" }
   | { kind: "signed-out" }
   | { kind: "signed-in"; user: FirebaseUser };
@@ -137,6 +139,16 @@ function SignInSurface({ busy, onSignIn }: { busy: boolean; onSignIn: () => void
       <button type="button" className="btn" disabled={busy} onClick={onSignIn}>
         Continue with Google
       </button>
+    </div>
+  );
+}
+
+function AuthSetupErrorSurface({ message }: { message: string }) {
+  return (
+    <div className="scroll auth-screen" role="alert">
+      <Mascot name="cooper_tired" size="lg" decorative />
+      <h1 className="largetitle">Check Firebase setup</h1>
+      <p className="empty__text">{message}</p>
     </div>
   );
 }
@@ -219,7 +231,11 @@ function LoadingSurface({ tab }: { tab: Exclude<Tab, "chat"> }) {
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>(
-    firebaseConfigured ? { kind: "loading" } : { kind: "local" },
+    firebaseConfigError
+      ? { kind: "config-error", message: firebaseConfigError }
+      : firebaseConfigured
+        ? { kind: "loading" }
+        : { kind: "local" },
   );
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
@@ -235,6 +251,7 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
   const noticeTimer = useRef<number | null>(null);
+  const firebaseSubject = useRef<string | null>(null);
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -242,23 +259,45 @@ export default function App() {
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
   const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
 
+  const clearConversation = useCallback(() => {
+    setTurns([]);
+    saveTurns([]);
+  }, []);
+
   useEffect(() => {
+    if (firebaseConfigError) {
+      setAuthState({ kind: "config-error", message: firebaseConfigError });
+      return;
+    }
     if (!firebaseConfigured) return;
     return subscribeToAuth((user) => {
+      const nextSubject = user?.uid ?? null;
+      if (firebaseSubject.current !== nextSubject) {
+        firebaseSubject.current = nextSubject;
+        clearConversation();
+      }
       setAuthState(user ? { kind: "signed-in", user } : { kind: "signed-out" });
       setView(null);
       setLoadResolved(user === null);
     });
-  }, []);
+  }, [clearConversation]);
+
+  const signOutOfFirebase = useCallback(() => {
+    if (!firebaseConfigured) return;
+    firebaseSubject.current = null;
+    clearConversation();
+    setView(null);
+    setAuthState({ kind: "signed-out" });
+    setLoadResolved(true);
+    void signOutUser();
+  }, [clearConversation]);
 
   const returnToSignIn = useCallback(() => {
     if (!firebaseConfigured) return false;
-    setView(null);
     setFailure(null);
-    setAuthState({ kind: "signed-out" });
-    void signOutUser();
+    signOutOfFirebase();
     return true;
-  }, []);
+  }, [signOutOfFirebase]);
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
@@ -447,6 +486,27 @@ export default function App() {
     [announce, returnToSignIn],
   );
 
+  const connectGoogle = useCallback(async () => {
+    setBusy(true);
+    try {
+      const { url } = await api.connect();
+      setFailure(null);
+      window.location.href = url;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 401 && returnToSignIn()) return;
+        const kind = error.status === 409 ? "question" : "note";
+        announce(kind, error.message);
+      } else {
+        const message = error instanceof Error ? error.message : "Something went wrong.";
+        setFailure(message);
+        announce("note", message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [announce, returnToSignIn]);
+
   /** Manual mode's form: post the fields and let Cooper narrate it into the conversation. */
   const addFromForm = useCallback(
     async (item: NewItem) => {
@@ -473,6 +533,8 @@ export default function App() {
       />
 
       <main className="main">
+        {authState.kind === "config-error" && <AuthSetupErrorSurface message={authState.message} />}
+
         {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
 
         {firebaseConfigured && authState.kind === "signed-out" && (
@@ -582,11 +644,7 @@ export default function App() {
                   <div className="field">
                     <span className="field__label">Signed in</span>
                     <span className="tag">{signedInEmail ?? "Google account"}</span>
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      onClick={() => void signOutUser()}
-                    >
+                    <button type="button" className="btn btn--quiet" onClick={signOutOfFirebase}>
                       Sign out
                     </button>
                   </div>
@@ -707,9 +765,8 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn--quiet"
-                      onClick={() =>
-                        void api.connect().then(({ url }) => (window.location.href = url))
-                      }
+                      disabled={busy}
+                      onClick={() => void connectGoogle()}
                     >
                       Connect
                     </button>
@@ -857,7 +914,7 @@ export default function App() {
             </section>
 
             {turns.length > 0 && (
-              <button type="button" className="btn btn--full" onClick={() => setTurns([])}>
+              <button type="button" className="btn btn--full" onClick={clearConversation}>
                 Clear conversation
               </button>
             )}

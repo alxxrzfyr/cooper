@@ -10,12 +10,17 @@ import {
 } from "firebase/auth";
 
 export type FirebaseUser = User;
+export type ClientAuthMode = "local" | "firebase";
 
 interface FirebaseConfig {
   apiKey: string;
   authDomain: string;
   projectId: string;
   appId: string;
+}
+
+function readAuthMode(): ClientAuthMode {
+  return import.meta.env.VITE_COOPER_AUTH_MODE === "firebase" ? "firebase" : "local";
 }
 
 function readConfig(): FirebaseConfig | null {
@@ -28,10 +33,15 @@ function readConfig(): FirebaseConfig | null {
   return Object.values(config).every((value) => value.trim()) ? config : null;
 }
 
-const config = readConfig();
+export const clientAuthMode = readAuthMode();
+const config = clientAuthMode === "firebase" ? readConfig() : null;
 const app: FirebaseApp | null = config ? initializeApp(config) : null;
 
-export const firebaseConfigured = app !== null;
+export const firebaseConfigured = clientAuthMode === "firebase" && app !== null;
+export const firebaseConfigError =
+  clientAuthMode === "firebase" && app === null
+    ? "Firebase auth is selected, but the public Firebase config is incomplete."
+    : null;
 export const auth = app ? getAuth(app) : null;
 
 export function signInWithGoogle(): Promise<void> {

@@ -9,14 +9,14 @@ import {
   type SyncSummary,
   type View,
 } from "./types";
-import { auth, firebaseConfigured } from "./firebase";
+import { auth, clientAuthMode } from "./firebase";
 
 const BASE = import.meta.env.VITE_COOPER_API ?? "";
 const KEY_HEADER = "X-Cooper-Key";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (firebaseConfigured) {
+  if (clientAuthMode === "firebase") {
     const token = await auth?.currentUser?.getIdToken();
     if (!token) throw new ApiError(401, "Sign in to continue.");
     headers.set("Authorization", `Bearer ${token}`);
