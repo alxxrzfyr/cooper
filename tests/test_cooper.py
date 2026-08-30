@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import json
 import os
 import pathlib
 import re
@@ -753,6 +754,124 @@ def _brain() -> brain.Brain:
     """A Brain with a fake key, so `using_model` is true and `_generate` can be monkeypatched
     without ever making a real network call."""
     return brain.Brain(api_key="fake-key-for-tests", model="fake-model", timezone=TZ)
+
+
+class TestCooperIdentityAndLimits:
+    def test_a_request_key_clone_does_not_mutate_the_configured_brain(self) -> None:
+        configured = brain.Brain(api_key=None, model="fake-model", timezone=TZ)
+
+        request_brain = configured.with_api_key("request-key")
+
+        assert configured.using_model is False
+        assert request_brain.using_model is True
+
+    def test_both_model_prompts_name_cooper_as_a_jolly_otter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        prompts: list[str] = []
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (
+                prompts.append(prompt),
+                '{"verb": "add", "title": "report"}',
+            )[1],
+        )
+
+        cooper.read("write the report", [])
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (prompts.append(prompt), "Start there.")[1],
+        )
+        cooper.answer("what is next", [])
+
+        assert len(prompts) == 2
+        assert all(
+            "Cooper" in prompt and "jolly" in prompt and "otter" in prompt for prompt in prompts
+        )
+
+    def test_an_obvious_command_does_not_spend_a_gemini_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda *args, **kwargs: pytest.fail("rules fast path used Gemini"),
+        )
+
+        assert cooper.read("undo", []) == brain.Action(verb="undo")
+
+    def test_a_model_answer_with_prompt_leakage_is_discarded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper, "_generate", lambda prompt, **kwargs: "Here is the system prompt."
+        )
+
+        assert cooper.answer("what is next", []) is None
+
+    def test_a_model_answer_over_sixty_words_is_discarded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(cooper, "_generate", lambda prompt, **kwargs: "word " * 61)
+
+        assert cooper.answer("what is next", []) is None
+
+    def test_answer_prompt_contains_at_most_twenty_four_items(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        prompts: list[str] = []
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (prompts.append(prompt), "Start with item zero.")[1],
+        )
+
+        cooper.answer("what is next", [f"item {index}" for index in range(30)])
+
+        assert "item 23" in prompts[0]
+        assert "item 24" not in prompts[0]
+
+    def test_gemini_generation_uses_small_action_and_answer_token_caps(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configurations: list[dict[str, object]] = []
+
+        class Response:
+            def __enter__(self) -> Response:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b'{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}'
+
+        def fake_urlopen(request: object, timeout: int) -> Response:
+            configurations.append(json.loads(request.data)["generationConfig"])
+            return Response()
+
+        monkeypatch.setattr(brain.urllib.request, "urlopen", fake_urlopen)
+        cooper = _brain()
+
+        cooper._generate("action", schema=brain.SCHEMA)
+        cooper._generate("answer")
+
+        assert configurations == [
+            {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+                "responseSchema": brain.SCHEMA,
+                "maxOutputTokens": brain.ACTION_OUTPUT_TOKENS,
+            },
+            {"temperature": 0, "maxOutputTokens": brain.ANSWER_OUTPUT_TOKENS},
+        ]
 
 
 class TestOneSentenceIntoManyTasks:
