@@ -32,6 +32,15 @@
   --bg: #f2f2f7;
   --card: #ffffff;
   --sunken: #e9e9ee;
+
+  /*
+   * Dimming and elevation for anything that covers the app. The scrim is always black: derived
+   * from --text it inverted with the theme and became a white veil over a dark page, which lifts
+   * the background *above* the sheet and reads as a hole instead of a card.
+   */
+  --scrim: rgba(0, 0, 0, 0.32);
+  --sheet: #f2f2f7;
+  --sheet-row: #ffffff;
   --text: #1c1c1e;
   --muted: #6b6b70;
   --faint: #a5a5aa;
@@ -83,6 +92,14 @@
   --bg: #000000;
   --card: #1c1c1e;
   --sunken: #2c2c2e;
+
+  /*
+   * A black scrim cannot darken a black page, so in dark the sheet does the separating: each
+   * layer is lighter than the one behind it, which is how depth reads without shadows.
+   */
+  --scrim: rgba(0, 0, 0, 0.6);
+  --sheet: #1c1c1e;
+  --sheet-row: #2c2c2e;
   --text: #f2f2f7;
   --muted: #98989e;
   --faint: #6b6b70;
@@ -1970,9 +1987,9 @@ button.slot:active {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
-  backdrop-filter: blur(14px) saturate(115%);
-  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  background: var(--scrim);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
   animation: frame-in 0.18s ease-out;
 }
 
@@ -1987,7 +2004,7 @@ button.slot:active {
   max-height: min(88vh, 720px);
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--sheet);
   border-radius: 20px 20px 0 0;
   box-shadow: var(--shadow-lg);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -2098,6 +2115,11 @@ button.slot:active {
   display: flex;
   flex-direction: column;
   background: var(--card);
+  /* Inside a sheet the rows sit one step above it, not on the page's scale. */
+}
+
+.frame__panel .facts {
+  background: var(--sheet-row);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
