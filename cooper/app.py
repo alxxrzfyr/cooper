@@ -21,7 +21,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from cooper.brain import Action, Brain, guess_category, looks_like_a_question
+from cooper import sources
+from cooper.brain import Action, Brain, guess_category, looks_like_a_question, validate
 from cooper.config import Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError
@@ -98,6 +99,38 @@ class ItemIn(BaseModel):
     notes: str | None = None
 
 
+class NewItem(BaseModel):
+    """Manual mode, as a form rather than a sentence.
+
+    Every field is here as a value, so nothing is parsed and the model is never called. This is
+    the whole point of requirement 6: Manual stopped meaning "type a sentence and have simple
+    rules read it", which was the typing without the smartness.
+
+    A due date arrives as a plain ISO date. A `start` datetime turns the item into an event; a
+    task leaves it empty and gets booked into working hours like any other.
+    """
+
+    title: str = Field(min_length=1, max_length=300)
+    kind: Literal["task", "event"] = "task"
+    minutes: int | None = Field(default=None, ge=1, le=1440)
+    importance: int = Field(default=3, ge=1, le=5)
+    category: Literal["academics", "work", "organizations", "personal"] | None = None
+    due: dt.date | None = None
+    start: dt.datetime | None = None
+    end: dt.datetime | None = None
+
+
+class BulkIn(BaseModel):
+    """A bulk complete or drop, confirmed against the exact ids shown to the user.
+
+    The list is chosen in a first request (a match) and acted on in a second (this), so the user
+    always sees what will happen before it does. Undo is enough for one item and not for twenty.
+    """
+
+    verb: Literal["complete", "drop"]
+    ids: list[str] = Field(min_length=1, max_length=100)
+
+
 # ------------------------------------------------------------------------ helpers
 
 
@@ -166,17 +199,12 @@ def google_events(*, days: int = 14) -> list[dict[str, Any]]:
 
 
 def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
-    """Times already committed: calendar events plus blocks we placed ourselves."""
-    spans: list[tuple[dt.datetime, dt.datetime]] = []
-    # A calendar problem must not stop planning. It only means less awareness of what is booked.
-    with contextlib.suppress(CalendarError):
-        spans.extend((entry.start, entry.end) for entry in calendar.busy(days=days))
-    with store.session() as session:
-        for item in store.open_items(session):
-            start, end = aware(item.start_at), aware(item.end_at)
-            if start and end:
-                spans.append((start, end))
-    return spans
+    """Times already committed, from every source. The gathering itself lives in sources.py.
+
+    Kept as a one-line wrapper so the schedulers below read the same as before and there is one
+    obvious place — sources.py — where a new commitment source is added.
+    """
+    return sources.busy_windows(store, calendar, at=now(), days=days)
 
 
 def today_view() -> dict[str, Any]:
@@ -536,6 +564,12 @@ def undo_last() -> dict[str, Any]:
                 item.start_at = None
                 item.end_at = None
                 item.google_event_id = None
+        elif "bulk" in before:
+            # A bulk complete or drop, restored item by item to exactly what each was before.
+            for snapshot in before["bulk"]:
+                item = session.get(Item, snapshot.get("id"))
+                if item is not None:
+                    _restore(item, snapshot)
 
         change.undone = 1
         label = change.label
@@ -572,6 +606,107 @@ def _as_due(day: dt.date | None) -> dt.datetime | None:
 
 
 # ------------------------------------------------------------- direct item routes
+
+
+@app.post("/api/items")
+def create(body: NewItem) -> dict[str, Any]:
+    """Manual mode's form: fields in, item out, no parsing and no model.
+
+    It builds an Action by hand and hands it to the same `add` the sentence path uses, so a
+    typed task is booked into working hours exactly like a parsed one, goes through the same
+    undo hook, and reaches Google the same way. There is deliberately no second write path.
+    """
+    action = Action(
+        verb="add",
+        title=body.title.strip(),
+        kind="event" if body.start else body.kind,
+        minutes=body.minutes,
+        importance=body.importance,
+        # An empty category means "work it out from the title", the way the sentence path does,
+        # rather than forcing the person to categorise their own errand.
+        category=body.category or guess_category(body.title),
+        due=body.due,
+        start=body.start,
+        end=body.end,
+        source="form",
+    )
+    # The same validation the model's output goes through: an event that ends before it starts
+    # becomes a question, a start with no end gets one, and so on.
+    action = validate(action)
+    if action.is_question:
+        raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
+    result = add(action)
+    return {**result, "source": "form", "view": today_view()}
+
+
+class BulkMatch(BaseModel):
+    words: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/bulk/match")
+def bulk_match(body: BulkMatch) -> dict[str, Any]:
+    """Find every open item a phrase matches, so the user sees the list before acting.
+
+    A bulk verb is destructive at a scale undo cannot fix, so it is a two-step reply the way an
+    ambiguous single reference is a question: first the list, then the confirmation. This is the
+    list. It never writes anything.
+
+    Matching is deliberately looser than `find()`, which asks when a phrase is ambiguous — here
+    hitting several items is the intent, not a problem.
+    """
+    needle = " ".join(body.words.lower().split())
+    with store.session() as session:
+        items = store.open_items(session)
+        hits = [item for item in items if needle in item.title.lower()]
+        payload = [item.to_dict() for item in hits]
+    return {"matched": payload, "count": len(payload)}
+
+
+@app.post("/api/bulk")
+def bulk(body: BulkIn) -> dict[str, Any]:
+    """Complete or drop several items at once, by the exact ids the user just saw.
+
+    Recorded as one change so a single undo reverses the whole batch, which is the correction a
+    bulk verb needs. Ids are matched exactly, never re-parsed, so the confirmation acts on
+    precisely what was shown and nothing that arrived since.
+    """
+    done_google: list[str] = []
+    touched: list[str] = []
+    with store.session() as session:
+        before: list[dict[str, Any]] = []
+        for item_id in body.ids:
+            item = session.get(Item, item_id)
+            if item is None or item.status != "open":
+                continue
+            before.append(item.to_dict())
+            if body.verb == "complete":
+                item.status = "done"
+                item.done_at = now()
+            else:
+                item.status = "dropped"
+            if item.google_event_id:
+                done_google.append(item.google_event_id)
+            touched.append(item.title)
+
+        if not touched:
+            return {"kind": "note", "message": "Nothing matched to change.", "view": today_view()}
+
+        verb_past = "Completed" if body.verb == "complete" else "Dropped"
+        label = f"{verb_past} {len(touched)} item{'s' if len(touched) != 1 else ''}"
+        # One change row for the batch: undo puts the whole set back in a single step.
+        store.record(session, label=label, item=None, before={"bulk": before})
+
+    for event_id in done_google:
+        with contextlib.suppress(CalendarError):
+            calendar.remove_block(event_id)
+
+    kind = "completed" if body.verb == "complete" else "dropped"
+    return {
+        "kind": kind,
+        "message": label + ".",
+        "chip": touched[:10],
+        "view": today_view(),
+    }
 
 
 @app.patch("/api/items/{item_id}")

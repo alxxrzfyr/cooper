@@ -491,3 +491,123 @@ class TestAgenda:
             ZoneInfo("Asia/Singapore")
         )
         assert local.hour == 15
+
+
+class TestManualForm:
+    """Requirement 6: Manual mode is a form, so items arrive as fields, never parsed."""
+
+    def form(self, client: TestClient, **fields) -> dict:
+        response = client.post("/api/items", json=fields, headers=HEADERS)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def test_a_typed_task_is_created_without_the_model(self, client: TestClient) -> None:
+        body = self.form(
+            client, title="write the report", minutes=90, importance=4, category="work"
+        )
+
+        assert body["source"] == "form"
+        assert body["item"]["title"] == "write the report"
+        assert body["item"]["minutes"] == 90
+        assert body["item"]["importance"] == 4
+        assert body["item"]["category"] == "work"
+
+    def test_a_sized_task_is_booked_into_hours_like_a_parsed_one(self, client: TestClient) -> None:
+        # The form reuses the same add path, so a typed task lands on the calendar the same way.
+        body = self.form(client, title="revise notes", minutes=45)
+
+        assert body["item"]["start_at"] is not None
+
+    def test_an_unsized_task_is_shown_but_not_booked(self, client: TestClient) -> None:
+        body = self.form(client, title="buy milk")
+
+        assert body["item"]["minutes"] is None
+        assert body["item"]["start_at"] is None
+
+    def test_a_missing_category_is_worked_out_from_the_title(self, client: TestClient) -> None:
+        # Rather than force the person to categorise their own errand.
+        body = self.form(client, title="revise for the midterm", minutes=60)
+
+        assert body["item"]["category"] == "academics"
+
+    def test_a_form_event_ending_before_it_starts_is_refused(self, client: TestClient) -> None:
+        # The same validation the model's output goes through, not a second, looser gate.
+        response = client.post(
+            "/api/items",
+            json={
+                "title": "bad meeting",
+                "start": "2026-09-01T15:00:00+08:00",
+                "end": "2026-09-01T14:00:00+08:00",
+            },
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
+
+    def test_a_form_add_can_be_undone(self, client: TestClient) -> None:
+        self.form(client, title="scratch task", minutes=30)
+
+        body = client.post("/api/undo", headers=HEADERS).json()
+
+        assert body["kind"] == "undone"
+
+
+class TestBulk:
+    """Requirement 6's other half: bulk verbs that show the list before acting."""
+
+    def test_match_lists_everything_a_phrase_hits_and_writes_nothing(
+        self, client: TestClient
+    ) -> None:
+        say(client, "review the intro")
+        say(client, "review the appendix")
+        say(client, "buy milk")
+
+        body = client.post("/api/bulk/match", json={"words": "review"}, headers=HEADERS).json()
+
+        assert body["count"] == 2
+        titles = {item["title"] for item in body["matched"]}
+        assert titles == {"review the intro", "review the appendix"}
+        # Matching must not change anything: all three items are still open.
+        assert len(client.get("/api/today", headers=HEADERS).json()["shortlist"]) == 3
+
+    def test_bulk_complete_acts_on_the_confirmed_ids(self, client: TestClient) -> None:
+        say(client, "review the intro")
+        say(client, "review the appendix")
+        matched = client.post("/api/bulk/match", json={"words": "review"}, headers=HEADERS).json()[
+            "matched"
+        ]
+        ids = [item["id"] for item in matched]
+
+        body = client.post("/api/bulk", json={"verb": "complete", "ids": ids}, headers=HEADERS)
+
+        assert body.status_code == 200, body.text
+        assert body.json()["kind"] == "completed"
+        # Both are gone from the open list.
+        assert client.get("/api/today", headers=HEADERS).json()["shortlist"] == []
+
+    def test_a_whole_bulk_batch_is_undone_in_one_step(self, client: TestClient) -> None:
+        say(client, "review the intro")
+        say(client, "review the appendix")
+        matched = client.post("/api/bulk/match", json={"words": "review"}, headers=HEADERS).json()[
+            "matched"
+        ]
+        ids = [item["id"] for item in matched]
+        client.post("/api/bulk", json={"verb": "drop", "ids": ids}, headers=HEADERS)
+
+        body = client.post("/api/undo", headers=HEADERS).json()
+
+        assert body["kind"] == "undone"
+        # Both come back open, because undo is the correction a bulk verb relies on.
+        assert len(client.get("/api/today", headers=HEADERS).json()["shortlist"]) == 2
+
+    def test_bulk_ignores_an_id_that_is_no_longer_open(self, client: TestClient) -> None:
+        # The confirmation acts on exactly what was shown and quietly skips anything already gone.
+        made = say(client, "review the intro")
+        real_id = made["item"]["id"]
+
+        body = client.post(
+            "/api/bulk", json={"verb": "drop", "ids": [real_id, "missing00id0"]}, headers=HEADERS
+        ).json()
+
+        assert body["kind"] == "dropped"
+        assert body["chip"] == ["review the intro"]

@@ -260,6 +260,17 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
     return _sanity_check(action)
 
 
+def validate(action: Action) -> Action:
+    """Public entry to the same check the model's output goes through.
+
+    Manual mode's form builds an Action by hand and needs the identical guardrails: an add with
+    no title becomes a question, an event that ends before it starts becomes one, a start with no
+    end gets a default duration. Keeping this the one validator means the form cannot smuggle an
+    unexecutable item past the rules the sentence path obeys.
+    """
+    return _sanity_check(action)
+
+
 def _sanity_check(action: Action) -> Action:
     """Reject actions that cannot be executed, so nothing half-formed reaches the database."""
     if action.verb == "add" and not action.title:
