@@ -22,7 +22,7 @@ Five things go wrong with my time, and they are the same problem wearing five ha
 
 ## The things it must do
 
-Requirements 1–5 work today. 6 and 7 are the build.
+Requirements 1–6 work today. 7 is the build, and its shared pipe is already in place.
 
 | # | Requirement | Done when |
 | --- | --- | --- |
@@ -41,13 +41,16 @@ thing to do, today's fixed events and booked blocks in one strip, anything overd
 of runway, and what has arrived from elsewhere since I last looked. The ranked list is a section
 on this screen, not an errand I run.
 
-**6 — Manual is a form.** Manual mode stops meaning "type a sentence and simple rules read it,"
-which is the worst of both. It means a form: title, deadline, how long, category, importance.
-No parsing, no network, no misreads. AI mode is where I talk. Two doors, same room.
+**6 — Manual is a form.** *Built.* Manual mode stopped meaning "type a sentence and simple rules
+read it," which was the worst of both. It is a form now: title, deadline, how long, category,
+importance. No parsing, no network, no misreads. AI mode is where I talk. Two doors, same room. A
+typed item goes through the same validation and the same single writer as a parsed one, so there
+is no second, looser way in.
 
-AI mode also handles the destructive verbs, including in bulk — complete these, drop those. Bulk
-shows me the list and asks first. Undo is enough correction for one item and not enough for
-twenty.
+The destructive verbs work in bulk through two steps: a match that lists everything a phrase hits
+and writes nothing, then a confirmation that acts on exactly those ids and is recorded as one
+change, so a single undo reverses the whole batch. The backend and its guarantees are built and
+tested; wiring the two steps into the AI conversation as a shown list is the piece still to do.
 
 **7 — Commitments from elsewhere.** Four sources, one idea:
 
@@ -61,6 +64,11 @@ twenty.
 Everything except assignments arrives as the same thing: time that is already spoken for, which
 the scheduler must route around. Assignments are the exception and arrive as tasks with due
 dates, which the existing score already knows how to rank.
+
+The pipe this depends on is built. `sources.py` already turns every commitment into one list of
+busy intervals the scheduler routes around, today from Google and Cooper's own blocks. Adding
+Outlook, Teams and email-parsed events is appending a producer to that list, not a rewrite. What
+is missing is those producers, and each is blocked on a credential or a scope I have to decide.
 
 Luma, Meetup and Eventbrite are not integrated directly. They send email, so Gmail is the bridge
 and one connection covers all three — and covers Teams assignments too, when a school tenant
@@ -188,7 +196,13 @@ which case stop.
 
 Requirements 1–5 work. Google Calendar needs my own Google Cloud credentials to write to a real
 calendar; without them everything else runs and the calendar reports itself as off.
-Requirements 6 and 7 are not built. Nothing in the current code contradicts them.
+
+Requirement 7's shared pipe (`sources.py`) is built and feeds the scheduler. The remote producers
+that fill it are not, and are blocked on decisions only I can make: Outlook and Teams need an
+Azure app registration and read scopes for calendars and, where the tenant allows it, classes.
+The Gmail watcher needs a restricted mail scope, which is the expensive one — free for me in
+testing, a paid annual audit once anyone else uses it. Bulk verbs also still need their
+conversation surface in AI mode.
 
 Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
 an invented half-hour block, against what all three documents promised. The dashboard's "waiting

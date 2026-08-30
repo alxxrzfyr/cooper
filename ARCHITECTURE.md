@@ -28,8 +28,11 @@ cooper/
   watcher.py   the timer loop that reads Gmail; the only part that runs unprompted
 ```
 
-None of these exist yet. Requirement 5 needed no backend change at all: the dashboard is built
-entirely from the `/api/today` payload the app already fetched.
+`sources.py` now exists and is the built half of requirement 7: it turns every commitment into
+one list of busy intervals the planner routes around, today from Google and Cooper's own blocks.
+`microsoft.py` and `watcher.py` do not exist yet and are blocked on a credential and a scope
+decision. Requirement 5 needed no backend change at all, and requirement 6's form reuses the
+existing add path rather than adding a second writer.
 
 **`sources.py` is the load-bearing one.** Google events, Outlook meetings and events parsed out
 of email are all the same thing to the scheduler: `(start, end)` pairs that are already spoken
@@ -45,6 +48,7 @@ items and go through `rank()`, not through `sources.py`.
 frontend/src/
   App.tsx           one screen: banner, plan, setup, composer
   Home.tsx          the dashboard, and the landing screen — next, today, attention, waiting
+  Form.tsx          Manual mode as fields rather than a sentence — the built requirement 6
   Chat.tsx          the conversation, grouped into runs like a messages app
   Calendar.tsx      day, week and month, coloured by category
   Nav.tsx           top bar, bottom tabs, and the wide-screen rail
@@ -58,8 +62,14 @@ frontend/src/
 ## Frontend, planned
 
 ```
-  Form.tsx          Manual mode as fields rather than a sentence
 ```
+
+`Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
+`add` the sentence path uses, and runs it through the public `validate` in `brain.py`. A typed
+task is booked, undone and mirrored to Google exactly like a parsed one, and `app.py` is still the
+only writer. Bulk verbs are `POST /api/bulk/match` (lists hits, writes nothing) and `POST
+/api/bulk` (acts on confirmed ids, one change row for the batch); `undo_last` has a `bulk` branch
+that restores every snapshot in a single step.
 
 `Home.tsx` reuses `Row.tsx` and the `slot` classes from `Calendar.tsx`, because the dashboard is a
 new arrangement of things that already render rather than a new set of components. The one piece
