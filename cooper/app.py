@@ -106,6 +106,8 @@ class Say(BaseModel):
     # Manual is the default on purpose: the model has a daily quota, and the rules parser handles
     # the ordinary shapes without spending any of it. AI mode is opt-in, per message.
     mode: Literal["manual", "ai"] = "manual"
+    # A browser key is deliberately request-scoped. It is never persisted, logged, or returned.
+    gemini_api_key: str | None = Field(default=None, max_length=256)
 
 
 class HoursIn(BaseModel):
@@ -368,7 +370,7 @@ def _record_gmail_health(checked_at: dt.datetime, summary: SyncSummary) -> None:
     )
 
 
-def today_view() -> dict[str, Any]:
+def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
     at = now()
     hours = current_hours()
     zone = ZoneInfo(settings.timezone)
@@ -402,7 +404,7 @@ def today_view() -> dict[str, Any]:
         "hours": hours.as_setting(),
         "events": google_events(),
         "undo": undo_label,
-        "using_model": brain.using_model,
+        "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
             "configured": calendar.configured,
             "connected": calendar.connected,
@@ -436,12 +438,14 @@ def get_today() -> dict[str, Any]:
 def say(body: Say) -> dict[str, Any]:
     """The main entry point: one sentence in, one change out."""
     ai = body.mode == "ai"
+    browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
+    request_brain = brain.with_api_key(browser_key) if browser_key else brain
     with store.session() as session:
         open_items = store.open_items(session)
         recent = [item.title for item in reversed(open_items)][:8]
         summaries = [_summarise(item) for item in open_items] if ai else []
 
-    action = brain.read(body.text, recent, use_model=ai)
+    action = request_brain.read(body.text, recent, use_model=ai)
 
     # In AI mode, a sentence shaped like a question — "what should I do", "is there room
     # tomorrow" — gets a real answer instead of "here is what is next" or a generic question
@@ -454,17 +458,21 @@ def say(body: Say) -> dict[str, Any]:
     # every "ask" through `answer()` used to replace both of those specific, correct replies with
     # one generic decline, which is what made a real multi-task request look like a refusal.
     if ai and (action.verb == "show" or looks_like_a_question(body.text)):
-        answered = brain.answer(body.text, summaries)
+        answered = request_brain.answer(body.text, summaries)
         if answered:
             return {
                 "kind": "answered",
                 "message": answered,
                 "source": "gemini",
-                "view": today_view(),
+                "view": today_view(using_model=request_brain.using_model),
             }
 
     result = run(action)
-    return {**result, "source": action.source, "view": today_view()}
+    return {
+        **result,
+        "source": action.source,
+        "view": today_view(using_model=request_brain.using_model),
+    }
 
 
 def _summarise(item: Item) -> str:

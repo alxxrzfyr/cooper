@@ -158,6 +158,73 @@ class TestTheTwoModes:
 
         assert reply["kind"] == "shown"
 
+    def test_ai_request_can_use_a_browser_key_without_changing_global_brain(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        seen: list[str] = []
+        monkeypatch.setattr(module.brain, "_key", None)
+
+        def capture(_brain: object, prompt: str, **kwargs: object) -> str:
+            seen.append(prompt)
+            return '{"verb": "add", "title": "from browser key", "category": "personal"}'
+
+        monkeypatch.setattr(module.Brain, "_generate", capture)
+        response = client.post(
+            "/api/say",
+            json={"text": "add something", "mode": "ai", "gemini_api_key": "user-secret"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert seen
+        assert response.json()["view"]["using_model"] is True
+        assert "user-secret" not in response.text
+        assert module.brain.using_model is False
+
+    def test_manual_request_ignores_a_browser_gemini_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        monkeypatch.setattr(
+            module.Brain,
+            "_generate",
+            lambda *args, **kwargs: pytest.fail("manual called Gemini"),
+        )
+
+        response = client.post(
+            "/api/say",
+            json={"text": "write the report", "mode": "manual", "gemini_api_key": "user-secret"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["source"] == "rules"
+
+    def test_ai_question_uses_one_model_call_with_a_browser_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        calls: list[str] = []
+        monkeypatch.setattr(
+            module.Brain,
+            "_generate",
+            lambda _brain, prompt, **kwargs: (calls.append(prompt), "Start with the report.")[1],
+        )
+
+        response = client.post(
+            "/api/say",
+            json={"text": "what should I do first", "mode": "ai", "gemini_api_key": "user-secret"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["kind"] == "answered"
+        assert len(calls) == 1
+
 
 class TestGmailReconciliation:
     def test_sync_route_is_protected(self, client: TestClient) -> None:
