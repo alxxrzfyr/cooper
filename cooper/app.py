@@ -70,7 +70,7 @@ calendar = Calendar(
     encryption_key=settings.encryption(),
     calendar_id=settings.calendar_id,
 )
-calendar.load_token((store.get_setting(GOOGLE_SETTING) or {}).get("token"))
+calendar.load_token((store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("token"))
 gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
 
 app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
@@ -190,7 +190,7 @@ class BulkIn(BaseModel):
 
 
 def current_hours() -> Hours:
-    saved = store.get_setting(HOURS_SETTING)
+    saved = store.get_setting(settings.owner_id, HOURS_SETTING)
     if saved:
         return Hours.from_setting({**saved, "timezone": settings.timezone})
     return Hours(timezone=settings.timezone)
@@ -217,7 +217,7 @@ def find(session: Any, words: str) -> Item | None:
     if not needle:
         return None
     # External commitments remain visible but are changed only by their source sync.
-    items = [item for item in store.open_items(session) if _is_local_item(item)]
+    items = [item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)]
 
     for item in items:
         if item.id == words or item.title.lower() == needle:
@@ -270,7 +270,7 @@ def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
     Kept as a one-line wrapper so the schedulers below read the same as before and there is one
     obvious place — sources.py — where a new commitment source is added.
     """
-    return sources.busy_windows(store, calendar, at=now(), days=days)
+    return sources.busy_windows(store, calendar, settings.owner_id, at=now(), days=days)
 
 
 def sync_gmail_once() -> SyncSummary:
@@ -402,6 +402,7 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
 def _record_gmail_health(checked_at: dt.datetime, summary: SyncSummary) -> None:
     """Keep watcher health and safe counters, never Gmail bodies or message ids."""
     store.set_setting(
+        settings.owner_id,
         GMAIL_SETTING,
         {
             "last_checked": checked_at.isoformat(),
@@ -422,7 +423,7 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
     zone = ZoneInfo(settings.timezone)
 
     with store.session() as session:
-        items = store.open_items(session)
+        items = store.open_items(session, settings.owner_id)
         ranked = rank(items, at=at)
         scheduled = [
             item.to_dict()
@@ -431,9 +432,9 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
                 key=lambda entry: aware(entry.start_at) or at,
             )
         ]
-        change = store.last_change(session)
+        change = store.last_change(session, settings.owner_id)
         undo_label = change.label if change else None
-    gmail_health = store.get_setting(GMAIL_SETTING) or {}
+    gmail_health = store.get_setting(settings.owner_id, GMAIL_SETTING) or {}
     gmail_counts = gmail_health.get("counts") or {}
 
     return {
@@ -451,7 +452,7 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
         "calendar": {
             "configured": calendar.configured,
             "connected": calendar.connected,
-            "email": (store.get_setting(GOOGLE_SETTING) or {}).get("email"),
+            "email": (store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("email"),
         },
         "gmail": {
             "configured": gmail.configured,
@@ -481,7 +482,7 @@ def say(body: Say) -> dict[str, Any]:
     browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
     request_brain = brain.with_api_key(browser_key) if browser_key else brain
     with store.session() as session:
-        open_items = store.open_items(session)
+        open_items = store.open_items(session, settings.owner_id)
         open_items = [item for item in open_items if _is_local_item(item)]
         recent = [item.title for item in reversed(open_items)][:8]
         summaries = [_summarise(item) for item in open_items] if ai else []
@@ -580,7 +581,13 @@ def add(action: Action) -> dict[str, Any]:
         )
         session.add(item)
         session.flush()
-        store.record(session, label=f"Added “{item.title}”", item=item, before=None)
+        store.record(
+            session,
+            settings.owner_id,
+            label=f"Added “{item.title}”",
+            item=item,
+            before=None,
+        )
         payload = item.to_dict()
 
     if action.kind == "event" and action.start and action.end and calendar.connected:
@@ -722,6 +729,7 @@ def add_batch(action: Action) -> dict[str, Any]:
         # One change row lets undo remove the whole batch.
         store.record(
             session,
+            settings.owner_id,
             label=f"Added {len(created)} tasks",
             item=None,
             before={"batch": created},
@@ -786,7 +794,7 @@ def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, 
             label = f"{'Pinned' if item.pinned else 'Unpinned'} “{item.title}”"
             kind = "pinned"
 
-        store.record(session, label=label, item=item, before=before)
+        store.record(session, settings.owner_id, label=label, item=item, before=before)
         payload = item.to_dict()
         event_id = item.google_event_id if item.status != "open" else None
 
@@ -804,7 +812,7 @@ def schedule_now() -> list[Slot]:
 
     with store.session() as session:
         ranked = rank(
-            [item for item in store.open_items(session) if _is_local_item(item)],
+            [item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)],
             at=at,
         )
         slots = place(ranked, busy=busy, hours=hours, at=at, days=7)
@@ -818,6 +826,7 @@ def schedule_now() -> list[Slot]:
             item.end_at = slot.end
         store.record(
             session,
+            settings.owner_id,
             label=f"Scheduled {len(slots)} task{'s' if len(slots) != 1 else ''}",
             item=None,
             before={"scheduled": [slot.item_id for slot in slots]},
@@ -844,7 +853,7 @@ def schedule_now() -> list[Slot]:
 
 def undo_last() -> dict[str, Any]:
     with store.session() as session:
-        change = store.last_change(session)
+        change = store.last_change(session, settings.owner_id)
         if change is None:
             return {"kind": "note", "message": "Nothing to undo."}
 
@@ -993,7 +1002,9 @@ def bulk_match(body: BulkMatch) -> dict[str, Any]:
     """
     needle = " ".join(body.words.lower().split())
     with store.session() as session:
-        items = [item for item in store.open_items(session) if _is_local_item(item)]
+        items = [
+            item for item in store.open_items(session, settings.owner_id) if _is_local_item(item)
+        ]
         hits = [item for item in items if needle in item.title.lower()]
         payload = [item.to_dict() for item in hits]
     return {"matched": payload, "count": len(payload)}
@@ -1031,7 +1042,7 @@ def bulk(body: BulkIn) -> dict[str, Any]:
         verb_past = "Completed" if body.verb == "complete" else "Dropped"
         label = f"{verb_past} {len(touched)} item{'s' if len(touched) != 1 else ''}"
         # One change row for the batch: undo puts the whole set back in a single step.
-        store.record(session, label=label, item=None, before={"bulk": before})
+        store.record(session, settings.owner_id, label=label, item=None, before={"bulk": before})
 
     for event_id in done_google:
         with contextlib.suppress(CalendarError):
@@ -1062,7 +1073,13 @@ def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
             item.importance = body.importance
         if body.notes is not None:
             item.notes = body.notes
-        store.record(session, label=f"Edited “{item.title}”", item=item, before=before)
+        store.record(
+            session,
+            settings.owner_id,
+            label=f"Edited “{item.title}”",
+            item=item,
+            before=before,
+        )
         payload = item.to_dict()
     return {"item": payload, "view": today_view()}
 
@@ -1113,6 +1130,7 @@ def set_hours(body: HoursIn) -> dict[str, Any]:
     if any(day < 0 or day > 6 for day in body.weekdays):
         raise HTTPException(status_code=422, detail="Days must be 0 (Monday) to 6 (Sunday).")
     store.set_setting(
+        settings.owner_id,
         HOURS_SETTING,
         {
             "start_hour": body.start_hour,
@@ -1128,7 +1146,12 @@ def set_hours(body: HoursIn) -> dict[str, Any]:
 def changes() -> dict[str, Any]:
     with store.session() as session:
         rows = list(
-            session.scalars(select(Change).order_by(Change.at.desc(), Change.id.desc()).limit(20))
+            session.scalars(
+                select(Change)
+                .where(Change.owner_id == settings.owner_id)
+                .order_by(Change.at.desc(), Change.id.desc())
+                .limit(20)
+            )
         )
         return {
             "changes": [
@@ -1167,7 +1190,7 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
     try:
         token, email = calendar.exchange(code)
         sealed = calendar.seal_token(token)
-        store.set_setting(GOOGLE_SETTING, {"token": sealed, "email": email})
+        store.set_setting(settings.owner_id, GOOGLE_SETTING, {"token": sealed, "email": email})
         calendar.load_token(sealed)
     except CalendarError as failure:
         return _page("Could not connect", str(failure))
@@ -1181,7 +1204,7 @@ def disconnect() -> dict[str, Any]:
     except CalendarError:
         pass
     finally:
-        store.set_setting(GOOGLE_SETTING, {})
+        store.set_setting(settings.owner_id, GOOGLE_SETTING, {})
         calendar.load_token(None)
     return {"view": today_view()}
 

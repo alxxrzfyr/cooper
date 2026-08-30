@@ -168,8 +168,8 @@ class TestCommitmentSources:
         class OfflineCalendar:
             connected = False
 
-        assert sources.collect_local(store, at=NOW) == [(local_start, local_end)]
-        assert sources.busy_windows(store, OfflineCalendar(), at=NOW) == [
+        assert sources.collect_local(store, "local", at=NOW) == [(local_start, local_end)]
+        assert sources.busy_windows(store, OfflineCalendar(), "local", at=NOW) == [
             (gmail_start, gmail_end),
             (local_start, local_end),
         ]
@@ -320,12 +320,12 @@ def store(tmp_path) -> Iterator[Store]:
 
 class TestStore:
     def test_settings_round_trip(self, store: Store) -> None:
-        store.set_setting("hours", {"start_hour": 8})
+        store.set_setting("local", "hours", {"start_hour": 8})
 
-        assert store.get_setting("hours") == {"start_hour": 8}
+        assert store.get_setting("local", "hours") == {"start_hour": 8}
 
     def test_a_missing_setting_returns_the_default(self, store: Store) -> None:
-        assert store.get_setting("nope", "fallback") == "fallback"
+        assert store.get_setting("local", "nope", "fallback") == "fallback"
 
     def test_only_open_items_are_listed(self, store: Store) -> None:
         with store.session() as session:
@@ -333,17 +333,17 @@ class TestStore:
             session.add(task(title="done", status="done"))
 
         with store.session() as session:
-            assert [item.title for item in store.open_items(session)] == ["open"]
+            assert [item.title for item in store.open_items(session, "local")] == ["open"]
 
     def test_the_last_change_is_recoverable(self, store: Store) -> None:
         with store.session() as session:
             item = task(title="report")
             session.add(item)
             session.flush()
-            store.record(session, label="Added “report”", item=item, before=None)
+            store.record(session, "local", label="Added “report”", item=item, before=None)
 
         with store.session() as session:
-            change = store.last_change(session)
+            change = store.last_change(session, "local")
             assert change is not None
             assert change.label == "Added “report”"
 
@@ -354,7 +354,7 @@ class TestStore:
                 item = task(title=f"t{index}")
                 session.add(item)
                 session.flush()
-                store.record(session, label=f"Added t{index}", item=item, before=None)
+                store.record(session, "local", label=f"Added t{index}", item=item, before=None)
 
         with store.session() as session:
             from sqlalchemy import select
@@ -370,7 +370,7 @@ class TestStore:
         with store.session() as session:
             from cooper.db import aware
 
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
             assert aware(stored.due) == NOW
 
     def test_new_items_default_to_the_local_owner_and_me_source(self, store: Store) -> None:
@@ -382,25 +382,6 @@ class TestStore:
             assert item.owner_id == "local"
             assert item.source == "me"
             assert item.source_ref is None
-
-    def test_existing_items_receive_local_source_defaults_when_the_schema_is_upgraded(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        from sqlalchemy import create_engine
-
-        url = f"sqlite:///{tmp_path / 'legacy.db'}"
-        engine = create_engine(url)
-        with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE TABLE item (id VARCHAR(12) PRIMARY KEY)")
-            connection.exec_driver_sql("INSERT INTO item (id) VALUES ('legacy-item')")
-
-        upgraded = Store(url)
-        with upgraded.engine.connect() as connection:
-            row = connection.exec_driver_sql(
-                "SELECT owner_id, source, source_ref FROM item WHERE id = 'legacy-item'"
-            ).one()
-
-        assert row == ("local", "me", None)
 
     def test_item_serialization_includes_owner_source_and_source_ref(self, store: Store) -> None:
         with store.session() as session:
@@ -416,7 +397,7 @@ class TestStore:
                 )
             )
             session.flush()
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
             payload = stored.to_dict()
 
         assert payload["owner_id"] == "local"
@@ -438,7 +419,7 @@ class TestStore:
             )
 
         with store.session() as session:
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
 
             assert stored.owner_id == "local"
             assert stored.source == "google"
@@ -605,7 +586,7 @@ class TestTimezones:
             session.add(task(kind="event", title="dentist", start_at=three_pm_local))
 
         with store.session() as session:
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
             assert stored.start_at is not None
             # Same instant, and still 3pm when read back in the original zone.
             assert stored.start_at == three_pm_local
@@ -618,7 +599,7 @@ class TestTimezones:
             session.add(task(title="report", due=end_of_sunday))
 
         with store.session() as session:
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
             assert stored.due is not None
             assert stored.due.astimezone(ZONE).date() == dt.date(2026, 8, 30)
 
@@ -627,7 +608,7 @@ class TestTimezones:
             session.add(task(title="report", start_at=dt.datetime(2026, 9, 3, 15, tzinfo=ZONE)))
 
         with store.session() as session:
-            stored = store.open_items(session)[0]
+            stored = store.open_items(session, "local")[0]
             assert stored.start_at is not None
             assert stored.start_at.tzinfo is not None
             assert stored.start_at.utcoffset() == dt.timedelta(0)
@@ -637,7 +618,7 @@ class TestTimezones:
             session.add(task(kind="event", start_at=dt.datetime(2026, 9, 3, 15, tzinfo=ZONE)))
 
         with store.session() as session:
-            payload = store.open_items(session)[0].to_dict()
+            payload = store.open_items(session, "local")[0].to_dict()
             assert payload["start_at"] is not None
             assert dt.datetime.fromisoformat(payload["start_at"]).astimezone(ZONE).hour == 15
 

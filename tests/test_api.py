@@ -493,7 +493,7 @@ class TestGmailReconciliation:
         assert skipped.skipped == 1
         assert failed.error == "Gmail could not be reached."
         assert client.get("/api/today", headers=HEADERS).json()["scheduled"] == []
-        health = module.store.get_setting(module.GMAIL_SETTING)
+        health = module.store.get_setting(module.settings.owner_id, module.GMAIL_SETTING)
         assert health["last_checked"]
         assert health["last_error"] == "Gmail could not be reached."
         assert health["counts"] == {"created": 0, "updated": 0, "dropped": 0, "skipped": 0}
@@ -835,7 +835,7 @@ class TestGoogle:
         assert response.status_code == 200
         assert sealed == ["refresh"]
         assert loaded == ["sealed-token"]
-        assert module.store.get_setting(module.GOOGLE_SETTING) == {
+        assert module.store.get_setting(module.settings.owner_id, module.GOOGLE_SETTING) == {
             "token": "sealed-token",
             "email": None,
         }
@@ -845,7 +845,9 @@ class TestGoogle:
     ) -> None:
         import cooper.app as module
 
-        module.store.set_setting(module.GOOGLE_SETTING, {"token": "sealed-token"})
+        module.store.set_setting(
+            module.settings.owner_id, module.GOOGLE_SETTING, {"token": "sealed-token"}
+        )
         monkeypatch.setattr(
             module.calendar,
             "revoke",
@@ -855,7 +857,7 @@ class TestGoogle:
         response = client.post("/api/google/disconnect", headers=HEADERS)
 
         assert response.status_code == 200
-        assert module.store.get_setting(module.GOOGLE_SETTING) == {}
+        assert module.store.get_setting(module.settings.owner_id, module.GOOGLE_SETTING) == {}
         assert module.calendar.connected is False
 
     def test_everything_works_with_the_calendar_off(self, client: TestClient) -> None:

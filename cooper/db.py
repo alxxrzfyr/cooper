@@ -21,10 +21,12 @@ from sqlalchemy import (
     JSON,
     CheckConstraint,
     DateTime,
+    Index,
     Integer,
     String,
     Text,
     create_engine,
+    inspect,
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -86,11 +88,12 @@ class Item(Base):
         CheckConstraint("kind IN ('task', 'event')", name="ck_item_kind"),
         CheckConstraint("status IN ('open', 'done', 'dropped')", name="ck_item_status"),
         CheckConstraint("importance BETWEEN 1 AND 5", name="ck_item_importance"),
+        Index("ix_item_owner_id", "owner_id"),
     )
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True, default=new_id)
-    owner_id: Mapped[str] = mapped_column(String(60), default="local")
-    source: Mapped[str] = mapped_column(String(16), default="me")
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, default="local")
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="me")
     source_ref: Mapped[str | None] = mapped_column(String(255), default=None)
     kind: Mapped[str] = mapped_column(String(8), default="task")
     title: Mapped[str] = mapped_column(String(300))
@@ -143,7 +146,9 @@ class Setting(Base):
     """Key/value settings, including the encrypted Google refresh token."""
 
     __tablename__ = "setting"
+    __table_args__ = (Index("ix_setting_owner_id", "owner_id"),)
 
+    owner_id: Mapped[str] = mapped_column(String(128), primary_key=True, default="local")
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
@@ -152,8 +157,10 @@ class Change(Base):
     """Just enough history to undo the last thing. Not an audit log."""
 
     __tablename__ = "change"
+    __table_args__ = (Index("ix_change_owner_id", "owner_id"),)
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, default="local")
     at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
     label: Mapped[str] = mapped_column(String(120))
     item_id: Mapped[str | None] = mapped_column(String(12), default=None)
@@ -176,34 +183,15 @@ def aware(value: dt.datetime | None) -> dt.datetime | None:
 
 
 class Store:
-    """Owns the database. Creates its own schema, so there is no migration tool to run."""
+    """Owns database sessions and creates the latest schema for new local databases."""
 
     def __init__(self, url: str) -> None:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         self.engine = create_engine(url, connect_args=connect_args)
-        Base.metadata.create_all(self.engine)
-        self._add_new_columns()
+        existing = set(inspect(self.engine).get_table_names())
+        if not (existing - {"alembic_version"}):
+            Base.metadata.create_all(self.engine)
         self._factory = sessionmaker(bind=self.engine, expire_on_commit=False)
-
-    def _add_new_columns(self) -> None:
-        """Add columns that appeared after a database was created.
-
-        `create_all` only creates missing tables, so a column added to an existing install
-        would otherwise be silently absent and every read would fail. This is not a migration
-        tool: it only ever adds a nullable-with-default column, which is the only schema change
-        this app has needed.
-        """
-        with self.engine.begin() as connection:
-            existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(item)")}
-            additions = (
-                ("owner_id", "ALTER TABLE item ADD COLUMN owner_id VARCHAR(60) DEFAULT 'local'"),
-                ("source", "ALTER TABLE item ADD COLUMN source VARCHAR(16) DEFAULT 'me'"),
-                ("source_ref", "ALTER TABLE item ADD COLUMN source_ref VARCHAR(255)"),
-                ("category", "ALTER TABLE item ADD COLUMN category VARCHAR(16) DEFAULT 'personal'"),
-            )
-            for column, statement in additions:
-                if existing and column not in existing:
-                    connection.exec_driver_sql(statement)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -217,26 +205,31 @@ class Store:
         finally:
             session.close()
 
-    def get_setting(self, key: str, default: Any = None) -> Any:
+    def get_setting(self, owner_id: str, key: str, default: Any = None) -> Any:
         with self.session() as session:
-            row = session.get(Setting, key)
+            row = session.get(Setting, {"owner_id": owner_id, "key": key})
             return default if row is None else row.value
 
-    def set_setting(self, key: str, value: Any) -> None:
+    def set_setting(self, owner_id: str, key: str, value: Any) -> None:
         with self.session() as session:
-            row = session.get(Setting, key)
+            row = session.get(Setting, {"owner_id": owner_id, "key": key})
             if row is None:
-                session.add(Setting(key=key, value=value))
+                session.add(Setting(owner_id=owner_id, key=key, value=value))
             else:
                 row.value = value
 
-    def open_items(self, session: Session) -> list[Item]:
-        statement = select(Item).where(Item.status == "open").order_by(Item.created_at, Item.id)
+    def open_items(self, session: Session, owner_id: str) -> list[Item]:
+        statement = (
+            select(Item)
+            .where(Item.owner_id == owner_id, Item.status == "open")
+            .order_by(Item.created_at, Item.id)
+        )
         return list(session.scalars(statement))
 
     def record(
         self,
         session: Session,
+        owner_id: str,
         *,
         label: str,
         item: Item | None,
@@ -246,6 +239,7 @@ class Store:
         session.add(
             Change(
                 id=new_id(),
+                owner_id=owner_id,
                 at=now(),
                 label=label,
                 item_id=item.id if item else None,
@@ -256,17 +250,20 @@ class Store:
         keep = [
             row.id
             for row in session.scalars(
-                select(Change).order_by(Change.at.desc(), Change.id.desc()).limit(20)
+                select(Change)
+                .where(Change.owner_id == owner_id)
+                .order_by(Change.at.desc(), Change.id.desc())
+                .limit(20)
             )
         ]
-        for row in session.scalars(select(Change)):
+        for row in session.scalars(select(Change).where(Change.owner_id == owner_id)):
             if row.id not in keep:
                 session.delete(row)
 
-    def last_change(self, session: Session) -> Change | None:
+    def last_change(self, session: Session, owner_id: str) -> Change | None:
         statement = (
             select(Change)
-            .where(Change.undone == 0)
+            .where(Change.owner_id == owner_id, Change.undone == 0)
             .order_by(Change.at.desc(), Change.id.desc())
             .limit(1)
         )

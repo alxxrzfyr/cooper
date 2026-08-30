@@ -55,11 +55,11 @@ def collect_google(calendar: Calendar, *, days: int) -> list[Interval]:
     return spans
 
 
-def collect_local(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
+def collect_local(store: Store, owner_id: str, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
     """Local blocks, leaving Gmail rows to their own collector exactly once."""
     spans: list[Interval] = []
     with store.session() as session:
-        for item in store.open_items(session):
+        for item in store.open_items(session, owner_id):
             if item.source == "gmail":
                 continue
             start, end = aware(item.start_at), aware(item.end_at)
@@ -68,11 +68,11 @@ def collect_local(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: 
     return spans
 
 
-def collect_gmail(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
+def collect_gmail(store: Store, owner_id: str, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
     """Open commitments parsed from Gmail, which never reach a Calendar writer."""
     spans: list[Interval] = []
     with store.session() as session:
-        for item in store.open_items(session):
+        for item in store.open_items(session, owner_id):
             if item.source != "gmail":
                 continue
             start, end = aware(item.start_at), aware(item.end_at)
@@ -82,7 +82,7 @@ def collect_gmail(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: 
 
 
 def busy_windows(
-    store: Store, calendar: Calendar, *, at: dt.datetime, days: int = 14
+    store: Store, calendar: Calendar, owner_id: str, *, at: dt.datetime, days: int = 14
 ) -> list[Interval]:
     """Every commitment, from every source, as one list of intervals the planner routes around.
 
@@ -91,6 +91,6 @@ def busy_windows(
     """
     spans: list[Interval] = []
     spans.extend(collect_google(calendar, days=days))
-    spans.extend(collect_gmail(store, at=at))
-    spans.extend(collect_local(store, at=at))
+    spans.extend(collect_gmail(store, owner_id, at=at))
+    spans.extend(collect_local(store, owner_id, at=at))
     return spans

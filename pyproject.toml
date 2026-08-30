@@ -4,9 +4,11 @@ version = "0.2.0"
 description = "A personal calendar you talk to"
 requires-python = "==3.12.*"
 dependencies = [
+    "alembic==1.19.1",
     "cryptography==50.0.1",
     "fastapi==0.141.1",
     "firebase-admin==7.5.0",
+    "psycopg[binary]==3.3.4",
     "pydantic-settings==2.15.0",
     "sqlalchemy==2.0.52",
     "uvicorn==0.52.4",
