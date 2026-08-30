@@ -5,7 +5,7 @@
  * mistaken for empty data.
  */
 
-import { ApiError, type Hours, type Item, type Reply, type View } from "./types";
+import { ApiError, type Hours, type Item, type NewItem, type Reply, type View } from "./types";
 
 const BASE = import.meta.env.VITE_COOPER_API ?? "http://127.0.0.1:8000";
 const KEY_HEADER = "X-Cooper-Key";
@@ -39,6 +39,13 @@ export const api = {
   // Mode is per message, not a stored setting: Manual keeps the model out of it entirely.
   say: (text: string, mode: "manual" | "ai" = "manual") =>
     call<Reply>("/api/say", post({ text, mode })),
+  // Manual mode's form: fields, no parsing, no model. The same add path as a parsed sentence.
+  createItem: (item: NewItem) => call<Reply>("/api/items", post(item)),
+  // Bulk verbs are two steps: match lists what a phrase hits, bulk acts on the confirmed ids.
+  bulkMatch: (words: string) =>
+    call<{ matched: Item[]; count: number }>("/api/bulk/match", post({ words })),
+  bulk: (verb: "complete" | "drop", ids: string[]) =>
+    call<Reply>("/api/bulk", post({ verb, ids })),
   schedule: () => call<{ placed: unknown[]; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
   act: (id: string, verb: "complete" | "drop" | "pin") =>

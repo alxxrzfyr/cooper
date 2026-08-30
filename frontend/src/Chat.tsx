@@ -197,6 +197,7 @@ export function Chat({
   thinking,
   mode,
   canUseAi,
+  manualForm,
   onMode,
   onExample,
 }: {
@@ -204,6 +205,7 @@ export function Chat({
   thinking: boolean;
   mode: Mode;
   canUseAi: boolean;
+  manualForm: React.ReactNode;
   onMode: (mode: Mode) => void;
   onExample: (text: string) => void;
 }) {
@@ -218,6 +220,17 @@ export function Chat({
   const switcher = (
     <ModeSwitch mode={mode} canUseAi={canUseAi} onMode={onMode} />
   );
+
+  // Manual is a form now, not a sentence. AI is where you talk. The switch at the top chooses
+  // which of the two surfaces is shown, and the mode is remembered between visits.
+  if (mode === "manual") {
+    return (
+      <div className="chat">
+        {switcher}
+        {manualForm}
+      </div>
+    );
+  }
 
   if (turns.length === 0) {
     return (

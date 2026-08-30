@@ -26,6 +26,18 @@ export interface Ranked extends Item {
   why: { due: number; age: number; quick: number };
 }
 
+/** What the Manual form sends. Mirrors NewItem in cooper/app.py: fields, never a sentence. */
+export interface NewItem {
+  title: string;
+  kind?: Kind;
+  minutes?: number | null;
+  importance?: number;
+  category?: Category | null;
+  due?: string | null;
+  start?: string | null;
+  end?: string | null;
+}
+
 export interface Hours {
   start_hour: number;
   end_hour: number;

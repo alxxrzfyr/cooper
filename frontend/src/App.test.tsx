@@ -71,6 +71,18 @@ async function openChat(user = userEvent.setup()) {
   return user;
 }
 
+/**
+ * Get to the conversation in AI mode.
+ *
+ * Manual is a form now, so the composer and the thread only exist in AI mode. Every test that
+ * types a sentence has to switch there first, which needs a model key present in the view.
+ */
+async function openAi(user = userEvent.setup()) {
+  await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+  await user.click(await screen.findByRole("button", { name: "AI" }));
+  return user;
+}
+
 interface Routes {
   view?: View;
   say?: Reply | { status: number; detail: string };
@@ -118,6 +130,10 @@ function stub(routes: Routes) {
       if (url.includes("/api/items/")) {
         return json(reply({ kind: "completed", message: "Completed." }));
       }
+      if (url.endsWith("/api/items")) {
+        // Manual mode's form add: same Reply shape as a parsed add.
+        return json(reply({ kind: "added", message: "Added “write the report”." }));
+      }
       return json({});
     }),
   );
@@ -149,26 +165,26 @@ describe("first impression", () => {
     );
   });
 
-  test("the opening offers real sentences to try", async () => {
-    stub({ view: view({ shortlist: [] }) });
+  test("AI mode offers real questions to try", async () => {
+    stub({ view: view({ shortlist: [], using_model: true }) });
     render(<App />);
-    await openChat();
+    await openAi();
 
-    expect(await screen.findByRole("button", { name: /quarterly report/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /plan my day/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /done quarterly/ })).toBeInTheDocument();
+    // Manual is a form now, so the sentence examples live under AI, and they are questions.
+    expect(await screen.findByRole("button", { name: /what should I focus on/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /most urgent thing/i })).toBeInTheDocument();
   });
 
   test("tapping an example sends it", async () => {
-    const calls = stub({ view: view({ shortlist: [] }) });
+    const calls = stub({ view: view({ shortlist: [], using_model: true }) });
     render(<App />);
-    const user = await openChat();
+    const user = await openAi();
 
-    await user.click(await screen.findByRole("button", { name: /dentist thursday 3pm/ }));
+    await user.click(await screen.findByRole("button", { name: /most urgent thing/i }));
 
     await waitFor(() => {
       const said = calls.find((call) => call.url.includes("/api/say"));
-      expect(said?.body.text).toBe("dentist thursday 3pm");
+      expect(said?.body.mode).toBe("ai");
     });
   });
 
@@ -260,24 +276,24 @@ describe("manual and ai", () => {
   });
 
   test("creating is green and dropping is red", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
     await screen.findByText(/Added/);
     expect(bubbleTones()).toContain("bubble--good");
 
-    stub({ say: reply({ kind: "dropped", message: "Dropped “the report”." }) });
+    stub({ view: view({ using_model: true }), say: reply({ kind: "dropped", message: "Dropped “the report”." }) });
     await user.type(screen.getByLabelText("Say something to Cooper"), "drop the report{Enter}");
     await screen.findByText(/Dropped/);
     expect(bubbleTones()).toContain("bubble--bad");
   });
 
   test("completing is green, because green is not just for new things", async () => {
-    stub({ say: reply({ kind: "completed", message: "Completed “the report”." }) });
+    stub({ view: view({ using_model: true }), say: reply({ kind: "completed", message: "Completed “the report”." }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "done report{Enter}");
     await screen.findByText(/Completed/);
@@ -286,9 +302,9 @@ describe("manual and ai", () => {
   });
 
   test("a question wants your attention rather than celebrating", async () => {
-    stub({ say: { status: 409, detail: "“review” matches 2 items" } });
+    stub({ view: view({ using_model: true }), say: { status: 409, detail: "“review” matches 2 items" } });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "done review{Enter}");
     await screen.findByText(/matches 2 items/);
@@ -369,9 +385,9 @@ describe("the conversation", () => {
   });
 
   test("your sentence appears as your own turn", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
 
@@ -380,9 +396,9 @@ describe("the conversation", () => {
   });
 
   test("Cooper answers, and shows what he understood", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
 
@@ -394,9 +410,9 @@ describe("the conversation", () => {
   });
 
   test("asking what to do gets answered in the conversation", async () => {
-    stub({ say: reply({ kind: "shown", message: "Here is what is next." }) });
+    stub({ view: view({ using_model: true }), say: reply({ kind: "shown", message: "Here is what is next." }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "what should i do{Enter}");
 
@@ -406,9 +422,9 @@ describe("the conversation", () => {
   });
 
   test("the field clears after sending", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
     const field = screen.getByLabelText("Say something to Cooper");
 
     await user.type(field, "write the report{Enter}");
@@ -424,9 +440,9 @@ describe("the conversation", () => {
   });
 
   test("an ambiguous reference comes back as a question in the conversation", async () => {
-    stub({ say: { status: 409, detail: "“review” matches 2 items: review a, review b" } });
+    stub({ view: view({ using_model: true }), say: { status: 409, detail: "“review” matches 2 items: review a, review b" } });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "done review{Enter}");
 
@@ -435,9 +451,9 @@ describe("the conversation", () => {
   });
 
   test("no dialog ever interrupts the conversation", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "write it{Enter}");
     await screen.findByRole("log", { name: "Conversation" });
@@ -446,24 +462,24 @@ describe("the conversation", () => {
   });
 
   test("the conversation survives a reload", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     const first = render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
     await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
     await screen.findByRole("log", { name: "Conversation" });
     first.unmount();
 
     render(<App />);
-    await openChat();
+    await openAi();
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText("write the report")).toBeInTheDocument();
   });
 
   test("the composer is reachable by shortcut", async () => {
-    stub({});
+    stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openAi();
     const field = screen.getByLabelText("Say something to Cooper");
     field.blur();
 
@@ -1093,5 +1109,47 @@ describe("the dashboard", () => {
       "aria-current",
       "page",
     );
+  });
+});
+
+describe("manual mode as a form", () => {
+  test("Manual mode on the chat tab is a form, not a sentence box", async () => {
+    stub({});
+    render(<App />);
+    await openChat();
+
+    // The form's own fields, and no free-text sentence composer competing with them.
+    expect(await screen.findByLabelText("What")).toBeInTheDocument();
+    expect(screen.getByLabelText("How long")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add it" })).toBeInTheDocument();
+  });
+
+  test("the form posts typed fields, never a parsed sentence", async () => {
+    const calls = stub({});
+    render(<App />);
+    const user = await openChat();
+
+    await user.type(await screen.findByLabelText("What"), "write the report");
+    await user.type(screen.getByLabelText("How long"), "90");
+    await user.click(screen.getByRole("button", { name: "Important" }));
+    await user.click(screen.getByRole("button", { name: "Add it" }));
+
+    await waitFor(() => {
+      const created = calls.find((call) => call.url.endsWith("/api/items"));
+      expect(created).toBeDefined();
+      expect(created?.body.title).toBe("write the report");
+      expect(created?.body.minutes).toBe(90);
+      expect(created?.body.importance).toBe(4);
+    });
+    // The model endpoint is never touched: a form is not a sentence.
+    expect(calls.some((call) => call.url.includes("/api/say"))).toBe(false);
+  });
+
+  test("Add it is disabled until there is a title", async () => {
+    stub({});
+    render(<App />);
+    await openChat();
+
+    expect(await screen.findByRole("button", { name: "Add it" })).toBeDisabled();
   });
 });

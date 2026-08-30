@@ -20,12 +20,14 @@ import {
 } from "./Chat";
 import { Mascot } from "./Mascot";
 import { Home } from "./Home";
+import { Form } from "./Form";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
 import { TaskFrame } from "./Frame";
 import {
   ApiError,
   type Item,
+  type NewItem,
   type Ranked,
   type Reply,
   type View,
@@ -215,6 +217,14 @@ export default function App() {
     [],
   );
 
+  /** Manual mode's form: post the fields and let Cooper narrate it into the conversation. */
+  const addFromForm = useCallback(
+    async (item: NewItem) => {
+      await act(() => api.createItem(item));
+    },
+    [act],
+  );
+
   const shortlist = view?.shortlist ?? [];
   const scheduled = view?.scheduled ?? [];
   /** Anything still without a time. A new task is booked on the spot, so this is usually empty. */
@@ -275,6 +285,9 @@ export default function App() {
             thinking={busy}
             mode={mode}
             canUseAi={view?.using_model ?? false}
+            manualForm={
+              <Form busy={busy} onSubmit={addFromForm} />
+            }
             onMode={(next) => {
               setMode(next);
               saveMode(next);
@@ -596,45 +609,52 @@ export default function App() {
         />
       )}
 
-      <div className="composer">
-        <div className="composer__inner">
-          <div className="composer__field">
-            <label className="visually-hidden" htmlFor="say">
-              Say something to Cooper
-            </label>
-            <input
-              id="say"
-              ref={input}
-              className="composer__input"
-              placeholder="Tell me what's on your plate…"
-              value={text}
-              autoComplete="off"
-              enterKeyHint="send"
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && void say(text)}
-            />
-            <button
-              type="button"
-              className="composer__send"
-              aria-label="Send"
-              disabled={busy || !text.trim()}
-              onClick={() => void say(text)}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="19"
-                height="19"
-                aria-hidden="true"
+      {/*
+        The composer is the sentence path. In Manual mode on the chat tab the form owns input, so
+        the free-text box would be a second, contradictory way in — hidden there. Everywhere else
+        it stays as quick capture, routing through whatever mode is set.
+      */}
+      {!(tab === "chat" && mode === "manual") && (
+        <div className="composer">
+          <div className="composer__inner">
+            <div className="composer__field">
+              <label className="visually-hidden" htmlFor="say">
+                Say something to Cooper
+              </label>
+              <input
+                id="say"
+                ref={input}
+                className="composer__input"
+                placeholder="Tell me what's on your plate…"
+                value={text}
+                autoComplete="off"
+                enterKeyHint="send"
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && void say(text)}
+              />
+              <button
+                type="button"
+                className="composer__send"
+                aria-label="Send"
+                disabled={busy || !text.trim()}
+                onClick={() => void say(text)}
               >
-                <path
-                  d="M12 19V6.4l-5.3 5.3a1 1 0 0 1-1.4-1.4l7-7a1 1 0 0 1 1.4 0l7 7a1 1 0 0 1-1.4 1.4L14 6.4V19a1 1 0 0 1-2 0Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="19"
+                  height="19"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 19V6.4l-5.3 5.3a1 1 0 0 1-1.4-1.4l7-7a1 1 0 0 1 1.4 0l7 7a1 1 0 0 1-1.4 1.4L14 6.4V19a1 1 0 0 1-2 0Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
