@@ -186,6 +186,22 @@ def current_hours() -> Hours:
     return Hours(timezone=settings.timezone)
 
 
+def _is_local_item(item: Item) -> bool:
+    """Return whether Cooper owns an item and may change it.
+
+    Imported rows are mirrors of an external source. Keeping this predicate in one place makes
+    every mutation path obey the same boundary instead of relying on each route to remember that
+    ``source`` and ``owner_id`` carry different meanings.
+    """
+    return item.source == "me" and item.owner_id == settings.owner_id
+
+
+def _require_local_item(item: Item) -> None:
+    """Reject attempts to mutate an item managed by an external source."""
+    if not _is_local_item(item):
+        raise HTTPException(status_code=409, detail="Only items created in Cooper can be changed.")
+
+
 def find(session: Any, words: str) -> Item | None:
     """Match an item by words the user typed. Exact, then contained, then nothing.
 
@@ -195,7 +211,9 @@ def find(session: Any, words: str) -> Item | None:
     needle = words.strip().lower()
     if not needle:
         return None
-    items = store.open_items(session)
+    # AI verbs may only target items Cooper owns. Gmail confirmations stay visible as calendar
+    # commitments, but they can only change when a later Gmail sync reconciles them.
+    items = [item for item in store.open_items(session) if _is_local_item(item)]
 
     for item in items:
         if item.id == words or item.title.lower() == needle:
@@ -301,6 +319,18 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
     created = updated = dropped = 0
     with store.session() as session:
         for proposal in proposals:
+            # Unlike a user-entered action, an email proposal must never receive a default end
+            # time from the shared validator. The parser is intentionally conservative, so an
+            # incomplete or malformed window is skipped before validation can invent anything.
+            if not proposal.cancelled and (
+                proposal.start is None
+                or proposal.end is None
+                or proposal.start.tzinfo is None
+                or proposal.end.tzinfo is None
+                or proposal.end <= proposal.start
+            ):
+                skipped += 1
+                continue
             action = validate(
                 Action(
                     verb="add",
@@ -462,6 +492,7 @@ def say(body: Say) -> dict[str, Any]:
     request_brain = brain.with_api_key(browser_key) if browser_key else brain
     with store.session() as session:
         open_items = store.open_items(session)
+        open_items = [item for item in open_items if _is_local_item(item)]
         recent = [item.title for item in reversed(open_items)][:8]
         summaries = [_summarise(item) for item in open_items] if ai else []
 
@@ -640,7 +671,7 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
 
     with store.session() as session:
         item = session.get(Item, item_id)
-        if item is None or item.start_at is not None:
+        if item is None or not _is_local_item(item) or item.start_at is not None:
             return None
 
         slots = place(rank([item], at=at), busy=busy, hours=hours, at=at, days=7)
@@ -750,14 +781,17 @@ def add_batch(action: Action) -> dict[str, Any]:
     }
 
 
-def change_existing(action: Action) -> dict[str, Any]:
+def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, Any]:
     with store.session() as session:
-        item = find(session, action.which or "")
-        if item is None:
+        item = (
+            session.get(Item, item_id) if item_id is not None else find(session, action.which or "")
+        )
+        if item is None or item.status != "open":
             return {
                 "kind": "question",
                 "message": f"I could not find “{action.which}”. Which one did you mean?",
             }
+        _require_local_item(item)
 
         before = item.to_dict()
         # Each verb gets its own kind rather than a shared "changed", because the interface
@@ -793,7 +827,10 @@ def schedule_now() -> list[Slot]:
     busy = busy_windows()
 
     with store.session() as session:
-        ranked = rank(store.open_items(session), at=at)
+        ranked = rank(
+            [item for item in store.open_items(session) if _is_local_item(item)],
+            at=at,
+        )
         slots = place(ranked, busy=busy, hours=hours, at=at, days=7)
         if not slots:
             return []
@@ -990,7 +1027,7 @@ def bulk_match(body: BulkMatch) -> dict[str, Any]:
     """
     needle = " ".join(body.words.lower().split())
     with store.session() as session:
-        items = store.open_items(session)
+        items = [item for item in store.open_items(session) if _is_local_item(item)]
         hits = [item for item in items if needle in item.title.lower()]
         payload = [item.to_dict() for item in hits]
     return {"matched": payload, "count": len(payload)}
@@ -1010,7 +1047,7 @@ def bulk(body: BulkIn) -> dict[str, Any]:
         before: list[dict[str, Any]] = []
         for item_id in body.ids:
             item = session.get(Item, item_id)
-            if item is None or item.status != "open":
+            if item is None or item.status != "open" or not _is_local_item(item):
                 continue
             before.append(item.to_dict())
             if body.verb == "complete":
@@ -1049,6 +1086,7 @@ def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
         item = session.get(Item, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
+        _require_local_item(item)
         before = item.to_dict()
         if body.title is not None:
             item.title = body.title.strip() or item.title
@@ -1071,8 +1109,9 @@ def act(item_id: str, verb: str) -> dict[str, Any]:
         item = session.get(Item, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
+        _require_local_item(item)
         title = item.title
-    result = change_existing(Action(verb=verb, which=title))  # type: ignore[arg-type]
+    result = change_existing(Action(verb=verb, which=title), item_id=item_id)  # type: ignore[arg-type]
     return {**result, "view": today_view()}
 
 

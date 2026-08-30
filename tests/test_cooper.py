@@ -551,11 +551,15 @@ class TestGoogleTransport:
         gmail = Gmail(calendar)
         monkeypatch.setattr(gmail, "_send", send)
 
-        messages = gmail.list_messages(after=NOW, max_results=999)
+        after = dt.datetime.now(tz=dt.UTC)
+        messages = gmail.list_messages(after=after, max_results=999)
 
         query = parse_qs(urlparse(requests[0].full_url).query)
         assert query["maxResults"] == ["100"]
-        assert query["q"] == ["after:2026/08/31 from:(luma.com OR meetup.com OR eventbrite.com)"]
+        expected_day = after.date().strftime("%Y/%m/%d")
+        assert query["q"] == [
+            f"after:{expected_day} from:(luma.com OR meetup.com OR eventbrite.com)"
+        ]
         assert requests[1].full_url.endswith("/users/me/messages/raw-message-id?format=full")
         assert messages[0].headers == {"From": "events@luma.com", "Subject": "A meetup"}
         assert messages[0].body == "Hello world"

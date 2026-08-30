@@ -622,7 +622,7 @@ export default function App() {
                     ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
                     : view.gmail.configured
                       ? "Connect Google Calendar above to enable Gmail confirmations."
-                      : "Gmail is optional and works without Google. Add a Google connection to import known confirmations."}
+                      : "Cooper works without Google. Connect Google to import known Gmail confirmations."}
               </p>
             </section>
 

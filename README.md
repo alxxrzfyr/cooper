@@ -226,7 +226,9 @@ cooper/
   brain.py     sentence → validated action (Gemini, then regex)
   planner.py   what to do first, and where it fits
   db.py        three tables
-  google.py    Calendar, over REST
+  google.py    Calendar writes and Gmail reads, over REST
+  sources.py   local, Google and Gmail commitment intervals
+  watcher.py   fixed-interval Gmail sync entry point
   config.py    settings
 frontend/src/
   App.tsx      one screen

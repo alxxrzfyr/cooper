@@ -143,6 +143,37 @@ class TestTheTwoModes:
         assert "write the quarterly report" in seen[0] or "report" in seen[0]
         assert "CFO" not in seen[0], "notes must never leave the machine"
 
+    def test_gmail_items_never_enter_ai_prompts(self, client: TestClient, monkeypatch) -> None:
+        """External event details stay local even when the AI answer path is used."""
+        import cooper.app as module
+
+        title = "Private Gmail Summit"
+        source_ref = "meetup:987654321"
+        proposal = EmailProposal(
+            provider="meetup",
+            title=title,
+            source_ref=source_ref,
+            start=dt.datetime(2026, 9, 10, 18, tzinfo=dt.UTC),
+            end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
+            cancelled=False,
+        )
+        assert module._reconcile_gmail_proposals([proposal]).created == 1
+
+        prompts: list[str] = []
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(
+            module.brain,
+            "_generate",
+            lambda prompt, **kwargs: prompts.append(prompt) or "Nothing from my local plan.",
+        )
+
+        reply = ask(client, "what should I do first")
+
+        assert reply["kind"] == "answered"
+        assert prompts
+        assert all(title not in prompt for prompt in prompts)
+        assert all(source_ref not in prompt for prompt in prompts)
+
     def test_an_unreachable_model_falls_back_instead_of_failing(
         self, client: TestClient, monkeypatch
     ) -> None:
@@ -350,6 +381,98 @@ class TestGmailReconciliation:
             rows = list(session.scalars(select(module.Item)))
         assert len(rows) == 1
         assert rows[0].status == "dropped"
+
+    def test_sync_skips_an_incomplete_email_window_before_validation(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        proposal = EmailProposal(
+            provider="luma",
+            title="Missing End Time",
+            source_ref="luma:missing-end-time",
+            start=dt.datetime(2026, 9, 10, 18, tzinfo=dt.UTC),
+            end=None,
+            cancelled=False,
+        )
+        monkeypatch.setattr(
+            module,
+            "validate",
+            lambda _action: pytest.fail("email validation must not invent an end time"),
+        )
+
+        summary = module._reconcile_gmail_proposals([proposal])
+
+        assert (summary.created, summary.updated, summary.dropped, summary.skipped) == (0, 0, 0, 1)
+        with module.store.session() as session:
+            assert list(session.scalars(select(module.Item))) == []
+
+    def test_gmail_items_are_read_only_for_ai_direct_and_bulk_actions(
+        self, client: TestClient
+    ) -> None:
+        import cooper.app as module
+
+        title = "Shared Meetup"
+        proposal = EmailProposal(
+            provider="luma",
+            title=title,
+            source_ref="luma:shared-meetup",
+            start=dt.datetime(2026, 9, 10, 18, tzinfo=dt.UTC),
+            end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
+            cancelled=False,
+        )
+        assert module._reconcile_gmail_proposals([proposal]).created == 1
+        with module.store.session() as session:
+            gmail_id = session.scalars(
+                select(module.Item.id).where(module.Item.source == "gmail")
+            ).one()
+            changes_before = len(list(session.scalars(select(Change))))
+
+        ai_reply = say(client, "done Shared Meetup")
+        assert ai_reply["kind"] == "question"
+        assert client.post(f"/api/items/{gmail_id}/complete", headers=HEADERS).status_code == 409
+        assert client.post(f"/api/items/{gmail_id}/drop", headers=HEADERS).status_code == 409
+        assert client.post(f"/api/items/{gmail_id}/pin", headers=HEADERS).status_code == 409
+        assert (
+            client.patch(
+                f"/api/items/{gmail_id}", json={"title": "changed"}, headers=HEADERS
+            ).status_code
+            == 409
+        )
+        assert (
+            client.post("/api/bulk/match", json={"words": title}, headers=HEADERS).json()["count"]
+            == 0
+        )
+        client.post("/api/bulk", json={"verb": "complete", "ids": [gmail_id]}, headers=HEADERS)
+
+        with module.store.session() as session:
+            row = session.get(module.Item, gmail_id)
+            assert row is not None and row.status == "open" and row.pinned == 0
+            assert len(list(session.scalars(select(Change)))) == changes_before
+
+        local = say(client, f"{title}, 30m")["item"]["id"]
+        matched = client.post("/api/bulk/match", json={"words": title}, headers=HEADERS).json()
+        assert matched["count"] == 1
+        assert matched["matched"][0]["id"] == local
+
+        response = client.post(
+            "/api/bulk",
+            json={"verb": "complete", "ids": [gmail_id, local]},
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        with module.store.session() as session:
+            external = session.get(module.Item, gmail_id)
+            owned = session.get(module.Item, local)
+            assert external is not None and external.status == "open"
+            assert owned is not None and owned.status == "done"
+            bulk_changes = [
+                change
+                for change in session.scalars(select(Change))
+                if change.before and "bulk" in change.before
+            ]
+            assert len(bulk_changes) == 1
+            assert all(snapshot["id"] != gmail_id for snapshot in bulk_changes[0].before["bulk"])
 
     def test_sync_skips_ambiguous_parser_results_and_isolates_gmail_failures(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
