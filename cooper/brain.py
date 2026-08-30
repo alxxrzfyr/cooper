@@ -252,8 +252,10 @@ class Brain:
                 try:
                     payload = self._call_gemini(text, recent_titles, repair=attempt == 2)
                     return _from_json(payload, tz=self._tz, source="gemini")
-                except Exception:
+                except json.JSONDecodeError:
                     continue
+                except Exception:
+                    break
 
         return rules_action
 

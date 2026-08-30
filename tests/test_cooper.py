@@ -804,6 +804,66 @@ class TestCooperIdentityAndLimits:
 
         assert cooper.read("undo", []) == brain.Action(verb="undo")
 
+    def test_invalid_json_gets_one_repair_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cooper = _brain()
+        calls: list[bool] = []
+
+        def fake_call(*args: object, **kwargs: object) -> dict[str, object]:
+            calls.append(bool(kwargs["repair"]))
+            if len(calls) == 1:
+                raise json.JSONDecodeError("not json", "oops", 0)
+            return {"verb": "add", "title": "from repair", "category": "personal"}
+
+        monkeypatch.setattr(cooper, "_call_gemini", fake_call)
+
+        action = cooper.read("write the report", [])
+
+        assert action.source == "gemini"
+        assert action.title == "from repair"
+        assert calls == [False, True]
+
+    def test_invalid_json_repair_is_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cooper = _brain()
+        calls = 0
+
+        def fake_call(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            raise json.JSONDecodeError("not json", "oops", 0)
+
+        monkeypatch.setattr(cooper, "_call_gemini", fake_call)
+
+        action = cooper.read("write the report", [])
+
+        assert action.source == "rules"
+        assert calls == 2
+
+    def test_transport_or_validation_failure_does_not_retry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        transport_calls = 0
+
+        def transport_failure(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal transport_calls
+            transport_calls += 1
+            raise OSError("offline")
+
+        monkeypatch.setattr(cooper, "_call_gemini", transport_failure)
+        assert cooper.read("write the report", []).source == "rules"
+        assert transport_calls == 1
+
+        validation_calls = 0
+
+        def invalid_action(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal validation_calls
+            validation_calls += 1
+            return {"verb": "not-a-verb"}
+
+        monkeypatch.setattr(cooper, "_call_gemini", invalid_action)
+        assert cooper.read("write the report", []).source == "rules"
+        assert validation_calls == 1
+
     def test_a_model_answer_with_prompt_leakage_is_discarded(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
