@@ -22,7 +22,7 @@ function ranked(overrides: Partial<Ranked> = {}): Ranked {
     pinned: false,
     created_at: "2026-08-29T01:00:00+00:00",
     score: 0.42,
-    why: { due: 0, importance: 0.75, age: 0.1, quick: 0.6 },
+    why: { due: 0, age: 0.1, quick: 0.6 },
     ...overrides,
   };
 }
@@ -52,7 +52,7 @@ function reply(overrides: Partial<Reply> = {}): Reply {
   return {
     kind: "added",
     message: "Added “write the report”.",
-    // The item is what the understood card renders from, so it belongs in the fixture.
+    // The item is what the reply's meta line renders from, so it belongs in the fixture.
     item: ranked(),
     source: "rules",
     view: view(),
@@ -105,7 +105,7 @@ function stub(routes: Routes) {
         return json({ view: routes.view ?? view() });
       }
       if (url.includes("/api/items/")) {
-        return json(reply({ kind: "changed", message: "Completed." }));
+        return json(reply({ kind: "completed", message: "Completed." }));
       }
       return json({});
     }),
@@ -142,7 +142,8 @@ describe("first impression", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /quarterly report/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /what should I do first/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /plan my day/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /done quarterly/ })).toBeInTheDocument();
   });
 
   test("tapping an example sends it", async () => {
@@ -165,15 +166,177 @@ describe("first impression", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Cooper isn’t running");
   });
 
-  test("offline parsing is stated under setup without alarm", async () => {
+  test("offline parsing is stated under settings without alarm", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Offline rules")).toBeInTheDocument();
     expect(screen.getByText(/Works fine without a key/)).toBeInTheDocument();
+  });
+});
+
+describe("manual and ai", () => {
+  /** The tone class is the colour, so asserting it asserts what the user sees. */
+  function bubbleTones(): string[] {
+    return Array.from(document.querySelectorAll(".bubble")).flatMap((node) =>
+      Array.from(node.classList).filter((name) => name.startsWith("bubble--")),
+    );
+  }
+
+  test("manual is the mode you start in", async () => {
+    stub({});
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Manual" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "AI" })).toHaveAttribute("aria-pressed", "false");
+    // Manual is also what an omitted mode means on the wire, so the two cannot drift apart.
+  });
+
+  test("manual mode says so on the wire", async () => {
+    const calls = stub({});
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
+
+    const said = calls.find((call) => call.url.includes("/api/say"));
+    expect(said?.body).toEqual({ text: "write the report", mode: "manual" });
+  });
+
+  test("choosing AI sends the next message in AI mode", async () => {
+    const calls = stub({ view: view({ using_model: true }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "AI" }));
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
+
+    expect(calls.find((call) => call.url.includes("/api/say"))?.body.mode).toBe("ai");
+  });
+
+  test("with no model key, AI cannot be chosen", async () => {
+    // The app has to work with no key at all, so the switch disables rather than failing later.
+    stub({ view: view({ using_model: false }) });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "AI" })).toBeDisabled();
+    expect(screen.getByText(/No model key/)).toBeInTheDocument();
+  });
+
+  test("an answer is blue, not an action", async () => {
+    stub({
+      view: view({ using_model: true }),
+      say: reply({ kind: "answered", message: "Start with the report." }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "AI" }));
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
+    await screen.findByText("Start with the report.");
+
+    expect(bubbleTones()).toContain("bubble--answer");
+  });
+
+  test("creating is green and dropping is red", async () => {
+    stub({});
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "write the report{Enter}");
+    await screen.findByText(/Added/);
+    expect(bubbleTones()).toContain("bubble--good");
+
+    stub({ say: reply({ kind: "dropped", message: "Dropped “the report”." }) });
+    await user.type(screen.getByLabelText("Say something to Cooper"), "drop the report{Enter}");
+    await screen.findByText(/Dropped/);
+    expect(bubbleTones()).toContain("bubble--bad");
+  });
+
+  test("completing is green, because green is not just for new things", async () => {
+    stub({ say: reply({ kind: "completed", message: "Completed “the report”." }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "done report{Enter}");
+    await screen.findByText(/Completed/);
+
+    expect(bubbleTones()).toContain("bubble--good");
+  });
+
+  test("a question wants your attention rather than celebrating", async () => {
+    stub({ say: { status: 409, detail: "“review” matches 2 items" } });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "done review{Enter}");
+    await screen.findByText(/matches 2 items/);
+
+    expect(bubbleTones()).toContain("bubble--attention");
+  });
+});
+
+describe("appearance", () => {
+  /** The picker lives under Settings, so every test has to get there first. */
+  async function openSettings() {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    return user;
+  }
+
+  test("light is what you get before you choose anything", async () => {
+    stub({});
+    render(<App />);
+    await screen.findByText(/Just tell me what/);
+
+    // Only ever "light" or "dark" reaches the CSS. "System" is resolved before it gets there.
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  test("dark applies at once and is remembered", async () => {
+    stub({});
+    const user = await openSettings();
+
+    await user.click(await screen.findByRole("button", { name: "Dark" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("cooper.appearance.v1")).toBe("dark");
+  });
+
+  test("system asks the machine, and the machine says dark", async () => {
+    stub({});
+    // jsdom reports no preference, so the dark preference has to be stubbed to test the branch.
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) => ({
+        matches: query.includes("dark"),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    );
+    const user = await openSettings();
+
+    await user.click(await screen.findByRole("button", { name: "System" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("cooper.appearance.v1")).toBe("system");
+  });
+
+  test("the chosen option is the pressed one", async () => {
+    stub({});
+    const user = await openSettings();
+
+    await user.click(await screen.findByRole("button", { name: "Dark" }));
+
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "false");
   });
 });
 
@@ -187,7 +350,7 @@ describe("the conversation", () => {
     const who = document.querySelector(".who");
     expect(who).not.toBeNull();
     expect(who?.textContent).toBe("Cooper");
-    expect(who?.querySelector('img[src*="profile_icon"]')).not.toBeNull();
+    expect(who?.querySelector('img[src*="cooper_avatar"]')).not.toBeNull();
   });
 
   test("your sentence appears as your own turn", async () => {
@@ -201,7 +364,7 @@ describe("the conversation", () => {
     expect(within(log).getByText("write the report")).toBeInTheDocument();
   });
 
-  test("the otter answers, and shows what it understood", async () => {
+  test("Cooper answers, and shows what he understood", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
@@ -210,9 +373,9 @@ describe("the conversation", () => {
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText(/Added/)).toBeInTheDocument();
-    // The understood card is what makes a wrong parse obvious at a glance.
-    expect(within(log).getByText("write the quarterly report")).toBeInTheDocument();
-    expect(within(log).getByText(/Task · 90 min/)).toBeInTheDocument();
+    // What it understood now sits inside the reply itself rather than on a separate white card,
+    // which read as a second message from Cooper.
+    expect(within(log).getByText(/Task · work · 90 min/)).toBeInTheDocument();
   });
 
   test("asking what to do gets answered in the conversation", async () => {
@@ -295,19 +458,45 @@ describe("the conversation", () => {
 });
 
 describe("the list", () => {
-  test("a row explains its own ranking on request", async () => {
+  test("a row opens a frame with the whole task in it", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
     await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    const toggle = await screen.findByRole("button", { name: /Why .* ranks here/ });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await user.click(toggle);
+    await user.click(await screen.findByRole("button", { name: /Open .*quarterly report/ }));
 
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("Matters")).toBeInTheDocument();
-    expect(screen.getByText("Deadline")).toBeInTheDocument();
+    const frame = await screen.findByRole("dialog", { name: "write the quarterly report" });
+    // The facts that were spread across tags in the row are spelled out here.
+    expect(within(frame).getByText("90 minutes")).toBeInTheDocument();
+  });
+
+  test("the frame covers the whole window, not a column of it", async () => {
+    stub({});
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
+
+    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
+
+    // It renders through a portal on purpose. Inside the app tree it sat under `.scroll`, whose
+    // `> *` rule sets width: min(760px, 100%) on every child, so on a wide window the blur was a
+    // 760px strip with sharp edges either side.
+    const backdrop = document.querySelector(".frame");
+    expect(backdrop?.parentElement).toBe(document.body);
+    expect(backdrop?.closest(".scroll, .chat, .thread, .main")).toBeNull();
+  });
+
+  test("the frame closes on Escape and on the backdrop", async () => {
+    stub({});
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   test("completing a task calls the backend", async () => {
@@ -323,13 +512,14 @@ describe("the list", () => {
     );
   });
 
-  test("pinning calls the backend", async () => {
+  test("pinning happens in the frame, and calls the backend", async () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
     await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
 
-    await user.click(await screen.findByRole("button", { name: /^Pin/ }));
+    await user.click(await screen.findByRole("button", { name: "Pin" }));
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/pin"))).toBe(true));
   });
@@ -360,13 +550,14 @@ describe("the list", () => {
     expect(await screen.findByText("review the budget")).toBeInTheDocument();
   });
 
-  test("scheduling asks the backend to place everything", async () => {
+  test("leftover work can still be sent to the calendar", async () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
     await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    await user.click(await screen.findByRole("button", { name: "Put these in my calendar" }));
+    // A new task is booked as it is added, so this button only appears for anything left over.
+    await user.click(await screen.findByRole("button", { name: /in my calendar/ }));
 
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes("/api/schedule"))).toBe(true),
@@ -402,12 +593,12 @@ describe("undo", () => {
 });
 
 describe("working hours", () => {
-  test("setup states the boundary", async () => {
+  test("settings states the boundary", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText(/Nothing is ever booked outside these hours/)).toBeInTheDocument();
   });
@@ -416,7 +607,7 @@ describe("working hours", () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     await user.selectOptions(await screen.findByLabelText("Day ends at"), "17");
 
@@ -430,7 +621,7 @@ describe("working hours", () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     await user.click(await screen.findByRole("button", { name: "Sat" }));
 
@@ -447,7 +638,7 @@ describe("navigation", () => {
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    for (const label of ["Chat", "Plan", "Calendar", "Setup"]) {
+    for (const label of ["Chat", "Plan", "Calendar", "Settings"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
   });
@@ -586,6 +777,33 @@ describe("the calendar", () => {
     expect(document.querySelectorAll(".weekgrid__head")).toHaveLength(7);
   });
 
+  test("a month cell opens that day in a frame", async () => {
+    // A month cell has no room for a title on a phone, so the frame is where the detail lives.
+    // It replaced a panel under the grid, which pushed the calendar around as you tapped.
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
+    stub({ view: view({ scheduled: [booked] }) });
+    render(<App />);
+    const user = await openCalendar();
+    await user.click(await screen.findByRole("button", { name: "Month" }));
+
+    await user.click(screen.getAllByRole("button", { name: /1 thing$/ })[0]);
+    const frame = await screen.findByRole("dialog");
+    expect(frame.textContent).toContain("write the quarterly report");
+
+    // Nothing is left behind on the page: closing puts you back on the grid.
+    await user.click(within(frame).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // A day with nothing on it says so rather than showing the last day you looked at.
+    await user.click(screen.getAllByRole("button", { name: /0 things$/ })[0]);
+    expect((await screen.findByRole("dialog")).textContent).toContain("Nothing on this day");
+  });
+
   test("stepping away from today, and coming back", async () => {
     stub({ view: view({ scheduled: [{ ...ranked(), start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" }] }) });
     render(<App />);
@@ -621,13 +839,14 @@ describe("the calendar", () => {
     expect(await screen.findByText(/On this device/)).toBeInTheDocument();
   });
 
-  test("a booked block can be completed from the calendar", async () => {
+  test("a booked block opens its frame, and Done completes it there", async () => {
     const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
     const calls = stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
     const user = await openCalendar();
 
-    await user.click(await screen.findByRole("button", { name: /Mark .* done/ }));
+    await user.click((await screen.findAllByRole("button", { name: /quarterly report/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/complete"))).toBe(true));
   });
@@ -644,12 +863,12 @@ describe("the calendar", () => {
 });
 
 describe("google calendar", () => {
-  test("an unconfigured calendar says so under setup", async () => {
+  test("an unconfigured calendar says so under settings", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Not set up")).toBeInTheDocument();
   });
@@ -659,7 +878,7 @@ describe("google calendar", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Setup/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Not connected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
@@ -706,8 +925,8 @@ describe("the mascot", () => {
     expect(images.length).toBeGreaterThan(0);
     for (const image of images) {
       expect(image.getAttribute("src")).toMatch(/\.webp$/);
-      // Sizing and the fade over the baked-in ground shadow live in CSS. The size class fixes the
-      // box so nothing shifts while loading. There is no shape class: Cooper is not in a chip.
+      // Sizing lives in CSS, and the size class fixes the box so nothing shifts while loading.
+      // There is no shape class: the art is cut out, so Cooper is never inside a chip.
       expect(image.className).toMatch(/mascot--(xs|sm|md|lg)/);
       expect(image.className).not.toMatch(/mascot--(round|squircle)/);
     }

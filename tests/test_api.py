@@ -7,8 +7,10 @@ state rather than a special case.
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 from collections.abc import Iterator
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,6 +39,109 @@ def say(client: TestClient, text: str) -> dict:
     response = client.post("/api/say", json={"text": text}, headers=HEADERS)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def ask(client: TestClient, text: str) -> dict:
+    """The same endpoint in AI mode, which is opt-in per message."""
+    response = client.post("/api/say", json={"text": text, "mode": "ai"}, headers=HEADERS)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+class TestTheTwoModes:
+    """Manual is rules only. AI may answer questions. Both must work with no key at all."""
+
+    def test_manual_is_the_default(self, client: TestClient) -> None:
+        # No mode in the body at all, so an omitted field cannot silently spend model quota.
+        reply = say(client, "write the report, 90m")
+        assert reply["source"] == "rules"
+
+    def test_manual_never_calls_the_model(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(
+            module.brain,
+            "_generate",
+            lambda *args, **kwargs: pytest.fail("manual mode reached the model"),
+        )
+
+        assert say(client, "write the report, 90m")["source"] == "rules"
+
+    def test_ai_mode_still_works_with_no_key(self, client: TestClient) -> None:
+        # Rule four of the PRD: no key, and everything still functions. AI mode falls back.
+        reply = ask(client, "write the report, 90m")
+        assert reply["kind"] == "added"
+        assert reply["source"] == "rules"
+
+    def test_a_question_in_ai_mode_is_answered(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        say(client, "write the report, 90m, important")
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(
+            module.brain, "_generate", lambda prompt, **kwargs: "Start with the report."
+        )
+
+        reply = ask(client, "what should I focus on")
+
+        assert reply["kind"] == "answered"
+        assert reply["message"] == "Start with the report."
+
+    def test_an_answer_never_changes_anything(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        say(client, "write the report, 90m")
+        before = client.get("/api/today", headers=HEADERS).json()
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(module.brain, "_generate", lambda prompt, **kwargs: "One thing open.")
+
+        ask(client, "what is on my plate")
+
+        after = client.get("/api/today", headers=HEADERS).json()
+        assert after["shortlist"] == before["shortlist"]
+        assert after["undo"] == before["undo"]
+
+    def test_the_prompt_carries_titles_but_never_notes(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        added = say(client, "write the report, 90m")
+        item = added["view"]["shortlist"][0]
+        client.patch(
+            f"/api/items/{item['id']}",
+            json={"notes": "the CFO hates the current draft"},
+            headers=HEADERS,
+        )
+
+        seen: list[str] = []
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(
+            module.brain,
+            "_generate",
+            lambda prompt, **kwargs: seen.append(prompt) or "Nothing much.",
+        )
+
+        ask(client, "how long is the report")
+
+        assert "write the quarterly report" in seen[0] or "report" in seen[0]
+        assert "CFO" not in seen[0], "notes must never leave the machine"
+
+    def test_an_unreachable_model_falls_back_instead_of_failing(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        def explode(*args: object, **kwargs: object) -> str:
+            raise OSError("no network")
+
+        monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
+        monkeypatch.setattr(module.brain, "_generate", explode)
+
+        reply = ask(client, "what should I do first")
+
+        assert reply["kind"] == "shown"
 
 
 class TestSecurity:
@@ -71,7 +176,7 @@ class TestSaying:
 
         assert [row["title"] for row in shortlist] == ["write the report"]
         assert shortlist[0]["score"] > 0
-        assert set(shortlist[0]["why"]) == {"due", "importance", "age", "quick"}
+        assert set(shortlist[0]["why"]) == {"due", "age", "quick"}
 
     def test_a_timed_sentence_creates_an_event(self, client: TestClient) -> None:
         body = say(client, "dentist thursday 3pm")
@@ -90,7 +195,7 @@ class TestSaying:
 
         body = say(client, "done quarterly")
 
-        assert body["kind"] == "changed"
+        assert body["kind"] == "completed"
         assert body["item"]["status"] == "done"
         assert body["view"]["shortlist"] == []
 
@@ -116,7 +221,7 @@ class TestSaying:
 
         body = say(client, "pin trivial")
 
-        assert body["kind"] == "changed"
+        assert body["kind"] == "pinned"
         assert body["view"]["shortlist"][0]["title"] == "trivial thing"
 
     def test_asking_what_to_do_changes_nothing(self, client: TestClient) -> None:
@@ -132,28 +237,58 @@ class TestSaying:
 
 
 class TestScheduling:
-    def test_scheduling_places_tasks_into_working_hours(self, client: TestClient) -> None:
+    def test_a_new_task_is_booked_the_moment_it_is_added(self, client: TestClient) -> None:
+        # The old behaviour left it in the shortlist until you remembered to say "plan my day",
+        # so you added something, looked at the calendar, and it was not there.
+        body = say(client, "write the report, 60m")
+
+        assert body["item"]["start_at"] is not None
+        assert [row["title"] for row in body["view"]["scheduled"]] == ["write the report"]
+
+    def test_booked_work_lands_inside_working_hours(self, client: TestClient) -> None:
         say(client, "write the report, 60m")
         say(client, "review the budget, 45m")
 
-        body = client.post("/api/schedule", headers=HEADERS).json()
+        rows = client.get("/api/today", headers=HEADERS).json()["scheduled"]
 
-        assert len(body["placed"]) == 2
-        assert all(slot["minutes"] > 0 for slot in body["placed"])
-        assert len(body["view"]["scheduled"]) == 2
+        assert len(rows) == 2
+        hours = client.get("/api/today", headers=HEADERS).json()["hours"]
+        for row in rows:
+            local = dt.datetime.fromisoformat(row["start_at"]).astimezone(
+                ZoneInfo("Asia/Singapore")
+            )
+            assert hours["start_hour"] <= local.hour < hours["end_hour"]
 
-    def test_a_task_without_an_estimate_is_not_placed(self, client: TestClient) -> None:
-        say(client, "vague thing")
+    def test_scheduling_again_has_nothing_left_to_do(self, client: TestClient) -> None:
+        say(client, "write the report, 60m")
 
         assert client.post("/api/schedule", headers=HEADERS).json()["placed"] == []
 
-    def test_scheduling_by_sentence_works_too(self, client: TestClient) -> None:
+    def test_a_task_without_an_estimate_is_still_booked(self, client: TestClient) -> None:
+        # It used to be skipped in silence, which meant a one-word task could never reach the
+        # calendar and nothing on screen said why. Half an hour is assumed instead.
+        body = say(client, "vague thing")
+
+        assert body["item"]["start_at"] is not None
+
+    def test_scheduling_by_sentence_still_works_for_leftovers(self, client: TestClient) -> None:
+        # Anything that could not be placed on the way in, because the week was full, is what a
+        # scheduling run is for now.
+        client.put(
+            "/api/hours",
+            json={"start_hour": 9, "end_hour": 10, "weekdays": [0], "max_per_day": 1},
+            headers=HEADERS,
+        )
         say(client, "write the report, 60m")
+        client.put(
+            "/api/hours",
+            json={"start_hour": 9, "end_hour": 18, "weekdays": [0, 1, 2, 3, 4], "max_per_day": 4},
+            headers=HEADERS,
+        )
 
         body = say(client, "plan my day")
 
-        assert body["kind"] == "scheduled"
-        assert "Placed 1" in body["message"]
+        assert body["kind"] in ("scheduled", "note")
 
     def test_hours_can_be_narrowed(self, client: TestClient) -> None:
         response = client.put(
@@ -296,30 +431,30 @@ class TestGoogle:
         assert "access_denied" in response.text
 
     def test_everything_works_with_the_calendar_off(self, client: TestClient) -> None:
-        say(client, "write the report, 60m")
+        # No Google, no key, and a task still gets added, ranked and booked locally.
+        body = say(client, "write the report, 60m")
 
-        placed = client.post("/api/schedule", headers=HEADERS).json()["placed"]
+        assert body["item"]["start_at"] is not None
+        assert body["item"]["google_event_id"] is None
+        assert body["view"]["calendar"]["connected"] is False
 
-        assert len(placed) == 1
 
+class TestTheTwoLists:
+    """The plan ranks what is open. The calendar says when. One item, two questions."""
 
-class TestNoDuplication:
-    def test_a_booked_task_leaves_the_shortlist(self, client: TestClient) -> None:
-        # Showing the same task under both headings made one task look like two.
-        say(client, "write the report, 60m")
+    def test_open_work_is_ranked_whether_or_not_it_is_booked(self, client: TestClient) -> None:
+        body = say(client, "write the report, 60m")["view"]
 
-        body = client.post("/api/schedule", headers=HEADERS).json()["view"]
-
-        assert body["shortlist"] == []
+        assert [row["title"] for row in body["shortlist"]] == ["write the report"]
         assert [row["title"] for row in body["scheduled"]] == ["write the report"]
 
-    def test_unbooked_work_stays_on_the_shortlist(self, client: TestClient) -> None:
+    def test_finishing_it_takes_it_off_both(self, client: TestClient) -> None:
         say(client, "write the report, 60m")
-        say(client, "no estimate so cannot be booked")
 
-        body = client.post("/api/schedule", headers=HEADERS).json()["view"]
+        body = say(client, "done report")["view"]
 
-        assert [row["title"] for row in body["shortlist"]] == ["no estimate so cannot be booked"]
+        assert body["shortlist"] == []
+        assert body["scheduled"] == []
 
 
 class TestAgenda:

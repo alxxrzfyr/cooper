@@ -109,13 +109,24 @@ export function saveMode(mode: Mode): void {
 }
 
 function clock(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return new Date(at).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /** Whole days between two moments, counted by midnights so 11pm to 1am is one day. */
 function nightsBetween(now: Date, then: Date): number {
-  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const b = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const a = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const b = new Date(
+    then.getFullYear(),
+    then.getMonth(),
+    then.getDate(),
+  ).getTime();
   return Math.round((a - b) / 86_400_000);
 }
 
@@ -128,7 +139,10 @@ function stamp(at: number): string {
   if (nights > 1 && nights < 7) {
     return `${then.toLocaleDateString(undefined, { weekday: "long" })} ${clock(at)}`;
   }
-  const day = then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const day = then.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
   return `${day} ${clock(at)}`;
 }
 
@@ -158,7 +172,12 @@ export function groupTurns(turns: Turn[]): Group[] {
       turn.at - previousAt <= GROUP_WITHIN_MS;
 
     if (continues) last.turns.push(turn);
-    else groups.push({ who: turn.who, turns: [turn], stamp: paused ? stamp(turn.at) : null });
+    else
+      groups.push({
+        who: turn.who,
+        turns: [turn],
+        stamp: paused ? stamp(turn.at) : null,
+      });
 
     previousAt = turn.at;
   }
@@ -196,7 +215,9 @@ export function Chat({
     end.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [turns.length, thinking]);
 
-  const switcher = <ModeSwitch mode={mode} canUseAi={canUseAi} onMode={onMode} />;
+  const switcher = (
+    <ModeSwitch mode={mode} canUseAi={canUseAi} onMode={onMode} />
+  );
 
   if (turns.length === 0) {
     return (
@@ -214,7 +235,12 @@ export function Chat({
     <div className="chat">
       {switcher}
 
-      <div className="thread" role="log" aria-label="Conversation" aria-live="polite">
+      <div
+        className="thread"
+        role="log"
+        aria-label="Conversation"
+        aria-live="polite"
+      >
         {groups.map((group, index) => {
           const last = group.turns[group.turns.length - 1];
           const closing = index === groups.length - 1 && !thinking;
@@ -224,7 +250,9 @@ export function Chat({
               {group.stamp && <div className="stamp">{group.stamp}</div>}
 
               <div className={`run run--${group.who}`}>
-                {group.who === "otter" && <Mascot name={face(last.kind)} size="sm" decorative />}
+                {group.who === "otter" && (
+                  <Mascot name={face(last.kind)} size="sm" decorative />
+                )}
 
                 <div className="run__stack">
                   {group.turns.map((turn) => (
@@ -232,7 +260,9 @@ export function Chat({
                       key={turn.id}
                       className={[
                         "bubble",
-                        group.who === "you" ? "bubble--you" : `bubble--${tone(turn.kind)}`,
+                        group.who === "you"
+                          ? "bubble--you"
+                          : `bubble--${tone(turn.kind)}`,
                         turn.id === last.id ? "bubble--tail" : "",
                       ]
                         .filter(Boolean)
@@ -250,7 +280,9 @@ export function Chat({
                     </div>
                   ))}
 
-                  {group.who === "you" && closing && <span className="receipt">Delivered</span>}
+                  {group.who === "you" && closing && (
+                    <span className="receipt">Delivered</span>
+                  )}
                 </div>
               </div>
             </Fragment>
@@ -321,7 +353,9 @@ function ModeSwitch({
           className="modeswitch__opt"
           aria-pressed={mode === "ai"}
           disabled={!canUseAi}
-          title={canUseAi ? undefined : "Set COOPER_GEMINI_API_KEY to use AI mode"}
+          title={
+            canUseAi ? undefined : "Set COOPER_GEMINI_API_KEY to use AI mode"
+          }
           onClick={() => onMode("ai")}
         >
           AI
@@ -344,7 +378,9 @@ function Understood({ item }: { item: Item }) {
     item.kind === "event" ? "Event" : "Task",
     item.category,
     item.minutes ? `${item.minutes} min` : null,
-    item.due ? `due ${new Date(item.due).toLocaleDateString(undefined, { weekday: "short" })}` : null,
+    item.due
+      ? `due ${new Date(item.due).toLocaleDateString(undefined, { weekday: "short" })}`
+      : null,
     item.start_at
       ? new Date(item.start_at).toLocaleString(undefined, {
           weekday: "short",
@@ -352,7 +388,6 @@ function Understood({ item }: { item: Item }) {
           minute: "2-digit",
         })
       : null,
-    item.importance !== 3 ? `importance ${item.importance}` : null,
   ].filter(Boolean);
 
   return <span className="bubble__meta">{bits.join(" · ")}</span>;
@@ -373,12 +408,20 @@ const EXAMPLES: Record<Mode, string[]> = {
   ],
 };
 
-function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) => void }) {
+function Opening({
+  mode,
+  onExample,
+}: {
+  mode: Mode;
+  onExample: (text: string) => void;
+}) {
   return (
     <div className="opening">
       <Mascot name="cooper_waving" size="lg" decorative />
       <h2 className="opening__title">
-        {mode === "manual" ? "Just tell me what’s on your plate" : "Ask me about your tasks"}
+        {mode === "manual"
+          ? "Just tell me what’s on your plate"
+          : "Ask me about your tasks"}
       </h2>
       <p className="opening__text">
         {mode === "manual"
@@ -387,7 +430,12 @@ function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) =>
       </p>
       <div className="examples">
         {EXAMPLES[mode].map((example) => (
-          <button key={example} type="button" className="example" onClick={() => onExample(example)}>
+          <button
+            key={example}
+            type="button"
+            className="example"
+            onClick={() => onExample(example)}
+          >
             {example}
           </button>
         ))}

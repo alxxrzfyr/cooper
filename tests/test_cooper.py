@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import pathlib
+import re
 from collections.abc import Iterator
 from zoneinfo import ZoneInfo
 
@@ -163,7 +165,7 @@ class TestRanking:
     def test_every_row_explains_itself(self) -> None:
         entry = rank([task(importance=5, due=NOW)], at=NOW)[0]
 
-        assert set(entry.why) == {"due", "importance", "age", "quick"}
+        assert set(entry.why) == {"due", "age", "quick"}
         assert entry.score > 0
 
     def test_an_overdue_task_saturates_its_urgency(self) -> None:
@@ -231,10 +233,13 @@ class TestPlacing:
 
         assert len(slots) <= 2
 
-    def test_a_task_without_an_estimate_is_skipped(self) -> None:
+    def test_a_task_without_an_estimate_gets_the_assumed_length(self) -> None:
+        # Skipping it meant a one-word task could sit in the list forever, unbookable and
+        # unexplained. Half an hour is a cheap thing to be wrong about.
         slots = place(rank([task(minutes=None)], at=NOW), busy=[], hours=self.hours(), at=NOW)
 
-        assert slots == []
+        assert len(slots) == 1
+        assert slots[0].minutes == 30
 
     def test_an_already_scheduled_task_is_left_alone(self) -> None:
         booked = task(minutes=60, start_at=NOW, end_at=NOW + dt.timedelta(hours=1))
@@ -410,3 +415,74 @@ class TestCategory:
             source="gemini",
         )
         assert action.category == "work"
+
+
+class TestTheArt:
+    """The mascot files and the code that asks for them have to agree.
+
+    A missing asset fails silently in the browser: the dev server answers an unknown path with
+    index.html, so the page shows a broken image and no test in the frontend notices. This is
+    cheaper than teaching vitest to read the filesystem.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+    BUILT = ROOT / "frontend" / "public" / "assets" / "mascot"
+    SOURCE = ROOT / "frontend" / "src"
+
+    def asked_for(self) -> set[str]:
+        text = "\n".join(
+            path.read_text()
+            for path in self.SOURCE.glob("*.tsx")
+            if not path.name.endswith(".test.tsx")
+        )
+        return set(re.findall(r"cooper_[a-z_]+", text))
+
+    def built(self) -> set[str]:
+        return {path.stem for path in self.BUILT.glob("*.webp")}
+
+    def test_every_name_the_code_asks_for_exists(self) -> None:
+        assert self.asked_for() - self.built() == set()
+
+    def test_nothing_is_shipped_that_no_screen_shows(self) -> None:
+        assert self.built() - self.asked_for() == set()
+
+    def test_the_art_is_webp_and_carries_transparency(self) -> None:
+        # Cooper sits in no container, so anything without an alpha channel would show up as a
+        # white block on the page. VP8L is lossless webp, which always has one.
+        for path in sorted(self.BUILT.glob("*.webp")):
+            head = path.read_bytes()[:64]
+            assert head[:4] == b"RIFF" and head[8:12] == b"WEBP", path.name
+            assert b"ALPH" in head or b"VP8L" in head, f"{path.name} has no alpha"
+
+
+class TestAQuestionIsNotATask:
+    """The parser used to answer "how long is the report" by creating a task called that."""
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "what should I focus on",
+            "how long is the report",
+            "is there anything due friday",
+            "am I free thursday",
+            "do I have time for the gym",
+            "any room tomorrow?",
+        ],
+    )
+    def test_question_shapes_never_create_anything(self, sentence: str) -> None:
+        assert brain.parse_with_rules(sentence, tz="Asia/Singapore").verb == "show"
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "write the quarterly report, 90m",
+            "dentist thursday 3pm",
+            "whatsapp the client back",  # starts with "what" but is an instruction
+        ],
+    )
+    def test_instructions_are_still_instructions(self, sentence: str) -> None:
+        assert brain.parse_with_rules(sentence, tz="Asia/Singapore").verb == "add"
+
+    def test_a_trailing_question_mark_is_enough(self) -> None:
+        assert brain.looks_like_a_question("gym tomorrow?")
+        assert not brain.looks_like_a_question("gym tomorrow")

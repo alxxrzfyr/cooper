@@ -16,16 +16,21 @@ from zoneinfo import ZoneInfo
 from cooper.db import Item, aware
 
 # Score weights. Tuned by feel, easy to change, and they sum to 1.
-W_DUE = 0.40
-W_IMPORTANCE = 0.30
+# The deadline is the priority. A separate importance dial asked the user to rate everything they
+# owned, and then competed with the date they had already given: a "5" with no deadline outranked
+# something due tomorrow, which is not how anyone actually decides what to do next.
+W_DUE = 0.60
 W_AGE = 0.15
-W_QUICK = 0.15
+W_QUICK = 0.25
 
 HORIZON_DAYS = 14
 MIN_SLOT = 20
 MAX_SLOT = 90
 GAP = 10
 LEAD = 15
+# What to assume when you did not say how long something takes. Half an hour is short enough to
+# be wrong cheaply and long enough to be worth booking.
+ASSUMED = 30
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -46,12 +51,7 @@ def rank(items: list[Item], *, at: dt.datetime) -> list[Scored]:
         if item.status != "open" or item.kind != "task":
             continue
         why = _terms(item, at=at)
-        total = (
-            why["due"] * W_DUE
-            + why["importance"] * W_IMPORTANCE
-            + why["age"] * W_AGE
-            + why["quick"] * W_QUICK
-        )
+        total = why["due"] * W_DUE + why["age"] * W_AGE + why["quick"] * W_QUICK
         scored.append(Scored(item=item, score=round(total, 3), why=why))
 
     scored.sort(
@@ -82,7 +82,6 @@ def _terms(item: Item, *, at: dt.datetime) -> dict[str, float]:
 
     return {
         "due": round(due_term, 3),
-        "importance": round((item.importance - 1) / 4, 3),
         "age": round(min(age_days / 21, 1.0), 3),
         "quick": round(quick, 3),
     }
@@ -143,7 +142,9 @@ def place(
     """Fit the ranked tasks into working hours, around whatever is already booked.
 
     Nothing lands outside your hours, because the only candidate times are built from them.
-    A task with no estimate is skipped rather than guessed at.
+    A task with no estimate gets `ASSUMED` minutes rather than being skipped: silently ignoring
+    it meant "test" could sit in the shortlist forever and never reach the calendar, with nothing
+    on screen explaining why.
     """
     zone = ZoneInfo(hours.timezone)
     earliest = at + dt.timedelta(minutes=LEAD)
@@ -152,9 +153,9 @@ def place(
     slots: list[Slot] = []
 
     for entry in ranked:
-        minutes = entry.item.minutes
-        if entry.item.scheduled or minutes is None:
+        if entry.item.scheduled:
             continue
+        minutes = entry.item.minutes or ASSUMED
         length = max(MIN_SLOT, min(minutes, MAX_SLOT))
 
         placed = _first_gap(

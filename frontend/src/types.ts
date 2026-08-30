@@ -23,7 +23,7 @@ export interface Item {
 
 export interface Ranked extends Item {
   score: number;
-  why: { due: number; importance: number; age: number; quick: number };
+  why: { due: number; age: number; quick: number };
 }
 
 export interface Hours {
@@ -56,11 +56,20 @@ export interface View {
   calendar: { configured: boolean; connected: boolean; email: string | null };
 }
 
+/**
+ * What Cooper just did, which is also what colour the reply is.
+ *
+ * Green for something gained or finished, red for something removed, blue for an answer, amber
+ * when it needs you, plain grey for information.
+ */
 export type ReplyKind =
   | "added"
-  | "changed"
+  | "completed"
+  | "dropped"
+  | "pinned"
   | "scheduled"
   | "undone"
+  | "answered"
   | "question"
   | "note"
   | "shown";
