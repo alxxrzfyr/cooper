@@ -315,8 +315,7 @@ export default function App() {
         browserAlerts === "granted" &&
         "Notification" in window
       ) {
-        new window.Notification("Cooper", {
-          body: message,
+        new window.Notification(message, {
           icon: `/assets/mascot/${noticeFace(kind)}.webp`,
           tag: "cooper-update",
         });
