@@ -278,30 +278,21 @@ export default function App() {
     [announce, busy, mode],
   );
 
-  /** Buttons elsewhere in the app also narrate themselves into the conversation. */
+  /** Buttons elsewhere in the app update the source screen and show a transient notice. */
   const act = useCallback(
-    async (work: () => Promise<Reply | { view: View }>, narrate = true) => {
+    async (work: () => Promise<Reply | { view: View }>) => {
       setBusy(true);
       try {
         const result = await work();
         setView(result.view);
         setFailure(null);
-        if (narrate && "kind" in result) {
+        if ("kind" in result) {
           announce(result.kind, result.message);
-          reply({
-            text: result.message,
-            kind: result.kind,
-            item: result.item,
-            lines: result.chip,
-          });
         }
       } catch (error) {
         if (error instanceof ApiError) {
-          reply({
-            text: error.message,
-            kind: error.status === 409 ? "question" : "note",
-          });
-          announce(error.status === 409 ? "question" : "note", error.message);
+          const kind = error.status === 409 ? "question" : "note";
+          announce(kind, error.message);
         } else {
           const message = error instanceof Error ? error.message : "Something went wrong.";
           setFailure(message);
@@ -431,13 +422,11 @@ export default function App() {
                     aria-label="Day starts at"
                     value={hours.start_hour}
                     onChange={(event) =>
-                      void act(
-                        () =>
-                          api.setHours({
-                            ...hours,
-                            start_hour: Number(event.target.value),
-                          }),
-                        false,
+                      void act(() =>
+                        api.setHours({
+                          ...hours,
+                          start_hour: Number(event.target.value),
+                        }),
                       )
                     }
                   >
@@ -454,13 +443,11 @@ export default function App() {
                     aria-label="Day ends at"
                     value={hours.end_hour}
                     onChange={(event) =>
-                      void act(
-                        () =>
-                          api.setHours({
-                            ...hours,
-                            end_hour: Number(event.target.value),
-                          }),
-                        false,
+                      void act(() =>
+                        api.setHours({
+                          ...hours,
+                          end_hour: Number(event.target.value),
+                        }),
                       )
                     }
                   >
@@ -479,15 +466,13 @@ export default function App() {
                       className="day"
                       aria-pressed={hours.weekdays.includes(index)}
                       onClick={() =>
-                        void act(
-                          () =>
-                            api.setHours({
-                              ...hours,
-                              weekdays: hours.weekdays.includes(index)
-                                ? hours.weekdays.filter((day) => day !== index)
-                                : [...hours.weekdays, index].sort((a, b) => a - b),
-                            }),
-                          false,
+                        void act(() =>
+                          api.setHours({
+                            ...hours,
+                            weekdays: hours.weekdays.includes(index)
+                              ? hours.weekdays.filter((day) => day !== index)
+                              : [...hours.weekdays, index].sort((a, b) => a - b),
+                          }),
                         )
                       }
                     >
@@ -504,13 +489,11 @@ export default function App() {
                     max={10}
                     value={hours.max_per_day}
                     onChange={(event) =>
-                      void act(
-                        () =>
-                          api.setHours({
-                            ...hours,
-                            max_per_day: Number(event.target.value),
-                          }),
-                        false,
+                      void act(() =>
+                        api.setHours({
+                          ...hours,
+                          max_per_day: Number(event.target.value),
+                        }),
                       )
                     }
                   />
@@ -535,7 +518,7 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn--quiet"
-                      onClick={() => void act(() => api.disconnect(), false)}
+                      onClick={() => void act(() => api.disconnect())}
                     >
                       Disconnect
                     </button>

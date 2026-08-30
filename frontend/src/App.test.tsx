@@ -1139,6 +1139,22 @@ describe("the dashboard", () => {
     );
   });
 
+  test("completing from the dashboard does not write an activity line into AI chat", async () => {
+    const calls = stub({
+      view: view({ shortlist: [ranked({ title: "write the report" })], using_model: true }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Done" }));
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/complete"))).toBe(true));
+
+    await openChat(user);
+    await user.click(await screen.findByRole("button", { name: "AI" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Completed.");
+    expect(screen.queryByRole("log")).not.toBeInTheDocument();
+  });
+
   test("an empty day says so and points at the one thing to do about it", async () => {
     stub({ view: view({ shortlist: [], scheduled: [], events: [] }) });
     render(<App />);
