@@ -238,7 +238,7 @@ frontend/src/
   Nav.tsx      tab bar, side rail
   Row.tsx      a task or event
   Mascot.tsx   Cooper
-  theme.css    Apple structure, Google colour, light and dark
+  theme.css    shared tokens, light and dark themes
 tools/
   mascot_cutout.py  raw art in, cut-out square webp out
 ```
@@ -254,9 +254,9 @@ than a question.
 ## Verified
 
 ```
-uv run pytest      177 passed
+uv run pytest      236 passed
 uv run ruff check  clean
-npm test           73 passed
+npm test           85 passed
 npm run build      ok
 ```
 
