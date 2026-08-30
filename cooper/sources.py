@@ -56,10 +56,25 @@ def collect_google(calendar: Calendar, *, days: int) -> list[Interval]:
 
 
 def collect_local(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
-    """Blocks Cooper itself has already placed, so the next run does not double-book them."""
+    """Local blocks, leaving Gmail rows to their own collector exactly once."""
     spans: list[Interval] = []
     with store.session() as session:
         for item in store.open_items(session):
+            if item.source == "gmail":
+                continue
+            start, end = aware(item.start_at), aware(item.end_at)
+            if start and end:
+                spans.append((start, end))
+    return spans
+
+
+def collect_gmail(store: Store, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
+    """Open commitments parsed from Gmail, which never reach a Calendar writer."""
+    spans: list[Interval] = []
+    with store.session() as session:
+        for item in store.open_items(session):
+            if item.source != "gmail":
+                continue
             start, end = aware(item.start_at), aware(item.end_at)
             if start and end:
                 spans.append((start, end))
@@ -71,10 +86,11 @@ def busy_windows(
 ) -> list[Interval]:
     """Every commitment, from every source, as one list of intervals the planner routes around.
 
-    The one call the scheduler makes. Today it merges Google and Cooper's own blocks; when
-    Microsoft and the email watcher land, they append here and this signature does not change.
+    The one call the scheduler makes. Today it merges Google, local blocks and Gmail imports;
+    when Microsoft lands it appends here and this signature does not change.
     """
     spans: list[Interval] = []
     spans.extend(collect_google(calendar, days=days))
+    spans.extend(collect_gmail(store, at=at))
     spans.extend(collect_local(store, at=at))
     return spans

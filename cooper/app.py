@@ -10,6 +10,7 @@ touches the database, so a wrong answer from Gemini can be refused rather than a
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime as dt
 import secrets
 from typing import Any, Literal
@@ -34,10 +35,24 @@ from cooper.config import Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.planner import Hours, Slot, place, rank
+from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
 HOURS_SETTING = "hours"
 GOOGLE_SETTING = "google"
+GMAIL_SETTING = "gmail"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SyncSummary:
+    """What one Gmail pull changed locally, safe for the watcher and dashboard to consume."""
+
+    created: int = 0
+    updated: int = 0
+    dropped: int = 0
+    skipped: int = 0
+    error: str | None = None
+
 
 settings = Settings()  # type: ignore[call-arg]
 store = Store(settings.database_url)
@@ -201,6 +216,7 @@ def google_events(*, days: int = 14) -> list[dict[str, Any]]:
             "category": guess_category(entry.title),
             # `mine` marks events Cooper created, so the agenda does not show them twice.
             "mine": entry.mine,
+            "source": "google",
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]
@@ -213,6 +229,135 @@ def busy_windows(*, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
     obvious place — sources.py — where a new commitment source is added.
     """
     return sources.busy_windows(store, calendar, at=now(), days=days)
+
+
+def sync_gmail_once() -> SyncSummary:
+    """Read and reconcile recent confirmation proposals without touching a remote calendar.
+
+    Gmail message ids and bodies remain inside the transport/parser boundary.  This function only
+    receives the small proposal shape and is the one database writer for Gmail-backed Items.
+    """
+    checked_at = now()
+    try:
+        messages = gmail.list_messages(
+            after=checked_at - dt.timedelta(days=settings.gmail_lookback_days), max_results=100
+        )
+    except CalendarError:
+        summary = SyncSummary(error="Gmail could not be reached.")
+        _record_gmail_health(checked_at, summary)
+        return summary
+
+    proposals: list[EmailProposal] = []
+    skipped = 0
+    # Gmail lists newest first. Reconciling old-to-new means a later cancellation wins over the
+    # confirmation it refers to, while retaining nothing from the message after this loop.
+    for message in sorted(messages, key=lambda entry: getattr(entry, "internal_at", checked_at)):
+        try:
+            proposal = parse_confirmation(message, timezone=settings.timezone, now=checked_at)
+        except (TypeError, ValueError):
+            proposal = None
+        if proposal is None:
+            skipped += 1
+        else:
+            proposals.append(proposal)
+
+    summary = _reconcile_gmail_proposals(proposals, skipped=skipped)
+    _record_gmail_health(checked_at, summary)
+    return summary
+
+
+def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int = 0) -> SyncSummary:
+    """Apply Gmail proposals in one local transaction; imported changes are never undoable."""
+    created = updated = dropped = 0
+    with store.session() as session:
+        for proposal in proposals:
+            action = validate(
+                Action(
+                    verb="add",
+                    title=proposal.title,
+                    kind="event",
+                    start=proposal.start,
+                    end=proposal.end,
+                    category=guess_category(proposal.title),
+                    source="gmail",
+                )
+            )
+            if action.is_question:
+                skipped += 1
+                continue
+
+            row = session.scalars(
+                select(Item).where(
+                    Item.owner_id == settings.owner_id,
+                    Item.source == "gmail",
+                    Item.source_ref == proposal.source_ref,
+                )
+            ).first()
+            if proposal.cancelled:
+                if row is None or row.status == "dropped":
+                    skipped += 1
+                    continue
+                row.status = "dropped"
+                dropped += 1
+                continue
+
+            if action.start is None or action.end is None:
+                skipped += 1
+                continue
+            if row is None:
+                session.add(
+                    Item(
+                        id=new_id(),
+                        owner_id=settings.owner_id,
+                        source="gmail",
+                        source_ref=proposal.source_ref,
+                        kind="event",
+                        title=action.title or proposal.title,
+                        importance=3,
+                        category=action.category or "personal",
+                        start_at=action.start,
+                        end_at=action.end,
+                        created_at=now(),
+                    )
+                )
+                created += 1
+                continue
+
+            changed = (
+                row.title != action.title
+                or aware(row.start_at) != action.start.astimezone(dt.UTC)
+                or aware(row.end_at) != action.end.astimezone(dt.UTC)
+                or row.category != action.category
+                or row.status != "open"
+            )
+            if not changed:
+                skipped += 1
+                continue
+            row.title = action.title or proposal.title
+            row.start_at = action.start
+            row.end_at = action.end
+            row.category = action.category or "personal"
+            row.status = "open"
+            updated += 1
+
+    return SyncSummary(created=created, updated=updated, dropped=dropped, skipped=skipped)
+
+
+def _record_gmail_health(checked_at: dt.datetime, summary: SyncSummary) -> None:
+    """Keep watcher health and safe counters, never Gmail bodies or message ids."""
+    store.set_setting(
+        GMAIL_SETTING,
+        {
+            "last_checked": checked_at.isoformat(),
+            "last_error": summary.error,
+            "counts": {
+                "created": summary.created,
+                "updated": summary.updated,
+                "dropped": summary.dropped,
+                "skipped": summary.skipped,
+            },
+        },
+    )
 
 
 def today_view() -> dict[str, Any]:

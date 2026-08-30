@@ -19,7 +19,10 @@ import pytest
 
 os.environ.setdefault("COOPER_SHARED_KEY", "test-key-that-is-long-enough-x")
 
-from cooper import brain  # noqa: E402
+from cooper import (  # noqa: E402
+    brain,
+    sources,
+)
 from cooper.brain import parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
 from cooper.planner import Hours, place, rank  # noqa: E402
@@ -137,6 +140,38 @@ def task(**fields: object) -> Item:
         "minutes": 60,
     }
     return Item(**(defaults | fields))  # type: ignore[arg-type]
+
+
+class TestCommitmentSources:
+    def test_gmail_commitments_are_collected_once_not_as_local_blocks(self, store: Store) -> None:
+        """If Gmail rows re-enter collect_local, each imported event blocks the planner twice."""
+        gmail_start = NOW + dt.timedelta(days=1)
+        gmail_end = gmail_start + dt.timedelta(hours=2)
+        local_start = NOW + dt.timedelta(days=2)
+        local_end = local_start + dt.timedelta(hours=1)
+        with store.session() as session:
+            session.add(
+                task(
+                    kind="event",
+                    title="Imported meetup",
+                    source="gmail",
+                    source_ref="meetup:303030303",
+                    start_at=gmail_start,
+                    end_at=gmail_end,
+                )
+            )
+            session.add(
+                task(kind="event", title="Local block", start_at=local_start, end_at=local_end)
+            )
+
+        class OfflineCalendar:
+            connected = False
+
+        assert sources.collect_local(store, at=NOW) == [(local_start, local_end)]
+        assert sources.busy_windows(store, OfflineCalendar(), at=NOW) == [
+            (gmail_start, gmail_end),
+            (local_start, local_end),
+        ]
 
 
 class TestRanking:

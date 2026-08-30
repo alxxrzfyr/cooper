@@ -14,6 +14,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from cooper.db import Change
+from cooper.google import CalendarError
+from cooper.watcher import EmailProposal
 
 KEY = "test-key-that-is-long-enough-x"
 os.environ["COOPER_SHARED_KEY"] = KEY
@@ -152,6 +157,116 @@ class TestTheTwoModes:
         reply = ask(client, "what should I do first")
 
         assert reply["kind"] == "shown"
+
+
+class TestGmailReconciliation:
+    def test_sync_reconciles_imported_events_without_undo_history(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Removing Gmail reconciliation or its source identity must break this test."""
+        import cooper.app as module
+
+        proposal = EmailProposal(
+            provider="luma",
+            title="Community Meetup",
+            source_ref="luma:community-meetup",
+            start=dt.datetime(2026, 9, 10, 18, tzinfo=dt.UTC),
+            end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
+            cancelled=False,
+        )
+        monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: [object()])
+        monkeypatch.setattr(
+            module.calendar,
+            "add_block",
+            lambda **_kwargs: pytest.fail("Gmail sync tried to write to Calendar"),
+        )
+        monkeypatch.setattr(
+            module,
+            "parse_confirmation",
+            lambda _message, **_kwargs: proposal,
+        )
+
+        first = module.sync_gmail_once()
+        today = client.get("/api/today", headers=HEADERS).json()
+
+        assert (first.created, first.updated, first.dropped, first.skipped) == (1, 0, 0, 0)
+        assert [(row["title"], row["source"], row["source_ref"]) for row in today["scheduled"]] == [
+            ("Community Meetup", "gmail", "luma:community-meetup")
+        ]
+        with module.store.session() as session:
+            assert list(session.scalars(select(Change))) == []
+
+        assert module.sync_gmail_once().created == 0
+        assert module.sync_gmail_once().updated == 0
+
+    def test_sync_updates_moves_and_cancellations_by_provider_reference(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A provider move or cancellation must change its one local Gmail event, never add one."""
+        import cooper.app as module
+
+        messages = [object()]
+        monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: messages)
+        current = EmailProposal(
+            provider="meetup",
+            title="Python Manila",
+            source_ref="meetup:303030303",
+            start=dt.datetime(2026, 9, 11, 11, tzinfo=dt.UTC),
+            end=dt.datetime(2026, 9, 11, 13, tzinfo=dt.UTC),
+            cancelled=False,
+        )
+        monkeypatch.setattr(module, "parse_confirmation", lambda _message, **_kwargs: current)
+        module.sync_gmail_once()
+
+        current = EmailProposal(
+            provider="meetup",
+            title="Python Manila — moved",
+            source_ref="meetup:303030303",
+            start=dt.datetime(2026, 9, 12, 12, tzinfo=dt.UTC),
+            end=dt.datetime(2026, 9, 12, 14, tzinfo=dt.UTC),
+            cancelled=False,
+        )
+        moved = module.sync_gmail_once()
+        current = EmailProposal(
+            provider="meetup",
+            title="Python Manila — moved",
+            source_ref="meetup:303030303",
+            start=None,
+            end=None,
+            cancelled=True,
+        )
+        cancelled = module.sync_gmail_once()
+
+        assert (moved.created, moved.updated, moved.dropped) == (0, 1, 0)
+        assert (cancelled.created, cancelled.updated, cancelled.dropped) == (0, 0, 1)
+        with module.store.session() as session:
+            rows = list(session.scalars(select(module.Item)))
+        assert len(rows) == 1
+        assert rows[0].status == "dropped"
+
+    def test_sync_skips_ambiguous_parser_results_and_isolates_gmail_failures(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unparseable message or Gmail outage must not mutate the local plan."""
+        import cooper.app as module
+
+        monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: [object()])
+        monkeypatch.setattr(module, "parse_confirmation", lambda _message, **_kwargs: None)
+        skipped = module.sync_gmail_once()
+        monkeypatch.setattr(
+            module.gmail,
+            "list_messages",
+            lambda **_kwargs: (_ for _ in ()).throw(CalendarError("mail unavailable")),
+        )
+        failed = module.sync_gmail_once()
+
+        assert skipped.skipped == 1
+        assert failed.error == "Gmail could not be reached."
+        assert client.get("/api/today", headers=HEADERS).json()["scheduled"] == []
+        health = module.store.get_setting(module.GMAIL_SETTING)
+        assert health["last_checked"]
+        assert health["last_error"] == "Gmail could not be reached."
+        assert health["counts"] == {"created": 0, "updated": 0, "dropped": 0, "skipped": 0}
 
 
 class TestSecurity:
