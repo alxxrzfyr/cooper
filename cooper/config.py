@@ -1,13 +1,15 @@
 """Settings, read from .env.
 
-Only the shared key is required. Everything else has a working default, so the app runs with
-an empty .env beyond that one value.
+Local mode keeps using the shared key. Firebase mode adds hosted auth settings but still keeps
+the rest of the app on safe defaults.
 """
 
 from __future__ import annotations
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Annotated, Literal
+
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 KEY_MIN = 24
 
@@ -17,6 +19,9 @@ class Settings(BaseSettings):
 
     # The shared key protects the local API from unrelated browser pages.
     shared_key: SecretStr = Field(min_length=KEY_MIN)
+    auth_mode: Literal["local", "firebase"] = "local"
+    firebase_project_id: str | None = None
+    allowed_emails: Annotated[tuple[str, ...], NoDecode] = ()
 
     host: str = "127.0.0.1"
     port: int = 8000
@@ -48,3 +53,41 @@ class Settings(BaseSettings):
     def encryption(self) -> str | None:
         raw = self.encryption_key.get_secret_value() if self.encryption_key else None
         return raw or None
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def _normalize_auth_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().casefold()
+        return value
+
+    @field_validator("firebase_project_id", mode="before")
+    @classmethod
+    def _blank_project_id_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("allowed_emails", mode="before")
+    @classmethod
+    def _parse_allowed_emails(cls, value: object) -> tuple[str, ...]:
+        if value is None or value == "":
+            return ()
+        if isinstance(value, str):
+            return tuple(email.strip() for email in value.split(",") if email.strip())
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return tuple(str(email).strip() for email in value if str(email).strip())
+        return value  # type: ignore[return-value]
+
+    @model_validator(mode="after")
+    def _validate_auth_mode(self) -> Settings:
+        if self.auth_mode == "firebase":
+            if not self.firebase_project_id:
+                raise ValueError(
+                    "COOPER_FIREBASE_PROJECT_ID is required when COOPER_AUTH_MODE=firebase"
+                )
+            if not self.allowed_emails:
+                raise ValueError(
+                    "COOPER_ALLOWED_EMAILS must not be empty when COOPER_AUTH_MODE=firebase"
+                )
+        return self

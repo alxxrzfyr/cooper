@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from cooper import sources
+from cooper.auth import AuthFailure, check_allowed_email, verify_firebase_token
 from cooper.brain import (
     Action,
     Brain,
@@ -77,7 +78,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.origin],
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[SECRET_HEADER, "Content-Type"],
+    allow_headers=[SECRET_HEADER, "Authorization", "Content-Type"],
 )
 
 
@@ -102,19 +103,30 @@ async def request_validation_error(request: Request, exc: RequestValidationError
 
 @app.middleware("http")
 async def guard(request: Request, call_next: Any) -> Any:
-    """The whole security model: localhost, one origin, one shared key.
-
-    There is no login because there is one user on one machine. That assumption is only safe
-    while the app stays on 127.0.0.1, which is why the key is required rather than optional.
-
-    The refusal is returned rather than raised: exception handlers do not run for middleware,
-    so raising here would surface as a 500 instead of a clean 403.
-    """
+    """Authenticate requests before any route code runs."""
     if request.method == "OPTIONS" or request.url.path in ("/health", "/api/google/callback"):
         return await call_next(request)
-    supplied = request.headers.get(SECRET_HEADER, "")
-    if not secrets.compare_digest(supplied, settings.key()):
-        return JSONResponse({"detail": "Wrong or missing key."}, status_code=403)
+
+    if settings.auth_mode == "local":
+        supplied = request.headers.get(SECRET_HEADER, "")
+        if not secrets.compare_digest(supplied, settings.key()):
+            return JSONResponse({"detail": "Wrong or missing key."}, status_code=403)
+        return await call_next(request)
+
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    if scheme.casefold() != "bearer" or not token.strip():
+        return JSONResponse({"detail": "Invalid authentication token"}, status_code=401)
+
+    try:
+        identity = verify_firebase_token(
+            token.strip(),
+            project_id=settings.firebase_project_id or "",
+        )
+        check_allowed_email(identity, frozenset(settings.allowed_emails))
+    except AuthFailure as error:
+        return JSONResponse({"detail": error.detail}, status_code=error.status_code)
+
+    request.state.identity = identity
     return await call_next(request)
 
 
