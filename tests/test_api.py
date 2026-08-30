@@ -98,6 +98,28 @@ def ask(client: TestClient, text: str) -> dict:
     return response.json()
 
 
+def mark_calendar_connected(module: Any) -> None:
+    module.calendar._id = "client-id"
+    module.calendar._secret = "client-secret"
+    module.calendar._fernet = object()
+    module.calendar._refresh_token = "refresh-token"
+
+
+def allow_firebase(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    uid: str = "firebase-user",
+    email: str = "friend@example.com",
+) -> dict[str, str]:
+    monkeypatch.setattr(
+        module,
+        "verify_firebase_token",
+        lambda _token, *, project_id: AuthIdentity(uid=uid, email=email),
+    )
+    return {"Authorization": "Bearer verified"}
+
+
 class TestTheTwoModes:
     """Manual is rules only. AI may answer questions. Both must work with no key at all."""
 
@@ -311,7 +333,7 @@ class TestGmailReconciliation:
     def test_sync_route_is_protected(self, client: TestClient) -> None:
         assert client.post("/api/google/sync").status_code == 403
 
-    def test_sync_route_is_a_safe_offline_noop_and_projects_health(
+    def test_sync_route_reports_unconnected_google_and_projects_health(
         self, client: TestClient
     ) -> None:
         response = client.post("/api/google/sync", headers=HEADERS)
@@ -323,13 +345,13 @@ class TestGmailReconciliation:
             "updated": 0,
             "dropped": 0,
             "skipped": 0,
-            "error": None,
+            "error": "Google is not connected for this account.",
         }
         gmail = body["view"]["gmail"]
         assert gmail["configured"] is False
         assert gmail["connected"] is False
         assert isinstance(gmail["last_checked"], str)
-        assert gmail["last_error"] is None
+        assert gmail["last_error"] == "Google is not connected for this account."
         assert gmail["imported"] == 0
         assert gmail["skipped"] == 0
 
@@ -347,6 +369,7 @@ class TestGmailReconciliation:
             end=dt.datetime(2026, 9, 10, 20, tzinfo=dt.UTC),
             cancelled=False,
         )
+        mark_calendar_connected(module)
         monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: [object()])
         monkeypatch.setattr(
             module.calendar,
@@ -379,6 +402,7 @@ class TestGmailReconciliation:
         import cooper.app as module
 
         messages = [object()]
+        mark_calendar_connected(module)
         monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: messages)
         current = EmailProposal(
             provider="meetup",
@@ -515,6 +539,7 @@ class TestGmailReconciliation:
         """An unparseable message or Gmail outage must not mutate the local plan."""
         import cooper.app as module
 
+        mark_calendar_connected(module)
         monkeypatch.setattr(module.gmail, "list_messages", lambda **_kwargs: [object()])
         monkeypatch.setattr(module, "parse_confirmation", lambda _message, **_kwargs: None)
         skipped = module.sync_gmail_once("local")
@@ -781,6 +806,188 @@ class TestRequestOwnership:
         assert prompts
         assert "owned report" in prompts[0]
         assert "local secret" not in prompts[0]
+
+    def test_firebase_connect_rejects_before_calendar_consent_url(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            calls: list[str] = []
+            monkeypatch.setattr(
+                module.calendar,
+                "consent_url",
+                lambda state: calls.append(state) or "https://accounts.example.test",
+            )
+
+            response = client.post("/api/google/connect", headers=auth_headers)
+
+        assert response.status_code == 409
+        assert calls == []
+
+    def test_firebase_sync_returns_safe_error_without_global_gmail(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            calls: list[dict[str, object]] = []
+            monkeypatch.setattr(
+                module.gmail,
+                "list_messages",
+                lambda **kwargs: calls.append(kwargs) or [],
+            )
+
+            response = client.post("/api/google/sync", headers=auth_headers)
+            health = module.store.get_setting("firebase-user", module.GMAIL_SETTING)
+
+        assert response.status_code == 200
+        assert response.json()["summary"] == {
+            "created": 0,
+            "updated": 0,
+            "dropped": 0,
+            "skipped": 0,
+            "error": "Google is not connected for this account.",
+        }
+        assert health["last_error"] == "Google is not connected for this account."
+        assert calls == []
+
+    def test_firebase_disconnect_clears_setting_without_global_calendar(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            module.store.set_setting(
+                "firebase-user", module.GOOGLE_SETTING, {"token": "owned-token"}
+            )
+            module.store.set_setting("local", module.GOOGLE_SETTING, {"token": "local-token"})
+            calls: list[str] = []
+            monkeypatch.setattr(module.calendar, "revoke", lambda: calls.append("revoke"))
+            monkeypatch.setattr(
+                module.calendar, "load_token", lambda token: calls.append(f"load:{token}")
+            )
+
+            response = client.post("/api/google/disconnect", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert module.store.get_setting("firebase-user", module.GOOGLE_SETTING) == {}
+        assert module.store.get_setting("local", module.GOOGLE_SETTING) == {"token": "local-token"}
+        assert calls == []
+
+    def test_firebase_item_action_does_not_remove_global_calendar_block(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            with module.store.session() as session:
+                item = module.Item(
+                    id=module.new_id(),
+                    owner_id="firebase-user",
+                    title="owned event",
+                    minutes=30,
+                    google_event_id="global-event",
+                    created_at=module.now(),
+                )
+                session.add(item)
+                item_id = item.id
+            calls: list[str] = []
+            monkeypatch.setattr(
+                module.calendar, "remove_block", lambda event_id: calls.append(event_id)
+            )
+
+            response = client.post(f"/api/items/{item_id}/complete", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert calls == []
+
+    def test_firebase_bulk_does_not_remove_global_calendar_blocks(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            item_ids: list[str] = []
+            with module.store.session() as session:
+                for index in range(2):
+                    item = module.Item(
+                        id=module.new_id(),
+                        owner_id="firebase-user",
+                        title=f"owned event {index}",
+                        minutes=30,
+                        google_event_id=f"global-event-{index}",
+                        created_at=module.now(),
+                    )
+                    session.add(item)
+                    item_ids.append(item.id)
+            calls: list[str] = []
+            monkeypatch.setattr(
+                module.calendar, "remove_block", lambda event_id: calls.append(event_id)
+            )
+
+            response = client.post(
+                "/api/bulk",
+                json={"verb": "complete", "ids": item_ids},
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        assert calls == []
+
+    def test_firebase_undo_does_not_remove_global_calendar_block(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            with module.store.session() as session:
+                item = module.Item(
+                    id=module.new_id(),
+                    owner_id="firebase-user",
+                    title="undo event",
+                    minutes=30,
+                    google_event_id="global-event",
+                    created_at=module.now(),
+                )
+                session.add(item)
+                session.flush()
+                module.store.record(
+                    session, "firebase-user", label="Added undo event", item=item, before=None
+                )
+            calls: list[str] = []
+            monkeypatch.setattr(
+                module.calendar, "remove_block", lambda event_id: calls.append(event_id)
+            )
+
+            response = client.post("/api/undo", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert calls == []
 
 
 class TestSecurity:
@@ -1143,6 +1350,52 @@ class TestGoogle:
         assert response.status_code == 200
         assert module.store.get_setting(module.settings.owner_id, module.GOOGLE_SETTING) == {}
         assert module.calendar.connected is False
+
+    def test_disconnect_without_a_loaded_local_token_skips_global_calendar(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        module.store.set_setting(
+            module.settings.owner_id, module.GOOGLE_SETTING, {"token": "sealed-token"}
+        )
+        calls: list[str] = []
+        monkeypatch.setattr(module.calendar, "revoke", lambda: calls.append("revoke"))
+        monkeypatch.setattr(
+            module.calendar,
+            "load_token",
+            lambda token: calls.append(f"load:{token}"),
+        )
+
+        response = client.post("/api/google/disconnect", headers=HEADERS)
+
+        assert response.status_code == 200
+        assert module.store.get_setting(module.settings.owner_id, module.GOOGLE_SETTING) == {}
+        assert calls == []
+
+    def test_disconnect_with_a_loaded_local_token_still_uses_calendar(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        mark_calendar_connected(module)
+        module.store.set_setting(
+            module.settings.owner_id, module.GOOGLE_SETTING, {"token": "sealed-token"}
+        )
+        calls: list[str] = []
+        monkeypatch.setattr(module.calendar, "revoke", lambda: calls.append("revoke"))
+
+        def load_token(token: str | None) -> None:
+            calls.append(f"load:{token}")
+            module.calendar._refresh_token = None
+
+        monkeypatch.setattr(module.calendar, "load_token", load_token)
+
+        response = client.post("/api/google/disconnect", headers=HEADERS)
+
+        assert response.status_code == 200
+        assert module.store.get_setting(module.settings.owner_id, module.GOOGLE_SETTING) == {}
+        assert calls == ["revoke", "load:None"]
 
     def test_everything_works_with_the_calendar_off(self, client: TestClient) -> None:
         body = say(client, "write the report, 60m")

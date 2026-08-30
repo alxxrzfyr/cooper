@@ -43,6 +43,7 @@ SECRET_HEADER = "X-Cooper-Key"
 HOURS_SETTING = "hours"
 GOOGLE_SETTING = "google"
 GMAIL_SETTING = "gmail"
+GOOGLE_NOT_CONNECTED = "Google is not connected for this account."
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -294,6 +295,11 @@ def sync_gmail_once(owner_id: str) -> SyncSummary:
     receives the small proposal shape and is the one database writer for Gmail-backed Items.
     """
     checked_at = now()
+    if not _calendar_connected(owner_id):
+        summary = SyncSummary(error=GOOGLE_NOT_CONNECTED)
+        _record_gmail_health(owner_id, checked_at, summary)
+        return summary
+
     try:
         messages = gmail.list_messages(
             after=(
@@ -823,7 +829,7 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
         payload = item.to_dict()
         event_id = item.google_event_id if item.status != "open" else None
 
-    if event_id:
+    if event_id and _calendar_connected(owner_id):
         with contextlib.suppress(CalendarError):
             calendar.remove_block(event_id)
 
@@ -893,7 +899,7 @@ def undo_last(owner_id: str) -> dict[str, Any]:
             if item is not None:
                 event_id = item.google_event_id
                 session.delete(item)
-                if event_id:
+                if event_id and _calendar_connected(owner_id):
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
         elif change.item_id:
@@ -905,7 +911,7 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                 item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
-                if item.google_event_id:
+                if item.google_event_id and _calendar_connected(owner_id):
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(item.google_event_id)
                 item.start_at = None
@@ -929,7 +935,7 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                     continue
                 event_id = item.google_event_id
                 session.delete(item)
-                if event_id:
+                if event_id and _calendar_connected(owner_id):
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
 
@@ -1083,9 +1089,10 @@ def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
         # One change row for the batch: undo puts the whole set back in a single step.
         store.record(session, owner_id, label=label, item=None, before={"bulk": before})
 
-    for event_id in done_google:
-        with contextlib.suppress(CalendarError):
-            calendar.remove_block(event_id)
+    if _calendar_connected(owner_id):
+        for event_id in done_google:
+            with contextlib.suppress(CalendarError):
+                calendar.remove_block(event_id)
 
     kind = "completed" if body.verb == "complete" else "dropped"
     return {
@@ -1213,7 +1220,9 @@ def changes(request: Request) -> dict[str, Any]:
 
 @app.post("/api/google/connect")
 def connect(request: Request) -> dict[str, str]:
-    request_owner(request)
+    owner_id = request_owner(request).uid
+    if settings.auth_mode != "local" or owner_id != settings.owner_id:
+        raise HTTPException(status_code=409, detail="Google connection is local-only for now.")
     state = secrets.token_urlsafe(16)
     app.state.oauth_state = state
     try:
@@ -1246,14 +1255,13 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 @app.post("/api/google/disconnect")
 def disconnect(request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
-    try:
-        calendar.revoke()
-    except CalendarError:
-        pass
-    finally:
-        store.set_setting(owner_id, GOOGLE_SETTING, {})
-        if owner_id == settings.owner_id:
-            calendar.load_token(None)
+    connected = _calendar_connected(owner_id)
+    if connected:
+        with contextlib.suppress(CalendarError):
+            calendar.revoke()
+    store.set_setting(owner_id, GOOGLE_SETTING, {})
+    if connected:
+        calendar.load_token(None)
     return {"view": today_view(owner_id)}
 
 
