@@ -237,9 +237,6 @@ export default function App() {
 
   const shortlist = view?.shortlist ?? [];
   const scheduled = view?.scheduled ?? [];
-  /** Anything still without a time. A new task is booked on the spot, so this is usually empty. */
-  const unbooked = shortlist.filter((item) => item.start_at === null);
-  const top = shortlist[0];
   const hours = view?.hours;
 
   return (
@@ -304,87 +301,6 @@ export default function App() {
             }}
             onExample={(example) => void say(example)}
           />
-        )}
-
-        {tab === "plan" && (
-          <div className="scroll">
-            <h1 className="largetitle">
-              Plan
-              <span className="largetitle__sub">
-                {shortlist.length === 0
-                  ? "Nothing yet"
-                  : `${shortlist.length} to do · ${scheduled.length} booked`}
-              </span>
-            </h1>
-
-            {top && (
-              <section className="hero">
-                <Mascot name="cooper_laptop" size="md" decorative />
-                <div className="hero__body">
-                  <span className="hero__eyebrow">Up next</span>
-                  <h2 className="hero__title">{top.title}</h2>
-                  <span className="hero__meta">
-                    {[top.minutes ? `${top.minutes} min` : null, why(top)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--accent"
-                  disabled={busy}
-                  onClick={() => void act(() => api.act(top.id, "complete"))}
-                >
-                  Done
-                </button>
-              </section>
-            )}
-
-            {shortlist.length > 0 && (
-              <section className="group">
-                <div className="group__label">
-                  To do<span className="group__note">soonest first</span>
-                </div>
-                <div className="inset">
-                  {shortlist.map((item) => (
-                    <Row
-                      key={item.id}
-                      item={item}
-                      today={view?.today ?? ""}
-                      busy={busy}
-                      onComplete={() =>
-                        void act(() => api.act(item.id, "complete"))
-                      }
-                      onOpen={() => setDetail(item)}
-                    />
-                  ))}
-                </div>
-                {unbooked.length > 0 && (
-                  <button
-                    type="button"
-                    className="btn btn--accent btn--full"
-                    disabled={busy}
-                    onClick={() => void act(() => api.schedule())}
-                  >
-                    Put {unbooked.length === 1 ? "it" : `${unbooked.length}`} in
-                    my calendar
-                  </button>
-                )}
-              </section>
-            )}
-
-            {shortlist.length === 0 && (
-              <section className="empty">
-                <Mascot name="cooper_painting" size="lg" decorative />
-                <h2 className="empty__title">Nothing to do</h2>
-                <p className="empty__text">
-                  {scheduled.length > 0
-                    ? "Everything is booked. Have a look at the Calendar."
-                    : "Say something in Chat and it will show up here, ranked and ready to book."}
-                </p>
-              </section>
-            )}
-          </div>
         )}
 
         {tab === "calendar" && view && (

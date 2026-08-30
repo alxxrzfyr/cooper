@@ -1,11 +1,10 @@
 import { Mascot } from "./Mascot";
 
-export type Tab = "home" | "chat" | "plan" | "calendar" | "settings";
+export type Tab = "home" | "chat" | "calendar" | "settings";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: "home", label: "Home", glyph: "◈" },
   { id: "chat", label: "Chat", glyph: "◍" },
-  { id: "plan", label: "Plan", glyph: "◎" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
@@ -36,7 +35,8 @@ export function Nav({
   onUndo: () => void;
 }) {
   function count(tab: Tab): number {
-    if (tab === "plan") return todo;
+    // Home is where the open tasks live now, so it carries the count the Plan tab used to.
+    if (tab === "home") return todo;
     if (tab === "calendar") return booked;
     return 0;
   }

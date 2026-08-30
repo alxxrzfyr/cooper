@@ -31,8 +31,8 @@ Four things, and deliberately nothing else:
 3. **Get it booked.** The top of that list lands in real time, inside hours you chose.
 4. **Change your mind.** Undo the last thing.
 
-Five screens: **Home** (your day at a glance, and where it opens), **Chat** (where you talk to
-it), **Plan** (what to do, ranked), **Calendar** (a day, week or month of what's booked),
+Four screens: **Home** (your day at a glance, where it opens, and the full ranked list),
+**Chat** (where you talk to it), **Calendar** (a day, week or month of what's booked),
 **Settings**.
 
 Light by default, because a calendar is a document. Dark and "follow my machine" are both one tap
@@ -48,8 +48,8 @@ A **task** has no time yet — just a size and a deadline. `write the report, 90
 tells you what and when-by, but not *when*. So tasks wait in a ranked list until you say
 "plan my day", and then Cooper finds real gaps in your working hours and drops them in.
 
-That's why there's a list *and* a calendar. The list is what you owe. The calendar is when you
-pay it.
+That's why there's a list *and* a calendar. The list lives on Home, ranked, and the calendar is
+when you pay it. The list is what you owe; the calendar is when you pay it.
 
 An errand is just a task you never sized. `buy milk` gets ranked and shown, and never eats a
 calendar block, because Cooper skips anything with no estimate rather than inventing one.

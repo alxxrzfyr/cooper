@@ -127,6 +127,7 @@ export function Home({
     (item) => item.due !== null && item.due.slice(0, 10) <= today,
   );
   const unbooked = shortlist.filter((item) => item.start_at === null);
+  const scheduledCount = view.scheduled.filter((item) => item.start_at).length;
 
   const nothingAtAll = shortlist.length === 0 && strip.length === 0;
 
@@ -279,6 +280,35 @@ export function Home({
             Anything without a length is never given a block, so errands stay on
             the list rather than eating an hour.
           </p>
+        </section>
+      )}
+
+      {/*
+        The whole ranked list, absorbed from what used to be its own Plan tab. The three sections
+        above are today's slice of it — what is next, what is late, what is unbooked. This is the
+        rest: everything open, in score order, so the backlog has one home rather than a second
+        screen that mostly repeated this one.
+      */}
+      {shortlist.length > 0 && (
+        <section className="group">
+          <div className="group__label">
+            Everything, ranked
+            <span className="group__note">
+              {shortlist.length} open{scheduledCount > 0 ? ` · ${scheduledCount} booked` : ""}
+            </span>
+          </div>
+          <div className="inset">
+            {shortlist.map((item) => (
+              <Row
+                key={item.id}
+                item={item}
+                today={today}
+                busy={busy}
+                onComplete={() => onComplete(item.id)}
+                onOpen={() => onOpen(item)}
+              />
+            ))}
+          </div>
         </section>
       )}
     </div>

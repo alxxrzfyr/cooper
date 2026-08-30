@@ -500,9 +500,8 @@ describe("the list", () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    await user.click(await screen.findByRole("button", { name: /Open .*quarterly report/ }));
+    await user.click((await screen.findAllByRole("button", { name: /Open .*quarterly report/ }))[0]);
 
     const frame = await screen.findByRole("dialog", { name: "write the quarterly report" });
     // The facts that were spread across tags in the row are spelled out here.
@@ -513,9 +512,8 @@ describe("the list", () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
+    await user.click((await screen.findAllByRole("button", { name: /Open .* quarterly/ }))[0]);
 
     // It renders through a portal on purpose. Inside the app tree it sat under `.scroll`, whose
     // `> *` rule sets width: min(760px, 100%) on every child, so on a wide window the blur was a
@@ -529,8 +527,7 @@ describe("the list", () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
-    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
+    await user.click((await screen.findAllByRole("button", { name: /Open .* quarterly/ }))[0]);
 
     await user.keyboard("{Escape}");
 
@@ -541,9 +538,8 @@ describe("the list", () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    await user.click(await screen.findByRole("button", { name: /Mark .* done/ }));
+    await user.click((await screen.findAllByRole("button", { name: /Mark .* done/ }))[0]);
 
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes("/complete"))).toBe(true),
@@ -554,8 +550,7 @@ describe("the list", () => {
     const calls = stub({});
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
-    await user.click(await screen.findByRole("button", { name: /Open .* quarterly/ }));
+    await user.click((await screen.findAllByRole("button", { name: /Open .* quarterly/ }))[0]);
 
     await user.click(await screen.findByRole("button", { name: "Pin" }));
 
@@ -565,10 +560,8 @@ describe("the list", () => {
   test("an overdue task is called out", async () => {
     stub({ view: view({ shortlist: [ranked({ due: "2020-01-01T00:00:00+00:00" })] }) });
     render(<App />);
-    const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    expect(await screen.findByText("overdue")).toBeInTheDocument();
+    expect(await screen.findAllByText("overdue")).not.toHaveLength(0);
   });
 
   test("a booked task shows its time on the calendar tab", async () => {
@@ -589,13 +582,12 @@ describe("the list", () => {
   });
 
   test("leftover work can still be sent to the calendar", async () => {
-    const calls = stub({});
+    const calls = stub({ view: view({ shortlist: [ranked({ minutes: 45, start_at: null })] }) });
     render(<App />);
     const user = userEvent.setup();
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
 
-    // A new task is booked as it is added, so this button only appears for anything left over.
-    await user.click(await screen.findByRole("button", { name: /in my calendar/ }));
+    // On Home, an unbooked sized task offers "Plan my day" in the waiting-for-a-time section.
+    await user.click(await screen.findByRole("button", { name: /Plan my day/ }));
 
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes("/api/schedule"))).toBe(true),
@@ -676,7 +668,7 @@ describe("navigation", () => {
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    for (const label of ["Chat", "Plan", "Calendar", "Settings"]) {
+    for (const label of ["Home", "Chat", "Calendar", "Settings"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
   });
@@ -695,18 +687,16 @@ describe("navigation", () => {
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    expect(within(nav).getByRole("button", { name: /Plan/ })).toHaveTextContent("1");
+    expect(within(nav).getByRole("button", { name: /Home/ })).toHaveTextContent("1");
     expect(within(nav).getByRole("button", { name: /Calendar/ })).toHaveTextContent("1");
   });
 
-  test("an empty plan explains where things come from", async () => {
+  test("an empty home explains where things come from", async () => {
     stub({ view: view({ shortlist: [], scheduled: [] }) });
     render(<App />);
-    const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Plan/ }))[0]);
-
-    expect(await screen.findByText("Nothing to do")).toBeInTheDocument();
+    // Home is the landing screen, so no navigation is needed to see the empty state.
+    expect(await screen.findByText("Nothing on today")).toBeInTheDocument();
   });
 });
 
