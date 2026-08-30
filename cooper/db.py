@@ -226,6 +226,10 @@ class Store:
         )
         return list(session.scalars(statement))
 
+    def get_item(self, session: Session, owner_id: str, item_id: str) -> Item | None:
+        statement = select(Item).where(Item.owner_id == owner_id, Item.id == item_id).limit(1)
+        return session.scalars(statement).first()
+
     def record(
         self,
         session: Session,

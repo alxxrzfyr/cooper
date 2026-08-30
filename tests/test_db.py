@@ -50,6 +50,16 @@ def test_open_items_are_scoped_by_owner(store: Store) -> None:
         assert [item.title for item in store.open_items(session, "u2")] == ["theirs"]
 
 
+def test_get_item_is_scoped_by_owner(store: Store) -> None:
+    item_id = new_id()
+    with store.session() as session:
+        session.add(Item(id=item_id, owner_id="u1", title="mine"))
+
+    with store.session() as session:
+        assert store.get_item(session, "u1", item_id) is not None
+        assert store.get_item(session, "u2", item_id) is None
+
+
 def test_last_change_is_scoped_by_owner(store: Store) -> None:
     with store.session() as session:
         mine = Item(id=new_id(), owner_id="u1", title="mine")

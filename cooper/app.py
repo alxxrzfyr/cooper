@@ -599,7 +599,7 @@ def add(action: Action) -> dict[str, Any]:
                 end=action.end,
             )
             with store.session() as session:
-                stored = session.get(Item, payload["id"])
+                stored = store.get_item(session, settings.owner_id, payload["id"])
                 if stored:
                     stored.google_event_id = event_id
         except CalendarError as error:
@@ -655,7 +655,7 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
     busy = busy_windows()
 
     with store.session() as session:
-        item = session.get(Item, item_id)
+        item = store.get_item(session, settings.owner_id, item_id)
         if item is None or not _is_local_item(item) or item.start_at is not None:
             return None
 
@@ -678,7 +678,7 @@ def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str,
                 end=slot.end,
             )
             with store.session() as session:
-                stored = session.get(Item, item_id)
+                stored = store.get_item(session, settings.owner_id, item_id)
                 if stored:
                     stored.google_event_id = event_id
                     payload = stored.to_dict()
@@ -734,7 +734,11 @@ def add_batch(action: Action) -> dict[str, Any]:
             item=None,
             before={"batch": created},
         )
-        payloads = {item_id: session.get(Item, item_id).to_dict() for item_id in created}  # type: ignore[union-attr]
+        payloads = {}
+        for item_id in created:
+            item = store.get_item(session, settings.owner_id, item_id)
+            if item is not None:
+                payloads[item_id] = item.to_dict()
 
     booked: list[dict[str, Any]] = []
     for item_id in created:
@@ -768,7 +772,9 @@ def add_batch(action: Action) -> dict[str, Any]:
 def change_existing(action: Action, *, item_id: str | None = None) -> dict[str, Any]:
     with store.session() as session:
         item = (
-            session.get(Item, item_id) if item_id is not None else find(session, action.which or "")
+            store.get_item(session, settings.owner_id, item_id)
+            if item_id is not None
+            else find(session, action.which or "")
         )
         if item is None or item.status != "open":
             return {
@@ -819,7 +825,7 @@ def schedule_now() -> list[Slot]:
         if not slots:
             return []
         for slot in slots:
-            item = session.get(Item, slot.item_id)
+            item = store.get_item(session, settings.owner_id, slot.item_id)
             if item is None:
                 continue
             item.start_at = slot.start
@@ -842,7 +848,7 @@ def schedule_now() -> list[Slot]:
                     end=slot.end,
                 )
                 with store.session() as session:
-                    item = session.get(Item, slot.item_id)
+                    item = store.get_item(session, settings.owner_id, slot.item_id)
                     if item:
                         item.google_event_id = event_id
             except CalendarError:
@@ -860,7 +866,7 @@ def undo_last() -> dict[str, Any]:
         before = change.before or {}
         if change.item_id and not before:
             # The change created the item, so undoing means removing it.
-            item = session.get(Item, change.item_id)
+            item = store.get_item(session, settings.owner_id, change.item_id)
             if item is not None:
                 event_id = item.google_event_id
                 session.delete(item)
@@ -868,12 +874,12 @@ def undo_last() -> dict[str, Any]:
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
         elif change.item_id:
-            item = session.get(Item, change.item_id)
+            item = store.get_item(session, settings.owner_id, change.item_id)
             if item is not None:
                 _restore(item, before)
         elif "scheduled" in before:
             for item_id in before["scheduled"]:
-                item = session.get(Item, item_id)
+                item = store.get_item(session, settings.owner_id, item_id)
                 if item is None:
                     continue
                 if item.google_event_id:
@@ -885,14 +891,17 @@ def undo_last() -> dict[str, Any]:
         elif "bulk" in before:
             # A bulk complete or drop, restored item by item to exactly what each was before.
             for snapshot in before["bulk"]:
-                item = session.get(Item, snapshot.get("id"))
+                item_id = snapshot.get("id")
+                if not isinstance(item_id, str):
+                    continue
+                item = store.get_item(session, settings.owner_id, item_id)
                 if item is not None:
                     _restore(item, snapshot)
         elif "batch" in before:
             # A batch create: every step was a new item, so undo removes all of them, the same
             # as undoing a single add removes the one item it created.
             for item_id in before["batch"]:
-                item = session.get(Item, item_id)
+                item = store.get_item(session, settings.owner_id, item_id)
                 if item is None:
                     continue
                 event_id = item.google_event_id
@@ -1023,7 +1032,7 @@ def bulk(body: BulkIn) -> dict[str, Any]:
     with store.session() as session:
         before: list[dict[str, Any]] = []
         for item_id in body.ids:
-            item = session.get(Item, item_id)
+            item = store.get_item(session, settings.owner_id, item_id)
             if item is None or item.status != "open" or not _is_local_item(item):
                 continue
             before.append(item.to_dict())
@@ -1060,7 +1069,7 @@ def bulk(body: BulkIn) -> dict[str, Any]:
 @app.patch("/api/items/{item_id}")
 def edit(item_id: str, body: ItemIn) -> dict[str, Any]:
     with store.session() as session:
-        item = session.get(Item, item_id)
+        item = store.get_item(session, settings.owner_id, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
         _require_local_item(item)
@@ -1089,7 +1098,7 @@ def act(item_id: str, verb: str) -> dict[str, Any]:
     if verb not in ("complete", "drop", "pin"):
         raise HTTPException(status_code=404, detail="Unknown action.")
     with store.session() as session:
-        item = session.get(Item, item_id)
+        item = store.get_item(session, settings.owner_id, item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="No such item.")
         _require_local_item(item)
