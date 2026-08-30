@@ -104,8 +104,13 @@ async def request_validation_error(request: Request, exc: RequestValidationError
 @app.middleware("http")
 async def guard(request: Request, call_next: Any) -> Any:
     """Authenticate requests before any route code runs."""
-    if request.method == "OPTIONS" or request.url.path in ("/health", "/api/google/callback"):
+    if request.method == "OPTIONS" or request.url.path == "/health":
         return await call_next(request)
+
+    if request.url.path == "/api/google/callback":
+        if settings.auth_mode == "local":
+            return await call_next(request)
+        return JSONResponse({"detail": "Invalid authentication token"}, status_code=401)
 
     if settings.auth_mode == "local":
         supplied = request.headers.get(SECRET_HEADER, "")

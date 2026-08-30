@@ -793,6 +793,24 @@ class TestGoogle:
         assert response.status_code == 200
         assert "did not come from Cooper" in response.text
 
+    def test_callback_requires_auth_only_in_firebase_mode(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        local_response = client.get("/api/google/callback?code=abc&state=forged")
+        assert local_response.status_code == 200
+        assert "did not come from Cooper" in local_response.text
+
+        monkeypatch.setattr(module.settings, "auth_mode", "firebase")
+        monkeypatch.setattr(module.settings, "firebase_project_id", "project")
+        monkeypatch.setattr(module.settings, "allowed_emails", ("friend@example.com",))
+
+        firebase_response = client.get("/api/google/callback?code=abc&state=forged")
+
+        assert firebase_response.status_code == 401
+        assert firebase_response.json() == {"detail": "Invalid authentication token"}
+
     def test_a_callback_error_is_shown(self, client: TestClient) -> None:
         response = client.get("/api/google/callback?error=access_denied")
 
