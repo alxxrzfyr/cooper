@@ -3,9 +3,13 @@
 export type Kind = "task" | "event";
 export type Category = "academics" | "work" | "organizations" | "personal";
 export type Status = "open" | "done" | "dropped";
+export type ItemSource = "me" | "gmail";
 
 export interface Item {
   id: string;
+  owner_id: string;
+  source: ItemSource;
+  source_ref: string | null;
   kind: Kind;
   title: string;
   notes: string | null;
@@ -53,6 +57,24 @@ export interface CalendarEvent {
   end_at: string;
   category: Category;
   mine: boolean;
+  source: "google" | "gmail";
+}
+
+export interface GmailHealth {
+  configured: boolean;
+  connected: boolean;
+  last_checked: string | null;
+  last_error: string | null;
+  imported: number;
+  skipped: number;
+}
+
+export interface SyncSummary {
+  created: number;
+  updated: number;
+  dropped: number;
+  skipped: number;
+  error: string | null;
 }
 
 export interface View {
@@ -66,6 +88,7 @@ export interface View {
   undo: string | null;
   using_model: boolean;
   calendar: { configured: boolean; connected: boolean; email: string | null };
+  gmail: GmailHealth;
 }
 
 /**

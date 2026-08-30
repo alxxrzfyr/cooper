@@ -345,7 +345,7 @@ function ModeSwitch({
           className="modeswitch__opt"
           aria-pressed={mode === "ai"}
           disabled={!canUseAi}
-          title={canUseAi ? undefined : "Set COOPER_GEMINI_API_KEY to use AI mode"}
+          title={canUseAi ? undefined : "Add your Gemini API key in Settings to use AI mode"}
           onClick={() => onMode("ai")}
         >
           AI
@@ -353,7 +353,7 @@ function ModeSwitch({
       </div>
       <span className="modebar__hint">
         {!canUseAi
-          ? "No model key, so Manual is the only mode"
+          ? "No model key, so Manual is the only mode. Add your Gemini key in Settings to use AI."
           : mode === "manual"
             ? "Offline rules. No quota spent."
             : "Ask about your tasks. Uses your daily quota."}
@@ -401,14 +401,14 @@ const EXAMPLES: Record<Mode, string[]> = {
 function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) => void }) {
   return (
     <div className="opening">
-      <Mascot name="cooper_waving" size="lg" decorative />
+      <Mascot name={mode === "ai" ? "cooper_thinking" : "cooper_waving"} size="lg" decorative />
       <h2 className="opening__title">
         {mode === "manual" ? "Just tell me what’s on your plate" : "Ask me about your tasks"}
       </h2>
       <p className="opening__text">
         {mode === "manual"
           ? "Write it the way you’d say it out loud. I’ll work out the task, the time, and what deserves doing first."
-          : "I can only talk about your own tasks and time. Anything else and I’ll say so."}
+          : "I’m Cooper, your cheerful otter. Ask about your own tasks and time. Anything else and I’ll say so."}
       </p>
       <div className="examples">
         {EXAMPLES[mode].map((example) => (

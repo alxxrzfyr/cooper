@@ -36,7 +36,7 @@ interface Entry {
   title: string;
   start: Date;
   end: Date;
-  source: "cooper" | "google";
+  source: "cooper" | "google" | "gmail";
   category: Category;
   item?: Item;
 }
@@ -133,25 +133,26 @@ function agenda(scheduled: Item[], events: CalendarEvent[]): Entry[] {
 
   for (const item of scheduled) {
     if (!item.start_at) continue;
+    const source = item.source === "gmail" ? "gmail" : "cooper";
     entries.push({
       key: `c-${item.id}`,
       title: item.title,
       start: new Date(item.start_at),
       end: new Date(item.end_at ?? item.start_at),
-      source: "cooper",
+      source,
       category: item.category,
-      item,
+      item: source === "cooper" ? item : undefined,
     });
   }
 
   for (const event of events) {
     if (event.mine) continue;
     entries.push({
-      key: `g-${event.start_at}-${event.title}`,
+      key: `${event.source}-${event.start_at}-${event.title}`,
       title: event.title,
       start: new Date(event.start_at),
       end: new Date(event.end_at),
-      source: "google",
+      source: event.source,
       category: event.category,
     });
   }
@@ -184,7 +185,7 @@ function saveMode(mode: Mode): void {
  * Three ranges, because the question changes with the range: a day answers "what now", a week
  * answers "how full am I", a month answers "when is that thing". Colour comes from the item's
  * category rather than its source, so the shape of a week is readable at a glance; entries
- * Cooper placed are filled, ones from your own calendar are outlined.
+ * Cooper placed are filled, ones from Google Calendar or Gmail are outlined.
  */
 export function Calendar({
   view,
@@ -321,7 +322,7 @@ export function Calendar({
     );
   }
 
-  /** A block in a timed grid. Actions only on Cooper's own, since Google's are not ours to edit. */
+  /** A block in a timed grid. External Google and Gmail entries are not ours to edit. */
   /**
    * One entry on the grid. The whole thing opens its detail frame, where the actions live.
    * They used to be two icon buttons crammed inside the block, which on a week grid left about
@@ -333,7 +334,7 @@ export function Calendar({
     }`;
 
     if (!entry.item) {
-      // A Google event Cooper did not create. Nothing to act on, so it is not a button.
+      // An external event Cooper did not create. Nothing to act on, so it is not a button.
       return (
         <div
           className={`slot slot--${entry.source} cat--${entry.category}`}
@@ -342,7 +343,9 @@ export function Calendar({
         >
           <span className="slot__time">{clock(entry.start)}</span>
           <span className="slot__title">{entry.title}</span>
-          {compact ? null : <span className="slot__from">Google</span>}
+          {compact ? null : (
+            <span className="slot__from">{entry.source === "gmail" ? "Gmail" : "Google"}</span>
+          )}
         </div>
       );
     }
@@ -469,7 +472,7 @@ export function Calendar({
         {legend}
         <p className="hint">
           Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
-          placed; outlined ones came from your calendar.
+          placed; outlined ones came from Google Calendar or Gmail.
         </p>
       </footer>
 

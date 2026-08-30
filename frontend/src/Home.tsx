@@ -47,7 +47,7 @@ interface Entry {
   title: string;
   start: Date;
   end: Date;
-  source: "cooper" | "google";
+  source: "cooper" | "google" | "gmail";
   category: Item["category"];
   item?: Item;
 }
@@ -65,14 +65,15 @@ function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): 
     if (!item.start_at) continue;
     const start = new Date(item.start_at);
     if (localDay(start) !== today) continue;
+    const source = item.source === "gmail" ? "gmail" : "cooper";
     entries.push({
       key: `c-${item.id}`,
       title: item.title,
       start,
       end: new Date(item.end_at ?? item.start_at),
-      source: "cooper",
+      source,
       category: item.category,
-      item,
+      item: source === "cooper" ? item : undefined,
     });
   }
 
@@ -81,11 +82,11 @@ function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): 
     const start = new Date(event.start_at);
     if (localDay(start) !== today) continue;
     entries.push({
-      key: `g-${event.start_at}-${event.title}`,
+      key: `${event.source}-${event.start_at}-${event.title}`,
       title: event.title,
       start,
       end: new Date(event.end_at),
-      source: "google",
+      source: event.source,
       category: event.category,
     });
   }
@@ -110,7 +111,9 @@ export function Home({
 }) {
   const today = view.today;
   const now = new Date(view.now);
-  const shortlist = view.shortlist;
+  // Imported Gmail confirmations are commitments, not Cooper-owned work. They belong in the
+  // agenda, but never in a list with Done/Pin/Delete actions.
+  const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
   const next = shortlist[0];
 
   const strip = todayStrip(view.scheduled, view.events, today);
@@ -119,7 +122,9 @@ export function Home({
 
   const attention = shortlist.filter((item) => item.due !== null && item.due.slice(0, 10) <= today);
   const unbooked = shortlist.filter((item) => item.start_at === null);
-  const scheduledCount = view.scheduled.filter((item) => item.start_at).length;
+  const scheduledCount = view.scheduled.filter(
+    (item) => item.start_at && item.source !== "gmail",
+  ).length;
 
   const nothingAtAll = shortlist.length === 0 && strip.length === 0;
 
@@ -199,7 +204,8 @@ export function Home({
                   <span className="slot__title">{entry.title}</span>
                 </button>
               ) : (
-                // Someone else's event. Nothing to act on, so not a button.
+                // External commitments are facts, not Cooper-owned work. Nothing to act on, so
+                // they are not buttons.
                 <div
                   key={entry.key}
                   className={`slot slot--${entry.source} cat--${entry.category}`}
@@ -207,7 +213,9 @@ export function Home({
                 >
                   <span className="slot__time">{clock(entry.start)}</span>
                   <span className="slot__title">{entry.title}</span>
-                  <span className="slot__from">Google</span>
+                  <span className="slot__from">
+                    {entry.source === "gmail" ? "Gmail" : "Google"}
+                  </span>
                 </div>
               ),
             )}

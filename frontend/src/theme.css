@@ -1346,6 +1346,32 @@ select {
   width: 76px;
 }
 
+.field--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.field--stacked .field__label {
+  flex: none;
+}
+
+.field--stacked input {
+  width: 100%;
+  text-align: left;
+}
+
+.field__secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field__secret input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Every select in the app — Settings' working hours and the Manual form alike — gets the same
    reset and one drawn chevron. Native dropdown arrows differ on every platform, which is the
    inconsistency this removes. Defined once here so the two screens can never drift apart. */
@@ -1398,6 +1424,11 @@ select {
   font-size: 12.5px;
   padding: 0 4px;
   margin: 0;
+}
+
+.hint--error {
+  color: var(--tone-bad);
+  font-weight: 600;
 }
 
 .visually-hidden {
@@ -1544,10 +1575,16 @@ button.slot:active {
   color: #fff;
 }
 
-.slot--google {
+.slot--google,
+.slot--gmail {
   background: color-mix(in srgb, var(--cat-line, var(--accent)) 12%, transparent);
   border: 1.5px solid var(--cat-line, var(--hair));
   color: var(--text);
+}
+
+.slot--gmail {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--cat-line, var(--accent)) 8%, transparent);
 }
 
 .slot__time {
@@ -1581,7 +1618,8 @@ button.slot:active {
   flex: none;
 }
 
-.slot--google .slot__from {
+.slot--google .slot__from,
+.slot--gmail .slot__from {
   color: var(--cat-line);
 }
 
@@ -1887,10 +1925,17 @@ button.slot:active {
   color: #fff;
 }
 
-.pill--google {
+.pill--google,
+.pill--gmail {
   background: color-mix(in srgb, var(--cat-line) 14%, transparent);
   color: var(--text);
   box-shadow: inset 2px 0 0 var(--cat-line);
+}
+
+.pill--gmail {
+  border: 1px dashed var(--cat-line);
+  background: color-mix(in srgb, var(--cat-line) 8%, transparent);
+  box-shadow: none;
 }
 
 .monthcell__more {

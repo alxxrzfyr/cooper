@@ -5,9 +5,21 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import type { CalendarEvent, Item, Ranked, Reply, View } from "./types";
 
+interface GmailHealthFixture {
+  configured: boolean;
+  connected: boolean;
+  last_checked: string | null;
+  last_error: string | null;
+  imported: number;
+  skipped: number;
+}
+
 function ranked(overrides: Partial<Ranked> = {}): Ranked {
   return {
     id: "a1",
+    owner_id: "local",
+    source: "me",
+    source_ref: null,
     kind: "task",
     title: "write the quarterly report",
     notes: null,
@@ -44,6 +56,14 @@ function view(overrides: Partial<View> = {}): View {
     undo: null,
     using_model: false,
     calendar: { configured: false, connected: false, email: null },
+    gmail: {
+      configured: false,
+      connected: false,
+      last_checked: null,
+      last_error: null,
+      imported: 0,
+      skipped: 0,
+    },
     ...overrides,
   };
 }
@@ -125,6 +145,12 @@ function stub(routes: Routes) {
       if (url.includes("/api/schedule")) {
         return json({ placed: [{ item_id: "a1" }], view: currentView });
       }
+      if (url.includes("/api/google/sync")) {
+        return json({
+          summary: { created: 0, updated: 0, dropped: 0, skipped: 0, error: null },
+          view: currentView,
+        });
+      }
       if (url.includes("/api/undo")) {
         return json(withView(reply({ kind: "undone", message: "Undid: Added." })));
       }
@@ -181,6 +207,24 @@ describe("first impression", () => {
     expect(screen.getByRole("button", { name: /most urgent thing/i })).toBeInTheDocument();
   });
 
+  test("empty AI chat uses a different mascot from empty Home", async () => {
+    stub({ view: view({ shortlist: [], using_model: true }) });
+    render(<App />);
+
+    expect(await screen.findByText("Nothing on today")).toBeInTheDocument();
+    expect(document.querySelector(".empty .mascot")).toHaveAttribute(
+      "src",
+      "/assets/mascot/cooper_waving.webp",
+    );
+
+    await openAi();
+
+    expect(document.querySelector(".opening .mascot")).toHaveAttribute(
+      "src",
+      "/assets/mascot/cooper_thinking.webp",
+    );
+  });
+
   test("tapping an example sends it", async () => {
     const calls = stub({ view: view({ shortlist: [], using_model: true }) });
     render(<App />);
@@ -210,6 +254,22 @@ describe("first impression", () => {
 
     expect(await screen.findByText("Offline rules")).toBeInTheDocument();
     expect(screen.getByText(/Works fine without a key/)).toBeInTheDocument();
+  });
+
+  test("stores a Gemini key in this browser and reports AI as available", async () => {
+    const calls = stub({ view: view({ using_model: false }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+
+    const key = await screen.findByLabelText("Gemini API key");
+    await user.type(key, "AIza-browser-key");
+
+    expect(localStorage.getItem("cooper.gemini_key.v1")).toBe("AIza-browser-key");
+    await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+    expect(await screen.findByRole("button", { name: "AI" })).not.toBeDisabled();
+    expect(calls.every((call) => !call.body?.gemini_api_key)).toBe(true);
   });
 });
 
@@ -254,6 +314,21 @@ describe("manual and ai", () => {
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
 
     expect(calls.find((call) => call.url.includes("/api/say"))?.body.mode).toBe("ai");
+  });
+
+  test("sends the browser key only with an AI sentence", async () => {
+    const calls = stub({ view: view({ using_model: false }) });
+    localStorage.setItem("cooper.gemini_key.v1", "AIza-browser-key");
+    render(<App />);
+    const user = await openAi();
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+
+    expect(calls.find((call) => call.url.includes("/api/say"))?.body).toEqual({
+      text: "what is next",
+      mode: "ai",
+      gemini_api_key: "AIza-browser-key",
+    });
   });
 
   test("with no model key, AI cannot be chosen", async () => {
@@ -722,6 +797,7 @@ describe("the calendar", () => {
       end_at: "2026-08-31T01:15:00+00:00",
       category: "personal",
       mine: false,
+      source: "google",
       ...overrides,
     };
   }
@@ -976,6 +1052,143 @@ describe("google calendar", () => {
   });
 });
 
+describe("gmail confirmations", () => {
+  function withGmail(viewValue: View, gmail: GmailHealthFixture): View {
+    return { ...viewValue, gmail } as View;
+  }
+
+  function gmailItem(overrides: Partial<Item> = {}): Item {
+    return {
+      ...ranked(),
+      id: "gmail-1",
+      kind: "event",
+      title: "Design conference",
+      minutes: null,
+      start_at: "2026-08-31T04:00:00+00:00",
+      end_at: "2026-08-31T05:00:00+00:00",
+      source: "gmail",
+      source_ref: "event-1",
+      ...overrides,
+    } as Item;
+  }
+
+  test("settings explains when Gmail is offline and unconfigured", async () => {
+    stub({
+      view: withGmail(view(), {
+        configured: false,
+        connected: false,
+        last_checked: null,
+        last_error: null,
+        imported: 0,
+        skipped: 0,
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+
+    expect(await screen.findByText("Gmail confirmations")).toBeInTheDocument();
+    expect(screen.getByText(/Not configured/)).toBeInTheDocument();
+    expect(screen.getByText(/works without Google/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeDisabled();
+  });
+
+  test("a connected Gmail account can be synced from settings", async () => {
+    const calls = stub({
+      view: withGmail(
+        view({ calendar: { configured: true, connected: true, email: "me@example.com" } }),
+        {
+          configured: true,
+          connected: true,
+          last_checked: null,
+          last_error: null,
+          imported: 0,
+          skipped: 0,
+        },
+      ),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Sync now" }));
+
+    await waitFor(() => {
+      expect(
+        calls.some((call) => call.url.includes("/api/google/sync") && call.method === "POST"),
+      ).toBe(true);
+    });
+  });
+
+  test("settings shows Gmail's last check and isolated errors", async () => {
+    stub({
+      view: withGmail(view(), {
+        configured: true,
+        connected: true,
+        last_checked: "2026-08-30T05:10:00+00:00",
+        last_error: "Gmail could not be reached.",
+        imported: 2,
+        skipped: 1,
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+
+    expect(await screen.findByText(/Last checked/)).toBeInTheDocument();
+    expect(screen.getByText("Gmail could not be reached.")).toBeInTheDocument();
+    expect(screen.getByText(/2 imported/)).toBeInTheDocument();
+  });
+
+  test("Gmail commitments are outlined and read-only on the dashboard", async () => {
+    const item = gmailItem();
+    stub({
+      view: withGmail(view({ shortlist: [item as Ranked], scheduled: [item] }), {
+        configured: true,
+        connected: true,
+        last_checked: null,
+        last_error: null,
+        imported: 1,
+        skipped: 0,
+      }),
+    });
+    render(<App />);
+
+    const title = await screen.findByText("Design conference");
+    expect(screen.getAllByText("Design conference")).toHaveLength(1);
+    expect(title.closest("button")).toBeNull();
+    expect(title.closest(".slot")).toHaveClass("slot--gmail");
+    expect(title.closest(".slot")).toHaveTextContent("Gmail");
+    expect(screen.queryByRole("button", { name: /Mark .* done/i })).not.toBeInTheDocument();
+  });
+
+  test("Gmail commitments stay read-only in Calendar", async () => {
+    const item = gmailItem({ title: "Gmail meetup" });
+    stub({
+      view: withGmail(view({ shortlist: [], scheduled: [item] }), {
+        configured: true,
+        connected: true,
+        last_checked: null,
+        last_error: null,
+        imported: 1,
+        skipped: 0,
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
+
+    const title = await screen.findByText("Gmail meetup");
+    expect(title.closest("button")).toBeNull();
+    expect(title.closest(".slot")).toHaveClass("slot--gmail");
+    expect(title.closest(".slot")).toHaveTextContent("Gmail");
+    expect(screen.queryByRole("button", { name: /Done/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("the mascot", () => {
   test("the wordmark is real text, so it reads in both themes", async () => {
     // The supplied logo webp has dark ink baked in and vanished on black. Text inherits the
@@ -985,6 +1198,20 @@ describe("the mascot", () => {
 
     // Rendered twice on purpose: once in the top bar, once in the wide-screen rail.
     expect((await screen.findAllByText("Cooper")).length).toBe(2);
+  });
+
+  test("header identity mascots fit beside the Cooper wordmark", async () => {
+    stub({});
+    render(<App />);
+
+    await screen.findByText("Cooper");
+
+    const identityMascots = document.querySelectorAll(".who .mascot");
+    expect(identityMascots).toHaveLength(2);
+    for (const mascot of identityMascots) {
+      expect(mascot).toHaveClass("mascot--xs");
+      expect(mascot).not.toHaveClass("mascot--sm");
+    }
   });
 
   test("every mascot image resolves and is contained", async () => {
@@ -1060,6 +1287,7 @@ describe("the dashboard", () => {
             end_at: atLocal(TODAY, 16),
             category: "personal",
             mine: false,
+            source: "google",
           },
         ],
       }),
@@ -1085,6 +1313,7 @@ describe("the dashboard", () => {
             end_at: atLocal(TODAY, 10),
             category: "work",
             mine: true,
+            source: "google",
           },
         ],
       }),

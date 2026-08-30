@@ -30,6 +30,35 @@ const APPEARANCES: Array<{ id: Appearance; label: string }> = [
   { id: "system", label: "System" },
 ];
 
+const GEMINI_KEY = "cooper.gemini_key.v1";
+
+function loadGeminiKey(): string {
+  try {
+    return localStorage.getItem(GEMINI_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveGeminiKey(value: string): void {
+  try {
+    const key = value.trim();
+    if (key) localStorage.setItem(GEMINI_KEY, key);
+    else localStorage.removeItem(GEMINI_KEY);
+  } catch {
+    /* a blocked store is not worth failing over; the key still applies this session */
+  }
+}
+
+function formatChecked(value: string): string {
+  const checked = new Date(value);
+  if (Number.isNaN(checked.getTime())) return value;
+  return checked.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 function id(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -113,6 +142,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
+  const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
   const [mode, setMode] = useState<Mode>(loadMode);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
@@ -120,6 +150,7 @@ export default function App() {
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const canUseAi = Boolean(geminiKey.trim()) || Boolean(view?.using_model);
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
@@ -182,13 +213,13 @@ export default function App() {
 
   // AI mode is only usable with a model key. A mode saved from a session that had one — or a key
   // that was later removed — must not strand the user in a conversation that cannot answer and
-  // with no form to add through. When the backend says AI is off, fall back to Manual.
+  // with no form to add through. A key can come from this browser or the deployment.
   useEffect(() => {
-    if (view && !view.using_model && mode === "ai") {
+    if (!canUseAi && mode === "ai") {
       setMode("manual");
       saveMode("manual");
     }
-  }, [view, mode]);
+  }, [canUseAi, mode]);
 
   const load = useCallback(async () => {
     try {
@@ -231,7 +262,7 @@ export default function App() {
       setBusy(true);
 
       try {
-        const result = await api.say(said, mode);
+        const result = await api.say(said, mode, geminiKey);
         setView(result.view);
         setFailure(null);
         announce(result.kind, result.message, false);
@@ -275,7 +306,7 @@ export default function App() {
         setBusy(false);
       }
     },
-    [announce, busy, mode],
+    [announce, busy, geminiKey, mode],
   );
 
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
@@ -364,7 +395,7 @@ export default function App() {
             turns={turns}
             thinking={busy}
             mode={mode}
-            canUseAi={view?.using_model ?? false}
+            canUseAi={canUseAi}
             manualForm={<Form busy={busy} onSubmit={addFromForm} />}
             onMode={(next) => {
               setMode(next);
@@ -548,18 +579,49 @@ export default function App() {
               <div className="group__label">Parsing</div>
               <div className="inset">
                 <div className="field">
-                  <span className="field__label">
-                    {view.using_model ? "Gemini" : "Offline rules"}
+                  <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
+                  <span className="tag">
+                    {view.using_model ? "configured" : geminiKey.trim() ? "this browser" : "no key"}
                   </span>
-                  <span className="tag">{view.using_model ? "on" : "no key"}</span>
+                </div>
+                <div className="field field--stacked">
+                  <label className="field__label" htmlFor="gemini-key">
+                    Gemini API key
+                  </label>
+                  <div className="field__secret">
+                    <input
+                      id="gemini-key"
+                      type="password"
+                      autoComplete="off"
+                      maxLength={256}
+                      spellCheck={false}
+                      value={geminiKey}
+                      aria-describedby="gemini-key-hint"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setGeminiKey(value);
+                        saveGeminiKey(value);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      disabled={!geminiKey}
+                      onClick={() => {
+                        setGeminiKey("");
+                        saveGeminiKey("");
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
               </div>
-              {!view.using_model && (
-                <p className="hint">
-                  Works fine without a key. Add one for messier sentences. Ranking never uses a
-                  model.
-                </p>
-              )}
+              <p className="hint" id="gemini-key-hint">
+                {canUseAi
+                  ? "Your key stays in this browser and is sent only with AI messages. Manual mode stays offline."
+                  : "Works fine without a key. Add one for messier sentences. Ranking never uses a model."}
+              </p>
             </section>
 
             <section className="group">

@@ -5,7 +5,15 @@
  * mistaken for empty data.
  */
 
-import { ApiError, type Hours, type Item, type NewItem, type Reply, type View } from "./types";
+import {
+  ApiError,
+  type Hours,
+  type Item,
+  type NewItem,
+  type Reply,
+  type SyncSummary,
+  type View,
+} from "./types";
 
 const BASE = import.meta.env.VITE_COOPER_API ?? "http://127.0.0.1:8000";
 const KEY_HEADER = "X-Cooper-Key";
@@ -37,8 +45,15 @@ const post = (body?: unknown): RequestInit => ({
 export const api = {
   today: () => call<View>("/api/today"),
   // Mode is per message, not a stored setting: Manual keeps the model out of it entirely.
-  say: (text: string, mode: "manual" | "ai" = "manual") =>
-    call<Reply>("/api/say", post({ text, mode })),
+  say: (text: string, mode: "manual" | "ai" = "manual", geminiKey = "") =>
+    call<Reply>(
+      "/api/say",
+      post({
+        text,
+        mode,
+        ...(mode === "ai" && geminiKey.trim() ? { gemini_api_key: geminiKey.trim() } : {}),
+      }),
+    ),
   // Manual mode's form: fields, no parsing, no model. The same add path as a parsed sentence.
   createItem: (item: NewItem) => call<Reply>("/api/items", post(item)),
   // Bulk verbs are two steps: match lists what a phrase hits, bulk acts on the confirmed ids.
@@ -58,4 +73,5 @@ export const api = {
     call<{ view: View }>("/api/hours", { method: "PUT", body: JSON.stringify(hours) }),
   connect: () => call<{ url: string }>("/api/google/connect", post()),
   disconnect: () => call<{ view: View }>("/api/google/disconnect", post()),
+  syncGoogle: () => call<{ summary: SyncSummary; view: View }>("/api/google/sync", post()),
 };
