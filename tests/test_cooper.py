@@ -233,13 +233,20 @@ class TestPlacing:
 
         assert len(slots) <= 2
 
-    def test_a_task_without_an_estimate_gets_the_assumed_length(self) -> None:
-        # Skipping it meant a one-word task could sit in the list forever, unbookable and
-        # unexplained. Half an hour is a cheap thing to be wrong about.
+    def test_a_task_without_an_estimate_is_never_given_a_block(self) -> None:
+        # An errand is a task you never sized. Inventing half an hour for it put "buy milk" on
+        # the calendar holding time it does not need; the dashboard's "waiting for a time" group
+        # is what stops it being stranded in silence instead.
         slots = place(rank([task(minutes=None)], at=NOW), busy=[], hours=self.hours(), at=NOW)
 
-        assert len(slots) == 1
-        assert slots[0].minutes == 30
+        assert slots == []
+
+    def test_a_sized_task_beside_an_errand_is_still_placed(self) -> None:
+        # Skipping one must not stop the queue: the errand is passed over, not a full stop.
+        ranked = rank([task(id="e1", minutes=None), task(id="t1", minutes=60)], at=NOW)
+        slots = place(ranked, busy=[], hours=self.hours(), at=NOW)
+
+        assert [slot.item_id for slot in slots] == ["t1"]
 
     def test_an_already_scheduled_task_is_left_alone(self) -> None:
         booked = task(minutes=60, start_at=NOW, end_at=NOW + dt.timedelta(hours=1))

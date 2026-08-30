@@ -28,9 +28,6 @@ MIN_SLOT = 20
 MAX_SLOT = 90
 GAP = 10
 LEAD = 15
-# What to assume when you did not say how long something takes. Half an hour is short enough to
-# be wrong cheaply and long enough to be worth booking.
-ASSUMED = 30
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -142,9 +139,12 @@ def place(
     """Fit the ranked tasks into working hours, around whatever is already booked.
 
     Nothing lands outside your hours, because the only candidate times are built from them.
-    A task with no estimate gets `ASSUMED` minutes rather than being skipped: silently ignoring
-    it meant "test" could sit in the shortlist forever and never reach the calendar, with nothing
-    on screen explaining why.
+
+    A task with no estimate is skipped rather than given an invented length. This used to assume
+    half an hour, on the grounds that skipping silently left an item stranded with nothing on
+    screen explaining why. The dashboard's "waiting for a time" group is that explanation, so the
+    guess is no longer buying anything — and an errand like "buy milk" should be on a list, not
+    holding a booking.
     """
     zone = ZoneInfo(hours.timezone)
     earliest = at + dt.timedelta(minutes=LEAD)
@@ -153,10 +153,9 @@ def place(
     slots: list[Slot] = []
 
     for entry in ranked:
-        if entry.item.scheduled:
+        if entry.item.scheduled or entry.item.minutes is None:
             continue
-        minutes = entry.item.minutes or ASSUMED
-        length = max(MIN_SLOT, min(minutes, MAX_SLOT))
+        length = max(MIN_SLOT, min(entry.item.minutes, MAX_SLOT))
 
         placed = _first_gap(
             length=length,

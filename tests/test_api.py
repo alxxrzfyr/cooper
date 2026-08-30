@@ -264,12 +264,14 @@ class TestScheduling:
 
         assert client.post("/api/schedule", headers=HEADERS).json()["placed"] == []
 
-    def test_a_task_without_an_estimate_is_still_booked(self, client: TestClient) -> None:
-        # It used to be skipped in silence, which meant a one-word task could never reach the
-        # calendar and nothing on screen said why. Half an hour is assumed instead.
-        body = say(client, "vague thing")
+    def test_a_task_without_an_estimate_is_not_booked(self, client: TestClient) -> None:
+        # PRD: an errand is ranked and shown but never eats a calendar block, because Cooper
+        # skips anything with no estimate rather than inventing one. It stays visible under
+        # "waiting for a time" on the dashboard, so skipping is no longer silent.
+        body = say(client, "buy milk")
 
-        assert body["item"]["start_at"] is not None
+        assert body["item"]["minutes"] is None
+        assert body["item"]["start_at"] is None
 
     def test_scheduling_by_sentence_still_works_for_leftovers(self, client: TestClient) -> None:
         # Anything that could not be placed on the way in, because the week was full, is what a
