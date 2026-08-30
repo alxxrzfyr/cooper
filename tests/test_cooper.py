@@ -467,6 +467,21 @@ class TestGoogleTransport:
             }
         ]
 
+    def test_gmail_rejects_a_lookback_older_than_its_bound(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarError, Gmail
+
+        calendar = self.calendar()
+        gmail = Gmail(calendar)
+        monkeypatch.setattr(calendar, "access_token", lambda: "shared-access")
+        monkeypatch.setattr(gmail, "_send", lambda _request: {})
+
+        with pytest.raises(CalendarError, match="14 days"):
+            gmail.list_messages(
+                after=dt.datetime.now(tz=dt.UTC) - dt.timedelta(days=15), max_results=1
+            )
+
     def test_gmail_lists_fixed_senders_and_returns_only_ephemeral_content(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

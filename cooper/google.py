@@ -286,8 +286,11 @@ class Calendar:
 class Gmail:
     """Read-only Gmail REST access using Calendar's shared OAuth refresh path."""
 
-    def __init__(self, calendar: Calendar) -> None:
+    def __init__(self, calendar: Calendar, *, lookback_days: int = 14) -> None:
+        if not 1 <= lookback_days <= 30:
+            raise ValueError("Gmail lookback must be between 1 and 30 days.")
         self._calendar = calendar
+        self._lookback_days = lookback_days
 
     _send = staticmethod(Calendar._send)
 
@@ -306,12 +309,15 @@ class Gmail:
         parser boundary. The lookback caller provides is encoded as a UTC calendar date and the
         request size is capped so a watcher cannot accidentally drain a mailbox.
         """
-        if not self.connected:
-            return []
         if after.tzinfo is None:
             raise CalendarError("Gmail lookback must include a timezone.")
+        after = after.astimezone(dt.UTC)
+        if after < dt.datetime.now(tz=dt.UTC) - dt.timedelta(days=self._lookback_days):
+            raise CalendarError(f"Gmail lookback cannot exceed {self._lookback_days} days.")
+        if not self.connected:
+            return []
         bounded = max(1, min(max_results, 100))
-        day = after.astimezone(dt.UTC).date().strftime("%Y/%m/%d")
+        day = after.date().strftime("%Y/%m/%d")
         query = urllib.parse.urlencode(
             {
                 "q": f"after:{day} {GMAIL_SENDER_QUERY}",

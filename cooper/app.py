@@ -54,7 +54,7 @@ calendar = Calendar(
     calendar_id=settings.calendar_id,
 )
 calendar.load_token((store.get_setting(GOOGLE_SETTING) or {}).get("token"))
-gmail = Gmail(calendar)
+gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
 
 app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
 app.add_middleware(
