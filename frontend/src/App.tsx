@@ -137,6 +137,8 @@ export default function App() {
   // The app opens on the dashboard: seeing the day should not require asking for it.
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
+  const [serverModelAvailable, setServerModelAvailable] = useState(false);
+  const [loadResolved, setLoadResolved] = useState(false);
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,7 +152,7 @@ export default function App() {
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const canUseAi = Boolean(geminiKey.trim()) || Boolean(view?.using_model);
+  const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
@@ -215,18 +217,22 @@ export default function App() {
   // that was later removed — must not strand the user in a conversation that cannot answer and
   // with no form to add through. A key can come from this browser or the deployment.
   useEffect(() => {
-    if (!canUseAi && mode === "ai") {
+    if (loadResolved && !canUseAi && mode === "ai") {
       setMode("manual");
       saveMode("manual");
     }
-  }, [canUseAi, mode]);
+  }, [canUseAi, loadResolved, mode]);
 
   const load = useCallback(async () => {
     try {
-      setView(await api.today());
+      const nextView = await api.today();
+      setView(nextView);
+      setServerModelAvailable(nextView.using_model);
       setFailure(null);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
+    } finally {
+      setLoadResolved(true);
     }
   }, []);
 
@@ -655,6 +661,8 @@ export default function App() {
                       onClick={() => {
                         setGeminiKey("");
                         saveGeminiKey("");
+                        setLoadResolved(false);
+                        void load();
                       }}
                     >
                       Clear

@@ -105,6 +105,7 @@ async function openAi(user = userEvent.setup()) {
 
 interface Routes {
   view?: View;
+  todayView?: View;
   say?: Reply | { status: number; detail: string };
   failView?: boolean;
 }
@@ -128,13 +129,14 @@ function stub(routes: Routes) {
       });
 
       const currentView = routes.view ?? view();
+      const loadedView = routes.todayView ?? currentView;
       // Every mutation on the real backend returns today_view(), so its `using_model` always
       // matches /api/today. Reflecting that here keeps the app from seeing a reply whose view
       // disagrees with the load — which would, for instance, flip AI mode off mid-conversation.
       const withView = (r: Reply): Reply => ({ ...r, view: currentView });
 
       if (url.includes("/api/today")) {
-        return routes.failView ? json({ detail: "connection refused" }, 500) : json(currentView);
+        return routes.failView ? json({ detail: "connection refused" }, 500) : json(loadedView);
       }
       if (url.includes("/api/say")) {
         const configured = routes.say ?? reply();
