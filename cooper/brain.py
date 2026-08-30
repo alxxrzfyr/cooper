@@ -162,7 +162,7 @@ Rules:
 
 Today is {today} ({weekday}) in {tz}.
 {recent}
-Sentence: {sentence}"""
+{repair}Sentence: {sentence}"""
 
 ANSWER_PROMPT = """{identity}
 
@@ -328,10 +328,11 @@ class Brain:
                 if recent
                 else ""
             ),
+            repair=(
+                "Your last answer was not valid JSON for the schema. Try again.\n" if repair else ""
+            ),
             sentence=sanitize_for_prompt(sentence),
         )
-        if repair:
-            prompt += "\nYour last answer was not valid JSON for the schema. Try again."
 
         text = self._generate(prompt, schema=SCHEMA)
         decoded = json.loads(text)
@@ -366,22 +367,19 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
     if verb not in VERBS:
         raise ValueError(f"unknown verb {verb!r}")
 
-    minutes = payload.get("minutes")
-    if minutes is not None:
-        minutes = int(minutes)
-        if minutes <= 0:
-            minutes = None
-
-    importance = payload.get("importance")
-    if importance is not None:
-        importance = max(1, min(5, int(importance)))
+    minutes = _model_integer(payload.get("minutes"), "minutes")
+    importance = _model_integer(payload.get("importance"), "importance")
 
     steps = None
     if verb == "batch":
         steps = tuple(_from_step(step, tz=tz, source=source) for step in payload.get("steps", []))
 
     raw_question = payload.get("question")
-    question = _safe_model_text(raw_question)
+    question = _safe_model_text(
+        raw_question,
+        max_words=ANSWER_WORD_LIMIT,
+        max_chars=ANSWER_LIMIT,
+    )
     if (
         verb == "ask"
         and isinstance(raw_question, str)
@@ -410,16 +408,12 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
 
 def _from_step(step: dict[str, Any], *, tz: str, source: str) -> Action:
     """One entry in a batch's "steps", read the same way a top-level add is."""
-    importance = step.get("importance")
-    if importance is not None:
-        importance = max(1, min(5, int(importance)))
-    minutes = step.get("minutes")
-    if minutes is not None and int(minutes) <= 0:
-        minutes = None
+    importance = _model_integer(step.get("importance"), "importance")
+    minutes = _model_integer(step.get("minutes"), "minutes")
     action = Action(
         verb="add",
         title=_safe_model_text(step.get("title")),
-        minutes=int(minutes) if minutes is not None else None,
+        minutes=minutes,
         importance=importance,
         due=_date(step.get("due")),
         category=_category(step.get("category"), step.get("title")),
@@ -447,6 +441,12 @@ def _sanity_check(action: Action) -> Action:
         return Action(
             verb="ask",
             question="Keep a duration between 1 minute and 24 hours.",
+            source=action.source,
+        )
+    if action.importance is not None and not 1 <= action.importance <= 5:
+        return Action(
+            verb="ask",
+            question="Keep importance between 1 and 5.",
             source=action.source,
         )
     if action.verb == "batch":
@@ -510,7 +510,22 @@ def _clean(value: Any) -> str | None:
     return text or None
 
 
-def _safe_model_text(value: Any, *, strip_punctuation: bool = True) -> str | None:
+def _model_integer(value: Any, field: str) -> int | None:
+    """Keep model numeric fields typed; range checks happen in the shared action validator."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"model returned invalid {field}")
+    return value
+
+
+def _safe_model_text(
+    value: Any,
+    *,
+    strip_punctuation: bool = True,
+    max_words: int | None = None,
+    max_chars: int | None = None,
+) -> str | None:
     """Accept model text only when it cannot masquerade as a prompt or role switch."""
     if not isinstance(value, str):
         return None
@@ -519,7 +534,11 @@ def _safe_model_text(value: Any, *, strip_punctuation: bool = True) -> str | Non
         cleaned = cleaned.strip(" .,;:!?")
     if not cleaned:
         return None
-    if cleaned and _MODEL_LEAK_SHAPES.search(cleaned):
+    if _MODEL_LEAK_SHAPES.search(cleaned):
+        return None
+    if max_words is not None and len(cleaned.split()) > max_words:
+        return None
+    if max_chars is not None and len(cleaned) > max_chars:
         return None
     return cleaned
 
@@ -638,7 +657,7 @@ _SHOW = re.compile(
 # Anchored with a word boundary so "whatsapp the client back" stays an instruction.
 _QUESTION = re.compile(
     r"^(?:what|when|where|which|who|why|how"
-    r"|am i|are there|can i|did i|do i|does|is there|should i|will i)\b"
+    r"|am i|are there|can i|could you|did i|do i|does|is there|should i|will i|would you)\b"
 )
 
 

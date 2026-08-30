@@ -749,6 +749,12 @@ class TestAQuestionIsNotATask:
     def test_instructions_are_still_instructions(self, sentence: str) -> None:
         assert brain.parse_with_rules(sentence, tz="Asia/Singapore").verb == "add"
 
+    @pytest.mark.parametrize(
+        "sentence", ["could you help me decide", "would you tell me what is next"]
+    )
+    def test_polite_questions_never_create_anything(self, sentence: str) -> None:
+        assert brain.parse_with_rules(sentence, tz="Asia/Singapore").verb == "show"
+
     def test_a_trailing_question_mark_is_enough(self) -> None:
         assert brain.looks_like_a_question("gym tomorrow?")
         assert not brain.looks_like_a_question("gym tomorrow")
@@ -842,6 +848,22 @@ class TestCooperIdentityAndLimits:
         assert action.source == "rules"
         assert calls == 2
 
+    def test_the_repair_instruction_stays_before_the_user_sentence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        prompts: list[str] = []
+
+        def fake_generate(prompt: str, **kwargs: object) -> str:
+            prompts.append(prompt)
+            return "not json" if len(prompts) == 1 else '{"verb": "add", "title": "report"}'
+
+        monkeypatch.setattr(cooper, "_generate", fake_generate)
+
+        cooper.read("write the report", [])
+
+        assert prompts[1].index("Try again") < prompts[1].rindex("Sentence:")
+
     def test_transport_or_validation_failure_does_not_retry(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -925,6 +947,34 @@ class TestCooperIdentityAndLimits:
 
         assert action.is_question
         assert action.title is None
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [("minutes", 0), ("minutes", -5), ("importance", 0), ("importance", 6)],
+    )
+    def test_invalid_model_numbers_are_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, field: str, value: int
+    ) -> None:
+        cooper = _brain()
+        payload = json.dumps({"verb": "add", "title": "unsafe value", field: value})
+        monkeypatch.setattr(cooper, "_generate", lambda prompt, **kwargs: payload)
+
+        action = cooper.read("write the report", [])
+
+        assert action.is_question
+        assert action.title is None
+
+    @pytest.mark.parametrize("question", ["word " * 61, "x" * (brain.ANSWER_LIMIT + 1)])
+    def test_an_oversized_model_question_uses_a_safe_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, question: str
+    ) -> None:
+        cooper = _brain()
+        payload = json.dumps({"verb": "ask", "question": question})
+        monkeypatch.setattr(cooper, "_generate", lambda prompt, **kwargs: payload)
+
+        action = cooper.read("write a poem", [])
+
+        assert action.question == brain.MODEL_FALLBACK_QUESTION
 
     def test_a_model_answer_over_sixty_words_is_discarded(
         self, monkeypatch: pytest.MonkeyPatch
