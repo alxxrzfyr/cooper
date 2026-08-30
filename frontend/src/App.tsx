@@ -19,6 +19,7 @@ import {
   type Turn,
 } from "./Chat";
 import { Mascot } from "./Mascot";
+import { Home } from "./Home";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
 import { TaskFrame } from "./Frame";
@@ -64,7 +65,8 @@ function why(item: Item): string {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("chat");
+  // The app opens on the dashboard: seeing the day should not require asking for it.
+  const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
@@ -251,6 +253,20 @@ export default function App() {
               Retry
             </button>
           </div>
+        )}
+
+        {tab === "home" && view && (
+          <Home
+            view={view}
+            busy={busy}
+            onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
+            onOpen={setDetail}
+            onSchedule={() => void act(() => api.schedule())}
+            onGoToChat={() => {
+              setTab("chat");
+              input.current?.focus();
+            }}
+          />
         )}
 
         {tab === "chat" && (

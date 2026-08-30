@@ -60,6 +60,17 @@ function reply(overrides: Partial<Reply> = {}): Reply {
   };
 }
 
+/**
+ * Get to the conversation.
+ *
+ * The app opens on the dashboard now, so every test about the chat has to navigate first. The
+ * button exists twice — rail and tab bar — and either one will do.
+ */
+async function openChat(user = userEvent.setup()) {
+  await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+  return user;
+}
+
 interface Routes {
   view?: View;
   say?: Reply | { status: number; detail: string };
@@ -125,13 +136,14 @@ afterEach(() => {
 });
 
 describe("first impression", () => {
-  test("opens on the conversation, not a list", async () => {
+  test("opens on the dashboard, not the conversation", async () => {
     stub({});
     render(<App />);
 
-    expect(await screen.findByText(/Just tell me what/)).toBeInTheDocument();
+    // Seeing the day should not require asking for it, so the chat is no longer the front door.
+    expect(await screen.findByText("Up next")).toBeInTheDocument();
     const nav = screen.getAllByRole("navigation", { name: "Sections" })[0];
-    expect(within(nav).getByRole("button", { name: /Chat/ })).toHaveAttribute(
+    expect(within(nav).getByRole("button", { name: /Home/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -140,6 +152,7 @@ describe("first impression", () => {
   test("the opening offers real sentences to try", async () => {
     stub({ view: view({ shortlist: [] }) });
     render(<App />);
+    await openChat();
 
     expect(await screen.findByRole("button", { name: /quarterly report/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /plan my day/ })).toBeInTheDocument();
@@ -149,7 +162,7 @@ describe("first impression", () => {
   test("tapping an example sends it", async () => {
     const calls = stub({ view: view({ shortlist: [] }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openChat();
 
     await user.click(await screen.findByRole("button", { name: /dentist thursday 3pm/ }));
 
@@ -189,6 +202,7 @@ describe("manual and ai", () => {
   test("manual is the mode you start in", async () => {
     stub({});
     render(<App />);
+    await openChat();
 
     expect(await screen.findByRole("button", { name: "Manual" })).toHaveAttribute(
       "aria-pressed",
@@ -212,7 +226,7 @@ describe("manual and ai", () => {
   test("choosing AI sends the next message in AI mode", async () => {
     const calls = stub({ view: view({ using_model: true }) });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openChat();
 
     await user.click(await screen.findByRole("button", { name: "AI" }));
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
@@ -224,6 +238,7 @@ describe("manual and ai", () => {
     // The app has to work with no key at all, so the switch disables rather than failing later.
     stub({ view: view({ using_model: false }) });
     render(<App />);
+    await openChat();
 
     expect(await screen.findByRole("button", { name: "AI" })).toBeDisabled();
     expect(screen.getByText(/No model key/)).toBeInTheDocument();
@@ -235,7 +250,7 @@ describe("manual and ai", () => {
       say: reply({ kind: "answered", message: "Start with the report." }),
     });
     render(<App />);
-    const user = userEvent.setup();
+    const user = await openChat();
 
     await user.click(await screen.findByRole("button", { name: "AI" }));
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
@@ -294,7 +309,7 @@ describe("appearance", () => {
   test("light is what you get before you choose anything", async () => {
     stub({});
     render(<App />);
-    await screen.findByText(/Just tell me what/);
+    await screen.findByText("Up next");
 
     // Only ever "light" or "dark" reaches the CSS. "System" is resolved before it gets there.
     expect(document.documentElement.dataset.theme).toBe("light");
@@ -344,7 +359,7 @@ describe("the conversation", () => {
   test("the thread says who you are talking to", async () => {
     stub({});
     render(<App />);
-    await screen.findByText(/Just tell me what/);
+    await openChat();
 
     // The chat tab names its correspondent the way a messages app does: face, then name.
     const who = document.querySelector(".who");
@@ -439,6 +454,7 @@ describe("the conversation", () => {
     first.unmount();
 
     render(<App />);
+    await openChat();
 
     const log = await screen.findByRole("log", { name: "Conversation" });
     expect(within(log).getByText("write the report")).toBeInTheDocument();
@@ -569,7 +585,7 @@ describe("undo", () => {
   test("undo is offered only when there is something to undo", async () => {
     stub({ view: view({ undo: null }) });
     render(<App />);
-    await screen.findByText(/Just tell me what/);
+    await screen.findByText("Up next");
 
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   });
@@ -915,7 +931,7 @@ describe("the mascot", () => {
   test("every mascot image resolves and is contained", async () => {
     stub({ view: view({ shortlist: [] }) });
     render(<App />);
-    await screen.findByText(/Just tell me what/);
+    await screen.findByText("Nothing on today");
 
     // Decorative images carry alt="", which removes the img role, so query the DOM directly.
     const images = Array.from(
@@ -930,5 +946,152 @@ describe("the mascot", () => {
       expect(image.className).toMatch(/mascot--(xs|sm|md|lg)/);
       expect(image.className).not.toMatch(/mascot--(round|squircle)/);
     }
+  });
+});
+
+describe("the dashboard", () => {
+  /**
+   * A timestamp on a given calendar day in the machine's own zone.
+   *
+   * The strip decides what "today" means from the local day, so a fixture built in UTC would
+   * pass or fail depending on where the test runs.
+   */
+  function atLocal(day: string, hour: number): string {
+    const [year, month, date] = day.split("-").map(Number);
+    return new Date(year, month - 1, date, hour).toISOString();
+  }
+
+  const TODAY = "2026-08-31";
+  const TOMORROW = "2026-09-01";
+
+  /** A task that already has a time, which is what the strip is made of. */
+  function block(overrides: Partial<Item>): Item {
+    const start = overrides.start_at ?? atLocal(TODAY, 9);
+    return {
+      ...ranked(),
+      start_at: start,
+      end_at: new Date(new Date(start).getTime() + 3_600_000).toISOString(),
+      ...overrides,
+    };
+  }
+
+  test("today's strip shows today, and only today", async () => {
+    stub({
+      view: view({
+        scheduled: [
+          block({ id: "s1", title: "morning run", start_at: atLocal(TODAY, 8) }),
+          block({ id: "s2", title: "next week's audit", start_at: atLocal(TOMORROW, 8) }),
+        ],
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /morning run/ })).toBeInTheDocument();
+    // Tomorrow belongs on the Calendar. A dashboard that shows everything shows nothing.
+    expect(screen.queryByRole("button", { name: /next week's audit/ })).not.toBeInTheDocument();
+  });
+
+  test("someone else's event is shown but is not something to act on", async () => {
+    stub({
+      view: view({
+        events: [
+          {
+            title: "dentist",
+            start_at: atLocal(TODAY, 15),
+            end_at: atLocal(TODAY, 16),
+            category: "personal",
+            mine: false,
+          },
+        ],
+      }),
+    });
+    render(<App />);
+
+    const dentist = await screen.findByText("dentist");
+    // Cooper did not place it and cannot finish it, so it is not a button.
+    expect(dentist.closest("button")).toBeNull();
+    expect(dentist.closest(".slot")).toHaveClass("slot--google");
+  });
+
+  test("an event Cooper placed is not listed twice", async () => {
+    // Blocks Cooper wrote come back from Google as well; `mine` marks them and the local copy
+    // is the one kept, because that is the one with actions attached.
+    stub({
+      view: view({
+        scheduled: [block({ id: "s1", title: "write the report", start_at: atLocal(TODAY, 9) })],
+        events: [
+          {
+            title: "write the report",
+            start_at: atLocal(TODAY, 9),
+            end_at: atLocal(TODAY, 10),
+            category: "work",
+            mine: true,
+          },
+        ],
+      }),
+    });
+    render(<App />);
+
+    await screen.findByText("Up next");
+    expect(screen.getAllByText("write the report")).toHaveLength(1);
+  });
+
+  test("overdue and due-today are pulled out into their own group", async () => {
+    stub({
+      view: view({
+        shortlist: [
+          ranked({ id: "a1", title: "late thing", due: "2026-08-20T00:00:00+00:00" }),
+          ranked({ id: "a2", title: "today thing", due: `${TODAY}T00:00:00+00:00` }),
+          ranked({ id: "a3", title: "later thing", due: "2026-09-30T00:00:00+00:00" }),
+        ],
+      }),
+    });
+    render(<App />);
+
+    const group = (await screen.findByText("Needs attention")).closest("section");
+    expect(group).not.toBeNull();
+    expect(within(group as HTMLElement).getByText("late thing")).toBeInTheDocument();
+    expect(within(group as HTMLElement).getByText("today thing")).toBeInTheDocument();
+    // Not a problem yet, so it stays out of the group whose whole job is to be small.
+    expect(within(group as HTMLElement).queryByText("later thing")).not.toBeInTheDocument();
+  });
+
+  test("an errand is listed but never offered a block", async () => {
+    // No estimate means the placer skips it rather than inventing a length, so offering to book
+    // it would promise something that cannot happen.
+    stub({ view: view({ shortlist: [ranked({ title: "buy milk", minutes: null })] }) });
+    render(<App />);
+
+    expect(await screen.findByText("Waiting for a time")).toBeInTheDocument();
+    const waiting = screen.getByText("Waiting for a time").closest("section") as HTMLElement;
+    expect(within(waiting).getByText("buy milk")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Plan my day" })).not.toBeInTheDocument();
+  });
+
+  test("a sized task waiting for a time can be booked from here", async () => {
+    const calls = stub({ view: view({ shortlist: [ranked({ minutes: 45 })] }) });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Plan my day" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("/api/schedule"))).toBe(true),
+    );
+  });
+
+  test("an empty day says so and points at the one thing to do about it", async () => {
+    stub({ view: view({ shortlist: [], scheduled: [], events: [] }) });
+    render(<App />);
+
+    expect(await screen.findByText("Nothing on today")).toBeInTheDocument();
+    const nav = screen.getAllByRole("navigation", { name: "Sections" })[0];
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Say something" }));
+
+    expect(within(nav).getByRole("button", { name: /Chat/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });

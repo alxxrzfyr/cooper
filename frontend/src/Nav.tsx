@@ -1,8 +1,9 @@
 import { Mascot } from "./Mascot";
 
-export type Tab = "chat" | "plan" | "calendar" | "settings";
+export type Tab = "home" | "chat" | "plan" | "calendar" | "settings";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
+  { id: "home", label: "Home", glyph: "◈" },
   { id: "chat", label: "Chat", glyph: "◍" },
   { id: "plan", label: "Plan", glyph: "◎" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
