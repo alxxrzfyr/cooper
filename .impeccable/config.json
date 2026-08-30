@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "frontend/src/theme.css"
+        ],
+        "createdAt": "2026-08-30T15:54:49.570Z",
+        "reason": "Existing Cooper wordmark intentionally uses a brand gradient; preserve the established identity."
+      }
+    ]
+  }
+}
