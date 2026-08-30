@@ -576,6 +576,51 @@ export default function App() {
             </section>
 
             <section className="group">
+              <div className="group__label">Gmail confirmations</div>
+              <div className="inset">
+                <div className="field">
+                  <span className="field__label">Status</span>
+                  <span className="tag">
+                    {view.gmail.connected
+                      ? "Connected"
+                      : view.gmail.configured
+                        ? "Not connected"
+                        : "Not configured"}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--quiet"
+                    disabled={busy || !view.gmail.connected}
+                    onClick={() => void act(() => api.syncGoogle())}
+                  >
+                    {busy ? "Syncing…" : "Sync now"}
+                  </button>
+                </div>
+                <div className="field">
+                  <span className="field__label">Last checked</span>
+                  <span className="tag">
+                    {view.gmail.last_checked ? formatChecked(view.gmail.last_checked) : "Not yet"}
+                  </span>
+                </div>
+                <div className="field">
+                  <span className="field__label">Recent messages</span>
+                  <span className="tag">
+                    {view.gmail.imported} imported · {view.gmail.skipped} skipped
+                  </span>
+                </div>
+              </div>
+              <p className={`hint ${view.gmail.last_error ? "hint--error" : ""}`}>
+                {view.gmail.last_error
+                  ? view.gmail.last_error
+                  : view.gmail.connected
+                    ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
+                    : view.gmail.configured
+                      ? "Connect Google Calendar above to enable Gmail confirmations."
+                      : "Gmail is optional and works without Google. Add a Google connection to import known confirmations."}
+              </p>
+            </section>
+
+            <section className="group">
               <div className="group__label">Parsing</div>
               <div className="inset">
                 <div className="field">
