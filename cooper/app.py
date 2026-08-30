@@ -362,6 +362,8 @@ def add(action: Action) -> dict[str, Any]:
     with store.session() as session:
         item = Item(
             id=new_id(),
+            owner_id=settings.owner_id,
+            source="me",
             kind=action.kind,
             title=action.title or "Untitled",
             minutes=action.minutes,
@@ -503,6 +505,8 @@ def add_batch(action: Action) -> dict[str, Any]:
         for step in steps:
             item = Item(
                 id=new_id(),
+                owner_id=settings.owner_id,
+                source="me",
                 kind="task",
                 title=step.title or "Untitled",
                 minutes=step.minutes,

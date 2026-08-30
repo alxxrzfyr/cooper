@@ -178,6 +178,9 @@ class TestSaying:
         assert item["minutes"] == 90
         assert item["importance"] == 4
         assert item["due"] is not None
+        assert item["owner_id"] == "local"
+        assert item["source"] == "me"
+        assert item["source_ref"] is None
 
     def test_a_new_task_appears_on_the_shortlist(self, client: TestClient) -> None:
         say(client, "write the report, 60m")
@@ -521,6 +524,9 @@ class TestManualForm:
         assert body["item"]["minutes"] == 90
         assert body["item"]["importance"] == 4
         assert body["item"]["category"] == "work"
+        assert body["item"]["owner_id"] == "local"
+        assert body["item"]["source"] == "me"
+        assert body["item"]["source_ref"] is None
 
     def test_a_sized_task_is_booked_into_hours_like_a_parsed_one(self, client: TestClient) -> None:
         # The form reuses the same add path, so a typed task lands on the calendar the same way.
@@ -764,6 +770,27 @@ class TestBatchCreation:
 
         assert body["kind"] == "question"
         assert client.get("/api/today", headers=HEADERS).json()["shortlist"] == []
+
+    def test_a_batch_creation_sets_owner_and_source_fields(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        _fake_gemini(
+            module,
+            monkeypatch,
+            '{"verb": "batch", "steps": ['
+            '{"title": "alpha", "minutes": 30},'
+            '{"title": "beta", "minutes": 30}'
+            "]}",
+        )
+
+        body = ask(client, "alpha, then beta")
+
+        for row in body["view"]["shortlist"]:
+            assert row["owner_id"] == "local"
+            assert row["source"] == "me"
+            assert row["source_ref"] is None
 
     def test_manual_mode_has_no_batch_verb_to_reach_for(self, client: TestClient) -> None:
         # The rules parser never proposes "batch"; that only comes from the model. Manual mode

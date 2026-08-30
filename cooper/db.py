@@ -89,6 +89,9 @@ class Item(Base):
     )
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(String(60), default="local")
+    source: Mapped[str] = mapped_column(String(16), default="me")
+    source_ref: Mapped[str | None] = mapped_column(String(255), default=None)
     kind: Mapped[str] = mapped_column(String(8), default="task")
     title: Mapped[str] = mapped_column(String(300))
     notes: Mapped[str | None] = mapped_column(Text, default=None)
@@ -118,6 +121,9 @@ class Item(Base):
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "owner_id": self.owner_id,
+            "source": self.source,
+            "source_ref": self.source_ref,
             "kind": self.kind,
             "title": self.title,
             "notes": self.notes,
@@ -190,10 +196,15 @@ class Store:
         """
         with self.engine.begin() as connection:
             existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(item)")}
-            if existing and "category" not in existing:
-                connection.exec_driver_sql(
-                    "ALTER TABLE item ADD COLUMN category VARCHAR(16) DEFAULT 'personal'"
-                )
+            additions = (
+                ("owner_id", "ALTER TABLE item ADD COLUMN owner_id VARCHAR(60) DEFAULT 'local'"),
+                ("source", "ALTER TABLE item ADD COLUMN source VARCHAR(16) DEFAULT 'me'"),
+                ("source_ref", "ALTER TABLE item ADD COLUMN source_ref VARCHAR(255)"),
+                ("category", "ALTER TABLE item ADD COLUMN category VARCHAR(16) DEFAULT 'personal'"),
+            )
+            for column, statement in additions:
+                if existing and column not in existing:
+                    connection.exec_driver_sql(statement)
 
     @contextmanager
     def session(self) -> Iterator[Session]:

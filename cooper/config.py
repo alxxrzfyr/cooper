@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     origin: str = "http://127.0.0.1:5173"
     database_url: str = "sqlite:///./cooper.db"
     timezone: str = "Asia/Singapore"
+    owner_id: str = "local"
 
     # Optional. Without a key the rule-based parser handles everything.
     gemini_api_key: SecretStr | None = None

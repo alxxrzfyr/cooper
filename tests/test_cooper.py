@@ -339,6 +339,77 @@ class TestStore:
             stored = store.open_items(session)[0]
             assert aware(stored.due) == NOW
 
+    def test_new_items_default_to_the_local_owner_and_me_source(self, store: Store) -> None:
+        with store.session() as session:
+            item = Item(id=new_id(), kind="task", title="report", created_at=NOW)
+            session.add(item)
+            session.flush()
+
+            assert item.owner_id == "local"
+            assert item.source == "me"
+            assert item.source_ref is None
+
+    def test_existing_items_receive_local_source_defaults_when_the_schema_is_upgraded(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        from sqlalchemy import create_engine
+
+        url = f"sqlite:///{tmp_path / 'legacy.db'}"
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE item (id VARCHAR(12) PRIMARY KEY)")
+            connection.exec_driver_sql("INSERT INTO item (id) VALUES ('legacy-item')")
+
+        upgraded = Store(url)
+        with upgraded.engine.connect() as connection:
+            row = connection.exec_driver_sql(
+                "SELECT owner_id, source, source_ref FROM item WHERE id = 'legacy-item'"
+            ).one()
+
+        assert row == ("local", "me", None)
+
+    def test_item_serialization_includes_owner_source_and_source_ref(self, store: Store) -> None:
+        with store.session() as session:
+            session.add(
+                Item(
+                    id=new_id(),
+                    kind="event",
+                    title="meetup",
+                    owner_id="local",
+                    source="email",
+                    source_ref="event-123",
+                    created_at=NOW,
+                )
+            )
+            session.flush()
+            stored = store.open_items(session)[0]
+            payload = stored.to_dict()
+
+        assert payload["owner_id"] == "local"
+        assert payload["source"] == "email"
+        assert payload["source_ref"] == "event-123"
+
+    def test_external_item_fields_round_trip(self, store: Store) -> None:
+        with store.session() as session:
+            session.add(
+                Item(
+                    id=new_id(),
+                    kind="event",
+                    title="calendar invite",
+                    owner_id="local",
+                    source="google",
+                    source_ref="gcal-42",
+                    created_at=NOW,
+                )
+            )
+
+        with store.session() as session:
+            stored = store.open_items(session)[0]
+
+            assert stored.owner_id == "local"
+            assert stored.source == "google"
+            assert stored.source_ref == "gcal-42"
+
 
 class TestTimezones:
     """The bug this class exists for: a 3pm appointment displaying at 11pm."""
