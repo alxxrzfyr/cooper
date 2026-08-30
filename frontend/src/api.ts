@@ -1,9 +1,4 @@
-/**
- * The only place the app talks to the backend.
- *
- * Adds the shared key and turns any non-2xx into a thrown ApiError, so a failure can never be
- * mistaken for empty data.
- */
+/** Backend requests and response error handling. */
 
 import {
   ApiError,
@@ -44,7 +39,6 @@ const post = (body?: unknown): RequestInit => ({
 
 export const api = {
   today: () => call<View>("/api/today"),
-  // Mode is per message, not a stored setting: Manual keeps the model out of it entirely.
   say: (text: string, mode: "manual" | "ai" = "manual", geminiKey = "") =>
     call<Reply>(
       "/api/say",
@@ -54,9 +48,7 @@ export const api = {
         ...(mode === "ai" && geminiKey.trim() ? { gemini_api_key: geminiKey.trim() } : {}),
       }),
     ),
-  // Manual mode's form: fields, no parsing, no model. The same add path as a parsed sentence.
   createItem: (item: NewItem) => call<Reply>("/api/items", post(item)),
-  // Bulk verbs are two steps: match lists what a phrase hits, bulk acts on the confirmed ids.
   bulkMatch: (words: string) =>
     call<{ matched: Item[]; count: number }>("/api/bulk/match", post({ words })),
   bulk: (verb: "complete" | "drop", ids: string[]) => call<Reply>("/api/bulk", post({ verb, ids })),

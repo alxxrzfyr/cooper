@@ -58,7 +58,7 @@ class Utc(TypeDecorator[dt.datetime]):
         if value is None:
             return None
         if value.tzinfo is None:
-            # A naive value can only sensibly mean UTC; nothing else is knowable here.
+            # SQLite may return a naive value. Treat it as UTC.
             return value
         return value.astimezone(dt.UTC).replace(tzinfo=None)
 
@@ -105,8 +105,7 @@ class Item(Base):
     end_at: Mapped[dt.datetime | None] = mapped_column(Utc, default=None)
     google_event_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
-    # Colour-coding only. Validated in brain.py rather than by a CheckConstraint, so that a
-    # database created before this column existed stays identical to a fresh one.
+    # Validate categories in brain.py so existing databases remain compatible.
     category: Mapped[str] = mapped_column(String(16), default="personal")
 
     status: Mapped[str] = mapped_column(String(8), default="open")
@@ -218,8 +217,6 @@ class Store:
         finally:
             session.close()
 
-    # ---------------------------------------------------------------- settings
-
     def get_setting(self, key: str, default: Any = None) -> Any:
         with self.session() as session:
             row = session.get(Setting, key)
@@ -232,8 +229,6 @@ class Store:
                 session.add(Setting(key=key, value=value))
             else:
                 row.value = value
-
-    # ------------------------------------------------------------------ items
 
     def open_items(self, session: Session) -> list[Item]:
         statement = select(Item).where(Item.status == "open").order_by(Item.created_at, Item.id)

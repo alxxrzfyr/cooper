@@ -80,23 +80,13 @@ function reply(overrides: Partial<Reply> = {}): Reply {
   };
 }
 
-/**
- * Get to the conversation.
- *
- * The app opens on the dashboard now, so every test about the chat has to navigate first. The
- * button exists twice — rail and tab bar — and either one will do.
- */
+/** Navigate from the dashboard to the conversation. */
 async function openChat(user = userEvent.setup()) {
   await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
   return user;
 }
 
-/**
- * Get to the conversation in AI mode.
- *
- * Manual is a form now, so the composer and the thread only exist in AI mode. Every test that
- * types a sentence has to switch there first, which needs a model key present in the view.
- */
+/** Navigate to the AI conversation. */
 async function openAi(user = userEvent.setup()) {
   await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
   await user.click(await screen.findByRole("button", { name: "AI" }));
@@ -130,9 +120,6 @@ function stub(routes: Routes) {
 
       const currentView = routes.view ?? view();
       const loadedView = routes.todayView ?? currentView;
-      // Every mutation on the real backend returns today_view(), so its `using_model` always
-      // matches /api/today. Reflecting that here keeps the app from seeing a reply whose view
-      // disagrees with the load — which would, for instance, flip AI mode off mid-conversation.
       const withView = (r: Reply): Reply => ({ ...r, view: currentView });
 
       if (url.includes("/api/today")) {
@@ -637,9 +624,6 @@ describe("the list", () => {
 
     await user.click((await screen.findAllByRole("button", { name: /Open .* quarterly/ }))[0]);
 
-    // It renders through a portal on purpose. Inside the app tree it sat under `.scroll`, whose
-    // `> *` rule sets width: min(760px, 100%) on every child, so on a wide window the blur was a
-    // 760px strip with sharp edges either side.
     const backdrop = document.querySelector(".frame");
     expect(backdrop?.parentElement).toBe(document.body);
     expect(backdrop?.closest(".scroll, .chat, .thread, .main")).toBeNull();
@@ -1269,12 +1253,7 @@ describe("the mascot", () => {
 });
 
 describe("the dashboard", () => {
-  /**
-   * A timestamp on a given calendar day in the machine's own zone.
-   *
-   * The strip decides what "today" means from the local day, so a fixture built in UTC would
-   * pass or fail depending on where the test runs.
-   */
+  /** Create a timestamp on a local calendar day. */
   function atLocal(day: string, hour: number): string {
     const [year, month, date] = day.split("-").map(Number);
     return new Date(year, month - 1, date, hour).toISOString();
@@ -1495,9 +1474,6 @@ describe("manual mode as a form", () => {
   });
 
   test("a stale AI mode falls back to Manual when there is no key", async () => {
-    // AI could have been the saved mode from a session that had a key, or the key was removed.
-    // Without one, staying in AI strands the user in a conversation that cannot answer and with
-    // no form to add through, so the app drops back to the form.
     localStorage.setItem("cooper.mode.v1", "ai");
     stub({ view: view({ using_model: false }) });
     render(<App />);

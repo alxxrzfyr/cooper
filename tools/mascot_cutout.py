@@ -36,8 +36,7 @@ RAW = ROOT / "assets-src" / "mascot"
 BUILT = ROOT / "frontend" / "public" / "assets" / "mascot"
 MANIFEST = ROOT / "frontend" / "public" / "assets" / "manifest.json"
 
-# Raw file stem to the name the app asks for. Only these are built; anything else in
-# the raw folder is art we are keeping but not shipping.
+# Raw stems mapped to the asset names used by the app.
 BUILD = {
     "cooper_avatar": "cooper_avatar",
     "cooper_done": "cooper_done",
@@ -52,13 +51,11 @@ BUILD = {
     "parse_ambiguity_state": "cooper_puzzled",
 }
 
-# A pixel counts as paper if it is at least this bright and this close to grey. The warm
-# ground shadow sits around (218, 204, 190), so the saturation ceiling has to clear it.
+# Background threshold for light, low-saturation pixels.
 PAPER_LUMA = 168
 PAPER_SATURATION = 68
 
-# The two-pixel rim left behind by the drawing's antialiasing. Anything this light on the
-# rim fades out, which kills the white halo that a hard cut leaves around every outline.
+# Thresholds for fading the antialiased edge.
 RIM_CLEAR = 252
 RIM_KEEP = 202
 
@@ -171,9 +168,7 @@ def build() -> dict[str, dict[str, object]]:
             art = square(cut_out(raw))
 
         target = BUILT / f"{name}.webp"
-        # Lossy at 92 is a third of the size of lossless on this art with no visible difference,
-        # which matters because the app is a PWA and precaches its shell. The alpha channel is
-        # kept exact: a soft edge there would undo the halo work above.
+        # Keep alpha lossless while reducing the precached asset size.
         art.save(target, "WEBP", quality=92, alpha_quality=100, method=6)
         entries[name] = {
             "file": f"assets/mascot/{name}.webp",

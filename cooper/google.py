@@ -71,8 +71,6 @@ class Calendar:
         self._fernet = Fernet(encryption_key.encode()) if encryption_key else None
         self._refresh_token: str | None = None
 
-    # ------------------------------------------------------------------ status
-
     @property
     def configured(self) -> bool:
         """Whether Google credentials and a place to keep the token both exist."""
@@ -97,8 +95,6 @@ class Calendar:
             raise CalendarError("No encryption key is set, so the token cannot be stored.")
         return self._fernet.encrypt(token.encode()).decode()
 
-    # ------------------------------------------------------------------- oauth
-
     def consent_url(self, state: str) -> str:
         if not self.configured:
             raise CalendarError(
@@ -111,7 +107,7 @@ class Calendar:
                 "redirect_uri": self._redirect,
                 "response_type": "code",
                 "scope": " ".join(GOOGLE_SCOPES),
-                # offline + consent is what actually returns a refresh token.
+                # Both flags are required for a refresh token.
                 "access_type": "offline",
                 "prompt": "consent",
                 "state": state,
@@ -166,8 +162,6 @@ class Calendar:
         except CalendarError:
             return
 
-    # ------------------------------------------------------------------ events
-
     def busy(self, *, days: int = 14) -> list[Busy]:
         """Events between now and the horizon, reduced to times and titles."""
         if not self.connected:
@@ -196,8 +190,7 @@ class Calendar:
                 Busy(
                     start=begins,
                     end=finishes,
-                    # Only the title is kept. Descriptions, locations, meeting links and
-                    # attendee addresses are other people's business and are never read.
+                    # Keep only the title. Do not expose descriptions, locations, or attendees.
                     title=str(raw.get("summary") or "Busy")[:200],
                     mine=TAG in private,
                 )
@@ -239,8 +232,6 @@ class Calendar:
             # Already gone is the outcome we wanted.
             if "410" not in str(error) and "404" not in str(error):
                 raise
-
-    # ---------------------------------------------------------------- plumbing
 
     @property
     def _encoded(self) -> str:

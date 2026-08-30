@@ -15,8 +15,7 @@ KEY_MIN = 24
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="COOPER_", extra="ignore")
 
-    # The one required value. Short keys are refused because this header is the only thing
-    # stopping a random web page from reaching the API.
+    # The shared key protects the local API from unrelated browser pages.
     shared_key: SecretStr = Field(min_length=KEY_MIN)
 
     host: str = "127.0.0.1"
@@ -26,11 +25,9 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Singapore"
     owner_id: str = "local"
 
-    # Optional. Without a key the rule-based parser handles everything.
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-flash-lite-latest"
 
-    # Optional. Without these the calendar is simply off.
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     google_redirect_uri: str = "http://127.0.0.1:8000/api/google/callback"

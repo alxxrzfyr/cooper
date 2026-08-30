@@ -3,22 +3,7 @@ import { useState } from "react";
 import { Mascot } from "./Mascot";
 import type { Category, NewItem } from "./types";
 
-/**
- * Manual mode, as a form.
- *
- * This is requirement 6. Manual used to mean typing a sentence and having simple rules read it,
- * which was the typing without the smartness: you still had to phrase it, and it could still be
- * misread. Fields cannot be misparsed, run with no network, and spend no quota.
- *
- * The only required field is a title. Everything else has a sensible absence: no length means an
- * errand that is ranked but never booked, no deadline means it competes on importance and age,
- * no category means Cooper works one out from the title the way the sentence path does.
- *
- * Deadline is the platform's own date picker, floored at today so only present and future dates
- * can be chosen — a deadline in the past is not a deadline, and the backend enforces the same.
- * Time is a plain <select> of half-hour slots, which renders the same everywhere; a native time
- * input was the part that behaved differently across browsers and phones.
- */
+/** Manual capture without parsing or model access. */
 
 const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: "academics", label: "Academics" },
@@ -83,14 +68,8 @@ export function Form({
   async function submit() {
     if (!canSubmit) return;
 
-    // A date plus a time is an event with a fixed start. A date alone is a task's deadline. This
-    // is the one place the form decides between the app's two kinds, and it does it from whether
-    // a clock time was given rather than by asking.
-    //
-    // Sent as a naive wall-clock string (no Z, no offset): these inputs are the time in your own
-    // day, and the backend tags them with Cooper's configured zone. Calling toISOString() would
-    // reinterpret the time through the browser's timezone and could shift the event by hours. The
-    // end is left to the backend, which gives a start with no end a sensible default duration.
+    // A time creates an event; a date alone creates a task deadline. Send wall-clock input so the
+    // backend can apply its configured timezone.
     const start = due && time ? `${due}T${time}:00` : undefined;
 
     const item: NewItem = {
@@ -153,12 +132,9 @@ export function Form({
                 className="field__input"
                 type="date"
                 value={due}
-                // Only today or later: a deadline in the past is not a deadline. The backend
-                // enforces the same rule, so a browser that ignores min still cannot store one.
                 min={TODAY}
                 onChange={(event) => {
                   setDue(event.target.value);
-                  // A time makes no sense without a day, so clearing the day clears the time.
                   if (!event.target.value) setTime("");
                 }}
               />

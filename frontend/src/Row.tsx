@@ -11,13 +11,7 @@ function shortDay(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { weekday: "short" });
 }
 
-/**
- * One task or event in a grouped list.
- *
- * Two gestures and no more: the tick finishes it, and everything else opens its frame, where the
- * score breakdown and the rest of the actions live. The breakdown used to expand in place, which
- * pushed the list around and put three controls on one line of a phone screen.
- */
+/** One task or event in a grouped list. */
 export function Row({
   item,
   today,

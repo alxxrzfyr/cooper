@@ -1,4 +1,4 @@
-/** Shapes the backend returns. Mirrors cooper/app.py. */
+/** Shapes returned by the backend. */
 
 export type Kind = "task" | "event";
 export type Category = "academics" | "work" | "organizations" | "personal";
@@ -30,7 +30,7 @@ export interface Ranked extends Item {
   why: { due: number; age: number; quick: number };
 }
 
-/** What the Manual form sends. Mirrors NewItem in cooper/app.py: fields, never a sentence. */
+/** Fields sent by Manual capture. */
 export interface NewItem {
   title: string;
   kind?: Kind;
@@ -50,7 +50,7 @@ export interface Hours {
   timezone?: string;
 }
 
-/** An event read back from Google. `mine` marks ones Cooper created. */
+/** An event read from an external calendar. */
 export interface CalendarEvent {
   title: string;
   start_at: string;
@@ -91,12 +91,7 @@ export interface View {
   gmail: GmailHealth;
 }
 
-/**
- * What Cooper just did, which is also what colour the reply is.
- *
- * Green for something gained or finished, red for something removed, blue for an answer, amber
- * when it needs you, plain grey for information.
- */
+/** Reply kind, which determines its semantic colour. */
 export type ReplyKind =
   | "added"
   | "completed"

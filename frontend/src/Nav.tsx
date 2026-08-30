@@ -9,14 +9,7 @@ const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
-/**
- * Navigation, in two shapes from one component.
- *
- * Narrow: a frosted top bar plus a frosted bottom tab bar, the way a phone app works.
- * Wide: the same tabs become a side rail, so a desktop window is not a stretched phone.
- *
- * CSS decides which is visible, so there is no width listener and nothing to keep in sync.
- */
+/** Navigation rendered as tabs on narrow screens and a rail on wide screens. */
 export function Nav({
   current,
   todo,

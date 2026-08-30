@@ -2,16 +2,7 @@ import { Mascot } from "./Mascot";
 import { Row } from "./Row";
 import type { CalendarEvent, Item, Ranked, View } from "./types";
 
-/**
- * The dashboard, and the screen the app opens on.
- *
- * Chat is a place to do things; this is the place to see them. Everything here is already in the
- * one `/api/today` payload, so this screen adds no request and cannot disagree with the others.
- *
- * Four sections, in the order a morning actually goes: the single next thing, what today looks
- * like, what is going wrong, and what is still waiting for a time. "What arrived while you were
- * away" is the fifth and is deliberately absent until there is a source that can deliver it.
- */
+/** Dashboard backed by the single `/api/today` payload. */
 
 function clock(at: Date): string {
   return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -52,12 +43,7 @@ interface Entry {
   item?: Item;
 }
 
-/**
- * Today's blocks and today's events, in one ordered strip.
- *
- * Events Cooper created come back from Google as well, so `mine` ones are dropped and the local
- * copy is kept — that is the one with actions attached.
- */
+/** Merge local and external entries without duplicating Cooper-owned blocks. */
 function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): Entry[] {
   const entries: Entry[] = [];
 
@@ -111,8 +97,6 @@ export function Home({
 }) {
   const today = view.today;
   const now = new Date(view.now);
-  // Imported Gmail confirmations are commitments, not Cooper-owned work. They belong in the
-  // agenda, but never in a list with Done/Pin/Delete actions.
   const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
   const next = shortlist[0];
 
@@ -204,8 +188,6 @@ export function Home({
                   <span className="slot__title">{entry.title}</span>
                 </button>
               ) : (
-                // External commitments are facts, not Cooper-owned work. Nothing to act on, so
-                // they are not buttons.
                 <div
                   key={entry.key}
                   className={`slot slot--${entry.source} cat--${entry.category}`}

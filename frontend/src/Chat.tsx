@@ -26,14 +26,7 @@ const STAMP_AFTER_MS = 15 * 60_000;
 /** Turns from the same side closer together than this share one group. */
 const GROUP_WITHIN_MS = 5 * 60_000;
 
-/**
- * The colour of a reply, which is the reply's meaning.
- *
- * One rule, applied everywhere in the app: green is something gained or finished, red is
- * something removed, blue is an answer rather than an action, amber wants your attention, and
- * plain is information. This is why the four categories are purple, blue, orange and teal —
- * green and red are spoken for.
- */
+/** Return the semantic colour for a reply. */
 function tone(kind: ReplyKind | undefined): string {
   switch (kind) {
     case "added":
@@ -145,11 +138,7 @@ interface Group {
   stamp: string | null;
 }
 
-/**
- * Collapse a flat list of turns into the runs a messages app shows: consecutive bubbles from one
- * side sit tight together with a single tail and a single avatar, and a timestamp appears only
- * after a real pause rather than beside every line.
- */
+/** Group adjacent turns from the same side and add timestamps after pauses. */
 export function groupTurns(turns: Turn[]): Group[] {
   const groups: Group[] = [];
   let previousAt = 0;
@@ -177,13 +166,7 @@ export function groupTurns(turns: Turn[]): Group[] {
   return groups;
 }
 
-/**
- * The conversation.
- *
- * This is the point of the app: you talk to it. The list of tasks is a consequence, not the
- * interface. Your words on the right in blue, Cooper's on the left in whatever colour matches
- * what he just did, so a scroll back through the thread reads as a history of changes.
- */
+/** Conversation view for sentence requests and questions. */
 export function Chat({
   turns,
   thinking,
@@ -204,15 +187,11 @@ export function Chat({
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Guarded because jsdom has no scrollIntoView, and an older browser may not either. Failing
-    // to auto-scroll is a cosmetic loss; throwing here would take the whole view down.
     end.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [turns.length, thinking]);
 
   const switcher = <ModeSwitch mode={mode} canUseAi={canUseAi} onMode={onMode} />;
 
-  // Manual is a form now, not a sentence. AI is where you talk. The switch at the top chooses
-  // which of the two surfaces is shown, and the mode is remembered between visits.
   if (mode === "manual") {
     return (
       <div className="chat">
@@ -303,12 +282,7 @@ export function Chat({
   );
 }
 
-/**
- * Manual or AI, chosen per message.
- *
- * Manual is the default and does the work offline, because the model has a daily limit and most
- * sentences do not need it. AI is for questions about your own tasks.
- */
+/** Switch between Manual capture and AI conversation. */
 function ModeSwitch({
   mode,
   canUseAi,

@@ -272,9 +272,6 @@ class TestPlacing:
         assert len(slots) <= 2
 
     def test_a_task_without_an_estimate_is_never_given_a_block(self) -> None:
-        # An errand is a task you never sized. Inventing half an hour for it put "buy milk" on
-        # the calendar holding time it does not need; the dashboard's "waiting for a time" group
-        # is what stops it being stranded in silence instead.
         slots = place(rank([task(minutes=None)], at=NOW), busy=[], hours=self.hours(), at=NOW)
 
         assert slots == []
@@ -367,7 +364,6 @@ class TestStore:
             assert len(list(session.scalars(select(Change)))) <= 20
 
     def test_times_come_back_with_a_timezone(self, store: Store) -> None:
-        # SQLite drops offsets, and a naive datetime would break every comparison downstream.
         with store.session() as session:
             session.add(task(title="report", due=NOW))
 
@@ -667,7 +663,6 @@ class TestCategory:
         assert brain.guess_category(sentence) == expected
 
     def test_anything_unrecognised_is_personal(self) -> None:
-        # A wrong colour is a small cost; inventing a category is a bigger one.
         assert brain.guess_category("qwerty zzz") == "personal"
 
     def test_the_rules_path_sets_a_category(self) -> None:
@@ -713,8 +708,6 @@ class TestTheArt:
         assert self.built() - self.asked_for() == set()
 
     def test_the_art_is_webp_and_carries_transparency(self) -> None:
-        # Cooper sits in no container, so anything without an alpha channel would show up as a
-        # white block on the page. VP8L is lossless webp, which always has one.
         for path in sorted(self.BUILT.glob("*.webp")):
             head = path.read_bytes()[:64]
             assert head[:4] == b"RIFF" and head[8:12] == b"WEBP", path.name
@@ -1122,8 +1115,6 @@ class TestOneSentenceIntoManyTasks:
         assert len(action.steps) == brain.MAX_BATCH
 
     def test_a_single_task_with_several_details_is_still_a_plain_add(self) -> None:
-        # The rules path has no batch verb at all, which is correct: "write the report, 90m,
-        # due friday" is one task with three details, never several tasks.
         action = parse_with_rules("write the report, 90m, due friday", tz=TZ)
         assert action.verb == "add"
 
@@ -1159,8 +1150,6 @@ class TestBatchSequencingInTheDatabase:
 
         ends = [booked[title].end_at for title in titles]
         starts = [booked[title].start_at for title in titles]
-        # Every step starts at or after the previous one's end: "before X then Y" holds even
-        # though nothing about the relationship is stored anywhere.
         for later_start, earlier_end in zip(starts[1:], ends[:-1], strict=True):
             assert later_start >= earlier_end
 
@@ -1305,9 +1294,6 @@ class TestNotEverythingImperativeIsATask:
         assert "poem" not in (action.title or "")
 
     def test_the_refusal_names_what_it_actually_does(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # The old wording, "I only cover their tasks", did not say what "their tasks" meant or
-        # why this particular sentence did not qualify. The prompt now asks for a specific,
-        # accurate reason every time, which this checks for shape rather than exact wording.
         cooper = _brain()
         monkeypatch.setattr(
             cooper,

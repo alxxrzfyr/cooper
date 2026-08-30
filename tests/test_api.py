@@ -596,8 +596,6 @@ class TestSaying:
 
 class TestScheduling:
     def test_a_new_task_is_booked_the_moment_it_is_added(self, client: TestClient) -> None:
-        # The old behaviour left it in the shortlist until you remembered to say "plan my day",
-        # so you added something, looked at the calendar, and it was not there.
         body = say(client, "write the report, 60m")
 
         assert body["item"]["start_at"] is not None
@@ -623,17 +621,12 @@ class TestScheduling:
         assert client.post("/api/schedule", headers=HEADERS).json()["placed"] == []
 
     def test_a_task_without_an_estimate_is_not_booked(self, client: TestClient) -> None:
-        # PRD: an errand is ranked and shown but never eats a calendar block, because Cooper
-        # skips anything with no estimate rather than inventing one. It stays visible under
-        # "waiting for a time" on the dashboard, so skipping is no longer silent.
         body = say(client, "buy milk")
 
         assert body["item"]["minutes"] is None
         assert body["item"]["start_at"] is None
 
     def test_scheduling_by_sentence_still_works_for_leftovers(self, client: TestClient) -> None:
-        # Anything that could not be placed on the way in, because the week was full, is what a
-        # scheduling run is for now.
         client.put(
             "/api/hours",
             json={"start_hour": 9, "end_hour": 10, "weekdays": [0], "max_per_day": 1},
@@ -848,7 +841,6 @@ class TestGoogle:
         assert module.calendar.connected is False
 
     def test_everything_works_with_the_calendar_off(self, client: TestClient) -> None:
-        # No Google, no key, and a task still gets added, ranked and booked locally.
         body = say(client, "write the report, 60m")
 
         assert body["item"]["start_at"] is not None
@@ -876,7 +868,6 @@ class TestTheTwoLists:
 
 class TestAgenda:
     def test_the_view_carries_an_events_list(self, client: TestClient) -> None:
-        # Empty with Google off, which is the supported default rather than a special case.
         body = client.get("/api/today", headers=HEADERS).json()
 
         assert body["events"] == []
@@ -897,7 +888,6 @@ class TestAgenda:
         booked = client.get("/api/today", headers=HEADERS).json()["scheduled"]
 
         assert booked[0]["kind"] == "event"
-        # 15:00 in Asia/Singapore is 07:00 UTC. The offset must survive the round trip.
         assert booked[0]["start_at"].endswith("+00:00")
         import datetime as dt
         from zoneinfo import ZoneInfo
@@ -931,7 +921,6 @@ class TestManualForm:
         assert body["item"]["source_ref"] is None
 
     def test_a_sized_task_is_booked_into_hours_like_a_parsed_one(self, client: TestClient) -> None:
-        # The form reuses the same add path, so a typed task lands on the calendar the same way.
         body = self.form(client, title="revise notes", minutes=45)
 
         assert body["item"]["start_at"] is not None
@@ -943,13 +932,11 @@ class TestManualForm:
         assert body["item"]["start_at"] is None
 
     def test_a_missing_category_is_worked_out_from_the_title(self, client: TestClient) -> None:
-        # Rather than force the person to categorise their own errand.
         body = self.form(client, title="revise for the midterm", minutes=60)
 
         assert body["item"]["category"] == "academics"
 
     def test_a_form_event_ending_before_it_starts_is_refused(self, client: TestClient) -> None:
-        # The same validation the model's output goes through, not a second, looser gate.
         response = client.post(
             "/api/items",
             json={
@@ -970,23 +957,17 @@ class TestManualForm:
         assert body["kind"] == "undone"
 
     def test_a_form_time_is_local_not_utc(self, client: TestClient) -> None:
-        # A naive time from the form is wall-clock in the configured zone. Storing it as UTC was
-        # the bug: a 3pm event landed at 3pm UTC, which is 11pm in Asia/Singapore.
         body = self.form(client, title="dentist", start="2026-09-01T15:00:00")
 
         assert body["item"]["start_at"] == "2026-09-01T15:00:00+08:00"
-        # A start with no end gets a sensible default rather than being refused.
         assert body["item"]["end_at"] == "2026-09-01T16:00:00+08:00"
 
     def test_a_form_time_with_an_offset_is_trusted(self, client: TestClient) -> None:
-        # If the client does send an offset, it is respected rather than re-tagged.
         body = self.form(client, title="call", start="2026-09-01T15:00:00+00:00")
 
         assert body["item"]["start_at"] == "2026-09-01T15:00:00+00:00"
 
     def test_a_past_deadline_is_refused(self, client: TestClient) -> None:
-        # Present or future only: a deadline in the past is not a deadline, almost always a
-        # misclick. The date input floors itself, but the rule is enforced here too.
         response = client.post(
             "/api/items", json={"title": "late", "due": "2000-01-01"}, headers=HEADERS
         )
@@ -1019,7 +1000,6 @@ class TestBulk:
         assert body["count"] == 2
         titles = {item["title"] for item in body["matched"]}
         assert titles == {"review the intro", "review the appendix"}
-        # Matching must not change anything: all three items are still open.
         assert len(client.get("/api/today", headers=HEADERS).json()["shortlist"]) == 3
 
     def test_bulk_complete_acts_on_the_confirmed_ids(self, client: TestClient) -> None:
@@ -1034,7 +1014,6 @@ class TestBulk:
 
         assert body.status_code == 200, body.text
         assert body.json()["kind"] == "completed"
-        # Both are gone from the open list.
         assert client.get("/api/today", headers=HEADERS).json()["shortlist"] == []
 
     def test_a_whole_bulk_batch_is_undone_in_one_step(self, client: TestClient) -> None:
@@ -1049,11 +1028,9 @@ class TestBulk:
         body = client.post("/api/undo", headers=HEADERS).json()
 
         assert body["kind"] == "undone"
-        # Both come back open, because undo is the correction a bulk verb relies on.
         assert len(client.get("/api/today", headers=HEADERS).json()["shortlist"]) == 2
 
     def test_bulk_ignores_an_id_that_is_no_longer_open(self, client: TestClient) -> None:
-        # The confirmation acts on exactly what was shown and quietly skips anything already gone.
         made = say(client, "review the intro")
         real_id = made["item"]["id"]
 
@@ -1134,7 +1111,6 @@ class TestBatchCreation:
             key=lambda row: row["start_at"],
         )
         assert [row["title"] for row in scheduled] == ["step one", "step two", "step three"]
-        # Different lengths by one on purpose: there is no "later" for the last step.
         for earlier, later in zip(scheduled, scheduled[1:], strict=False):
             assert later["start_at"] >= earlier["end_at"]
 
@@ -1195,8 +1171,6 @@ class TestBatchCreation:
             assert row["source_ref"] is None
 
     def test_manual_mode_has_no_batch_verb_to_reach_for(self, client: TestClient) -> None:
-        # The rules parser never proposes "batch"; that only comes from the model. Manual mode
-        # stays exactly what it was: one sentence, one task, no network.
         body = say(client, "research, then slides, then practice, 90m")
         assert body["kind"] == "added"
         assert len(client.get("/api/today", headers=HEADERS).json()["shortlist"]) == 1
@@ -1259,7 +1233,6 @@ class TestTheAIPathDoesNotCreateOffTopicContent:
 
         assert body["kind"] == "answered"
         assert seen, "the model was never called"
-        # The newline-plus-role-marker shape never reaches the model intact.
         assert "\nAssistant:" not in seen[0]
 
 

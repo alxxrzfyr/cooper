@@ -15,10 +15,7 @@ from zoneinfo import ZoneInfo
 
 from cooper.db import Item, aware
 
-# Score weights. Tuned by feel, easy to change, and they sum to 1.
-# The deadline is the priority. A separate importance dial asked the user to rate everything they
-# owned, and then competed with the date they had already given: a "5" with no deadline outranked
-# something due tomorrow, which is not how anyone actually decides what to do next.
+# Score weights sum to 1. The deadline has the greatest weight.
 W_DUE = 0.60
 W_AGE = 0.15
 W_QUICK = 0.25
@@ -73,8 +70,7 @@ def _terms(item: Item, *, at: dt.datetime) -> dict[str, float]:
     created = aware(item.created_at) or at
     age_days = max(0.0, (at - created).total_seconds() / 86_400)
 
-    # A short task scores slightly higher, because finishing something beats starting
-    # something. Unestimated tasks sit in the middle rather than winning or losing by default.
+    # Short tasks score slightly higher. Unestimated tasks stay in the middle.
     quick = 0.5 if item.minutes is None else max(0.0, 1.0 - min(item.minutes, 240) / 240)
 
     return {

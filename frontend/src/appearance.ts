@@ -1,14 +1,4 @@
-/**
- * Light, dark, or whatever the machine says.
- *
- * Light is the default, deliberately: a calendar is a document, and documents are light unless
- * you ask otherwise. The choice lives in localStorage rather than the database because it is
- * about this screen, not about your week, and because it has to be readable before the first
- * paint — a round trip to the backend would show the wrong theme for a moment first.
- *
- * Only ever two states reach the CSS: `data-theme="light"` or `data-theme="dark"`. "System" is
- * resolved here, so no stylesheet has to know the difference.
- */
+/** Resolve appearance settings before applying the theme to the document. */
 
 export type Appearance = "light" | "dark" | "system";
 
@@ -37,8 +27,6 @@ export function saveAppearance(choice: Appearance): void {
 }
 
 function systemIsDark(): boolean {
-  // Guarded: matchMedia is missing in some test environments, and an older WebView may not have
-  // it either. Missing means "no opinion", which resolves to light.
   return window.matchMedia?.(DARK).matches ?? false;
 }
 

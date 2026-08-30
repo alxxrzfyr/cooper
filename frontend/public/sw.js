@@ -1,13 +1,4 @@
-/*
- * Service worker: enough to install as an app and open offline.
- *
- * Hand written rather than generated, because the whole job is two rules and a plugin would be
- * more machinery than the problem needs.
- *
- * The shell is cached so the app opens with no network. API calls are never cached: a stale task
- * list is worse than an honest error, and the app already says plainly when it cannot reach the
- * backend.
- */
+/* Cache the application shell, but never cache API responses. */
 
 const CACHE = "cooper-shell-v1";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon-192.png"];

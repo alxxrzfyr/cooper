@@ -25,20 +25,7 @@ function longDay(iso: string): string {
   });
 }
 
-/**
- * One thing at a time, with the rest of the app pushed out of focus.
- *
- * A bottom sheet on a phone and a centred card on a desktop, from one component: the difference
- * is which CSS rules apply at which width, so there is no width listener and nothing to keep in
- * sync. Escape closes it, so does the backdrop, and focus moves inside on open so a keyboard is
- * not left behind on the page underneath.
- *
- * It renders into `document.body` rather than where it is written. `position: fixed` covers the
- * viewport only if no ancestor constrains it, and the calendar renders its frames inside
- * `.scroll`, whose `> *` rule sets `width: min(760px, 100%)` on every child to keep text columns
- * readable. That clamped the blur to a 760px strip in the middle of a wide window and left the
- * rail and the margins perfectly sharp. A portal is immune to every rule of that shape.
- */
+/** Detail frame rendered in a portal, as a sheet on narrow screens and a card on wide screens. */
 export function Frame({
   title,
   subtitle,
@@ -59,7 +46,6 @@ export function Frame({
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
-    // The page behind must not scroll under a sheet, which on iOS looks like the sheet drifting.
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     panel.current?.focus();

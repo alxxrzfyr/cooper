@@ -1,16 +1,8 @@
-/*
- * Cooper theme.
- * One thing worth knowing about the mascot art: it is cut out to transparency by
- * `tools/mascot_cutout.py`, square with even margins, so Cooper drops straight onto any
- * background at any size. No container, no mask, no crop.
- */
-
 :root {
   color-scheme: light;
 
   --accent: #0a84ff;
 
-  /* Category colour. `fill` carries white text, `line` is for outlines and dots. */
   --c-academics: #4f46c8;
   --c-academics-line: #4f46c8;
   --c-work: #0b6bd3;
@@ -22,7 +14,6 @@
   --accent-press: #0060df;
   --accent-wash: rgba(10, 132, 255, 0.12);
   --green: #34c759;
-  /* Brand only: the wordmark is a green-to-teal signature, never a status indicator. */
   --wordmark-start: #14532d;
   --wordmark-end: #65a30d;
   --amber: #ff9f0a;
@@ -32,11 +23,6 @@
   --card: #ffffff;
   --sunken: #e9e9ee;
 
-  /*
-   * Dimming and elevation for anything that covers the app. The scrim is always black: derived
-   * from --text it inverted with the theme and became a white veil over a dark page, which lifts
-   * the background *above* the sheet and reads as a hole instead of a card.
-   */
   --scrim: rgba(0, 0, 0, 0.32);
   --sheet: #f2f2f7;
   --sheet-row: #ffffff;
@@ -45,13 +31,9 @@
   --faint: #a5a5aa;
   --hair: rgba(60, 60, 67, 0.13);
 
-  /* The material the bars are made of. */
   --bar: rgba(249, 249, 251, 0.72);
   --tint: #e8e8ed;
 
-  /* What a colour means, app-wide. Green is gained or finished, red is removed or refused,
-     blue is an answer, amber wants a look. The four category colours deliberately avoid all
-     four, which is why personal is teal rather than green. */
   --tone-good: var(--green);
   --tone-bad: var(--red);
   --tone-answer: var(--accent);
@@ -80,7 +62,6 @@
 
   --accent: #0a84ff;
 
-  /* Fills stay put; only the lines lift, so they stay visible on black. */
   --c-academics-line: #8b86f0;
   --c-work-line: #55a8f5;
   --c-organizations-line: #e0913c;
@@ -94,10 +75,6 @@
   --card: #1c1c1e;
   --sunken: #2c2c2e;
 
-  /*
-   * A black scrim cannot darken a black page, so in dark the sheet does the separating: each
-   * layer is lighter than the one behind it, which is how depth reads without shadows.
-   */
   --scrim: rgba(0, 0, 0, 0.6);
   --sheet: #1c1c1e;
   --sheet-row: #2c2c2e;
@@ -171,12 +148,6 @@ select {
   }
 }
 
-/* ==================================================================== shell
-
-   Fluid by CSS alone. Narrow: top bar, scrolling content, composer, bottom tabs.
-   Wide: the tabs become a side rail and the top bar disappears. No width listener.
-   ------------------------------------------------------------------------- */
-
 .app {
   display: grid;
   grid-template-areas:
@@ -185,11 +156,6 @@ select {
     "composer"
     "tabs";
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  /*
-   * `minmax(0, 1fr)` rather than the implicit `auto`: the week grid is deliberately wider than a
-   * phone and scrolls sideways, but an auto-sized column grows to fit its content instead, which
-   * widened the whole app and pushed the tab bar and composer off screen.
-   */
   grid-template-columns: minmax(0, 1fr);
   height: 100dvh;
 }
@@ -204,8 +170,6 @@ select {
 .rail {
   display: none;
 }
-
-/* ===================================================================== bars */
 
 .topbar {
   grid-area: top;
@@ -225,7 +189,6 @@ select {
   flex: 1;
 }
 
-/* Who you are talking to, on the chat tab. */
 .who {
   display: flex;
   align-items: center;
@@ -244,7 +207,6 @@ select {
   -webkit-text-fill-color: transparent;
 }
 
-/* Narrow layouts have room for the word and nothing else, so it stays a compact pill. */
 .topbar__action {
   border-radius: var(--pill);
   padding: 6px 13px;
@@ -254,11 +216,6 @@ select {
   transition: background 0.15s ease;
 }
 
-/*
- * "Undo" on its own is a question, not an answer, so in the rail, where there is room, it names
- * the thing it will reverse. It also only exists when there is something to reverse, rather than
- * sitting there looking like a section you never visit.
- */
 .rail__undo {
   display: flex;
   flex-direction: column;
@@ -359,8 +316,6 @@ select {
   padding: 0 4px;
 }
 
-/* ===================================================================== rail */
-
 .rail {
   grid-area: rail;
   flex-direction: column;
@@ -422,8 +377,6 @@ select {
 .rail__spacer {
   flex: 1;
 }
-
-/* ================================================================= composer */
 
 .composer {
   grid-area: composer;
@@ -514,8 +467,6 @@ select {
   color: var(--faint);
   cursor: default;
 }
-
-/* ===================================================================== chat */
 
 .chat {
   flex: 1;
@@ -763,8 +714,6 @@ select {
   }
 }
 
-/* ================================================================== opening */
-
 .opening {
   margin: auto;
   display: flex;
@@ -811,8 +760,6 @@ select {
   color: var(--accent);
   box-shadow: var(--shadow-md);
 }
-
-/* ================================================================== scroller */
 
 .scroll {
   flex: 1;
@@ -887,12 +834,6 @@ select {
   box-shadow: inset 0 0.5px 0 var(--hair);
 }
 
-/* =================================================================== mascot
-
-   Cooper, with no container. `tools/mascot_cutout.py` has already removed the paper and the
-   ground shadow and squared the frame, so all this has to do is pick a size.
-   ------------------------------------------------------------------------ */
-
 .mascot {
   display: block;
   object-fit: contain;
@@ -918,8 +859,6 @@ select {
   width: clamp(96px, 28vw, 124px);
   height: clamp(96px, 28vw, 124px);
 }
-
-/* ===================================================================== hero */
 
 .hero {
   background: var(--card);
@@ -955,8 +894,6 @@ select {
   font-size: 13px;
   margin-top: 3px;
 }
-
-/* ===================================================================== rows */
 
 .row {
   display: flex;
@@ -1047,8 +984,6 @@ select {
   color: var(--text);
 }
 
-/* ===================================================================== tags */
-
 .tag {
   display: inline-flex;
   align-items: center;
@@ -1080,8 +1015,6 @@ select {
   background: color-mix(in srgb, var(--green) 20%, transparent);
   color: color-mix(in srgb, var(--green) 68%, var(--text));
 }
-
-/* ====================================================================== why */
 
 .why {
   display: flex;
@@ -1133,8 +1066,6 @@ select {
   border-radius: var(--pill);
   background: var(--accent);
 }
-
-/* ================================================================== banners */
 
 .banner {
   display: flex;
@@ -1236,8 +1167,6 @@ select {
   }
 }
 
-/* ==================================================================== empty */
-
 .empty {
   background: var(--card);
   border-radius: var(--r-xl);
@@ -1259,8 +1188,6 @@ select {
   max-width: 32ch;
   font-size: 14px;
 }
-
-/* =================================================================== button */
 
 .btn {
   border-radius: var(--pill);
@@ -1312,8 +1239,6 @@ select {
   color: var(--faint);
   cursor: default;
 }
-
-/* ==================================================================== forms */
 
 .field {
   display: flex;
@@ -1438,13 +1363,6 @@ select {
   white-space: nowrap;
 }
 
-/* ================================================================ responsive
-
-   Last in the file on purpose. These rules override the component defaults above, and with
-   equal specificity source order is what decides. Putting the breakpoint earlier meant a later
-   `.tabbar { display: flex }` quietly won and the tab bar stayed visible on desktop.
-   ------------------------------------------------------------------------- */
-
 @media (min-width: 900px) {
   .app {
     grid-template-areas:
@@ -1475,12 +1393,6 @@ select {
     font-size: 15.5px;
   }
 }
-
-/* ================================================================= calendar
-
-   A day timeline, not a month grid. On a personal calendar the useful question is what today
-   looks like and where the gaps are, and a month of tiny boxes answers neither.
-   ------------------------------------------------------------------------- */
 
 .daygrid {
   background: var(--card);
@@ -1544,10 +1456,6 @@ button.slot:active {
   transform: scale(0.985);
 }
 
-/*
- * Colour says what kind of thing it is; fill says who put it there. Those are two questions,
- * so they get two channels rather than fighting over one.
- */
 .cat--academics {
   --cat: var(--c-academics);
   --cat-line: var(--c-academics-line);
@@ -1628,8 +1536,6 @@ button.slot:active {
   color: #fff;
 }
 
-/* ------------------------------------------------------------------ calendar ranges */
-
 .calbar {
   display: flex;
   align-items: center;
@@ -1640,24 +1546,12 @@ button.slot:active {
   min-width: 0;
 }
 
-/*
- * The range switcher and the nav cluster are two fixed-content groups, not two things that can
- * give up width: "Day"/"Week"/"Month" cannot shrink below their own label, and neither can the
- * arrows or "Today". Squeezing both onto one line on a phone is what made them overlap. Wrapping
- * the bar, rather than shrinking either child, is what actually fits a 320px screen: the range
- * switcher gets its own row and the nav gets the next one, and nothing overlaps at any width.
- */
 .calbar > .segmented,
 .calbar > .calnav {
   flex: none;
   min-width: 0;
 }
 
-/*
- * One segmented control, used by Settings, the calendar range and the chat mode switch. State is
- * carried by aria-pressed rather than a class, so the styling cannot disagree with what a screen
- * reader is told.
- */
 .segmented {
   display: flex;
   gap: 2px;
@@ -1694,10 +1588,6 @@ button.slot:active {
   transform: scale(0.97);
 }
 
-/*
- * The calendar and Settings want the same control at different widths: on a page background it
- * hugs its content, inside a card it fills the row.
- */
 .segmented--inline {
   display: inline-flex;
   margin: 0;
@@ -1740,8 +1630,6 @@ button.slot:active {
 .ghostbtn:hover {
   background: var(--fill);
 }
-
-/* ------------------------------------------------------------------ week */
 
 /* Seven columns do not fit a phone, so the grid scrolls sideways instead of crushing. */
 .weekscroll {
@@ -1836,8 +1724,6 @@ button.slot:active {
   display: none;
 }
 
-/* ------------------------------------------------------------------ month */
-
 .monthgrid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1878,10 +1764,6 @@ button.slot:active {
   background: var(--fill);
 }
 
-/*
- * Days spilling in from the neighbouring month are context, so the date recedes. What is *on*
- * them stays readable: dimming the whole cell hid the very thing a month view is for.
- */
 .monthcell.is-outside .monthcell__num {
   opacity: 0.4;
 }
@@ -1940,8 +1822,6 @@ button.slot:active {
   color: var(--faint);
 }
 
-/* ------------------------------------------------------------------ legend */
-
 .legend {
   list-style: none;
   margin: 12px 0 0;
@@ -1993,12 +1873,6 @@ button.slot:active {
   }
 }
 
-/* ------------------------------------------------------ the calendar wants the whole window */
-
-/*
- * `.scroll > *` holds content to a reading measure, which is right for a conversation and wrong
- * for a grid: a month squeezed into 760px wasted half a laptop screen. The calendar opts out.
- */
 .scroll--wide > * {
   width: 100%;
   max-width: 1500px;
@@ -2015,10 +1889,6 @@ button.slot:active {
     padding: 14px 28px 18px;
   }
 
-  /*
-   * Fill the height too, so a month is one glance rather than a scroll, and the last week is not
-   * cut off. The grid rows share whatever is left after the title, the controls and the footer.
-   */
   .scroll--wide > .group {
     flex: 1;
     min-height: 0;
@@ -2026,10 +1896,6 @@ button.slot:active {
     overflow: auto;
   }
 
-  /*
-   * `min-content` rather than 0: equal rows look tidy but a day with four entries was having
-   * them sliced in half. A row that needs more height takes it.
-   */
   .monthgrid {
     min-height: 100%;
     grid-template-rows: auto repeat(6, minmax(min-content, 1fr));
@@ -2058,11 +1924,6 @@ button.slot:active {
     flex-direction: column;
   }
 
-  /*
-   * `auto` basis so a busy hour still sets its own height; growth shares the leftover. The phone
-   * floor of 34px has to go, or fifteen hours add up to more than the window and the last one
-   * gets cut off.
-   */
   .daygrid__row,
   .weekgrid__line {
     flex: 1 1 auto;
@@ -2088,32 +1949,12 @@ button.slot:active {
   }
 }
 
-/* ------------------------------------------------------ the day you tapped, spelled out */
-
-/*
- * A month cell cannot hold a title on a phone, so the selected day is listed underneath with
- * times and actions. Tapping a cell selects it rather than navigating, because this panel is
- * the only place that detail exists at this size.
- */
-/* The week is a genuine grid and stays scrollable; it must not drag the layout with it. */
 .weekscroll {
   max-width: 100%;
-  /*
-   * And it must not be squashed either. A flex item whose overflow is not `visible` loses its
-   * automatic minimum size, so this one shrank below fifteen hours and clipped everything past
-   * mid-afternoon with no way to reach it. The page is the scroller; this keeps its full height.
-   * The desktop rule below is more specific and still lets it fill the window.
-   */
   flex: none;
 }
 
 @media (max-width: 599px) {
-  /*
-   * All seven days fit instead of scrolling sideways. Scrolling a grid in two directions on a
-   * phone is how you lose track of which day you are looking at, and a week you cannot see is
-   * not a week. At this size an entry becomes a bar of pure colour, exactly as in the month, and
-   * the day header opens that day for the detail.
-   */
   .weekgrid {
     min-width: 0;
   }
@@ -2150,17 +1991,9 @@ button.slot:active {
   }
 }
 
-/* ==================================================================== frame
-
-   One thing at a time, with the app pushed out of focus behind it. A sheet on a phone, a card in
-   the middle on a desktop, from one component: only the rules below differ by width.
-   ------------------------------------------------------------------------ */
-
 .frame {
   position: fixed;
   inset: 0;
-  /* Belt and braces with the portal: never let a parent's width rule shrink the blur. This was
-     clamped to a 760px strip by `.scroll > *`, which left a wide window sharp at the edges. */
   width: 100%;
   max-width: none;
   margin: 0;
@@ -2363,17 +2196,6 @@ button.slot:active {
   }
 }
 
-/* ------------------------------------------------------ Manual or AI, as a capsule */
-
-/*
- * Centred at the top of the conversation, because it changes what the next thing you type will
- * do, and a control with that much consequence should not be tucked into a corner.
- *
- * The motion is a single `translateX` on the thumb, which the compositor animates without
- * touching the main thread. A JS animation library would run the same property from
- * requestAnimationFrame, which is strictly more work for a two-state slide. The curve is Apple's:
- * quick to leave, unhurried to settle, no bounce.
- */
 .modebar {
   display: flex;
   flex-direction: column;
@@ -2387,15 +2209,9 @@ button.slot:active {
   display: grid;
   grid-template-columns: repeat(2, minmax(76px, auto));
   padding: 3px;
-  /*
-   * Mixed from the text colour rather than taken from `--fill`, which is tuned for sitting on a
-   * card. On the page background it was the same value as the page and the capsule disappeared,
-   * leaving the thumb looking like a chip floating next to a word.
-   */
   background: color-mix(in srgb, currentcolor 8%, transparent);
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, currentcolor 7%, transparent);
   border-radius: var(--pill);
-  /* A real superellipse where the browser has one, a plain capsule where it does not. */
   corner-shape: squircle;
   isolation: isolate;
 }
@@ -2454,12 +2270,6 @@ button.slot:active {
   }
 }
 
-/* --------------------------------------------------------------- Manual form
-
-   Manual mode is a form now. It reuses .group/.inset/.field so it reads as the same material as
-   Settings, with two differences: the label sits above a full-width control rather than beside a
-   narrow one, because a title is not a number, and the category chips can wrap. */
-
 .opening--form {
   padding-bottom: 6px;
 }
@@ -2498,8 +2308,6 @@ button.slot:active {
   opacity: 0.5;
 }
 
-/* The form's selects are full-width and left-aligned; the shared chevron rule higher up handles
-   the reset and the drawn arrow, so both screens' dropdowns match. */
 .taskform select.field__input {
   padding-right: 34px;
 }
@@ -2508,7 +2316,6 @@ button.slot:active {
   box-shadow: inset 0 0.5px 0 var(--hair);
 }
 
-/* A row of chips that can wrap to a second line, for the four categories plus Auto. */
 .segmented--wrap {
   flex-wrap: wrap;
 }
@@ -2517,9 +2324,6 @@ button.slot:active {
   flex: 1 1 30%;
 }
 
-/* On a laptop the form has room to behave like a compact control surface rather than a phone
-   stack. Keeping this at the desktop breakpoint leaves the touch-friendly mobile arrangement
-   intact and lets the whole form stay visible without a second scroll region. */
 @media (min-width: 900px) {
   .opening--form {
     margin: 0 auto;
@@ -2581,8 +2385,6 @@ button.slot:active {
   }
 }
 
-/* The category chips carry their own colour when chosen, so the choice previews the calendar.
-   The .cat--* class already sets --cat-line, so each chip just fills with its own. */
 .segment[class*="cat--"][aria-pressed="true"] {
   background: var(--cat-line);
   color: #fff;

@@ -41,8 +41,6 @@ interface Entry {
   item?: Item;
 }
 
-// ------------------------------------------------------------------ dates
-
 function startOfDay(at: Date): Date {
   return new Date(at.getFullYear(), at.getMonth(), at.getDate());
 }
@@ -51,7 +49,7 @@ function addDays(at: Date, days: number): Date {
   return new Date(at.getFullYear(), at.getMonth(), at.getDate() + days);
 }
 
-/** Monday-first, because the working week is what the scheduler cares about. */
+/** Return the Monday that contains a date. */
 function startOfWeek(at: Date): Date {
   return addDays(at, -((at.getDay() + 6) % 7));
 }
@@ -96,8 +94,6 @@ function rangeLabel(mode: Mode, anchor: Date, today: Date): string {
       year: "numeric",
     });
   }
-  // Both ends spelled out. Abbreviating the first end reads as a typo once the locale puts the
-  // month before the day, as in "24 – Aug 30".
   const start = startOfWeek(anchor);
   const full = { day: "numeric", month: "short" } as const;
   return `${start.toLocaleDateString(undefined, full)} – ${addDays(start, 6).toLocaleDateString(undefined, full)}`;
@@ -120,14 +116,7 @@ function daysShown(mode: Mode, anchor: Date): Date[] {
   return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index));
 }
 
-// ------------------------------------------------------------------ entries
-
-/**
- * Merge both sides into one ordered agenda.
- *
- * Events Cooper created come back from Google too, so those are dropped: `mine` marks them and
- * the local copy is the one with the actions attached.
- */
+/** Merge local and external entries without duplicating local blocks. */
 function agenda(scheduled: Item[], events: CalendarEvent[]): Entry[] {
   const entries: Entry[] = [];
 
@@ -177,16 +166,7 @@ function saveMode(mode: Mode): void {
   }
 }
 
-// ------------------------------------------------------------------ view
-
-/**
- * The calendar.
- *
- * Three ranges, because the question changes with the range: a day answers "what now", a week
- * answers "how full am I", a month answers "when is that thing". Colour comes from the item's
- * category rather than its source, so the shape of a week is readable at a glance; entries
- * Cooper placed are filled, ones from Google Calendar or Gmail are outlined.
- */
+/** Calendar views for day, week, and month ranges. */
 export function Calendar({
   view,
   busy,
@@ -203,7 +183,6 @@ export function Calendar({
   const today = new Date(view.now);
   const [mode, setMode] = useState<Mode>(loadMode);
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(today));
-  // Both are frames now rather than sections: a day, and one thing inside it.
   const [picked, setPicked] = useState<Date | null>(null);
   const [chosen, setChosen] = useState<Item | null>(null);
 
@@ -214,7 +193,6 @@ export function Calendar({
   const dayOf = picked ?? anchor;
 
   function choose(next: Mode): void {
-    // Carry the day you were looking at, rather than dumping you on the first of the month.
     if (next === "day" && mode === "month") setAnchor(dayOf);
     setMode(next);
     saveMode(next);
@@ -322,19 +300,13 @@ export function Calendar({
     );
   }
 
-  /** A block in a timed grid. External Google and Gmail entries are not ours to edit. */
-  /**
-   * One entry on the grid. The whole thing opens its detail frame, where the actions live.
-   * They used to be two icon buttons crammed inside the block, which on a week grid left about
-   * eleven pixels for the title.
-   */
+  /** Render one entry in the timed grid. */
   function block(entry: Entry, compact: boolean) {
     const label = `${entry.title} · ${clock(entry.start)}–${clock(entry.end)} · ${
       CATEGORY_LABEL[entry.category]
     }`;
 
     if (!entry.item) {
-      // An external event Cooper did not create. Nothing to act on, so it is not a button.
       return (
         <div
           className={`slot slot--${entry.source} cat--${entry.category}`}

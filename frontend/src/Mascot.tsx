@@ -1,20 +1,4 @@
-/**
- * Cooper.
- *
- * He is the app and the app is him, so he is never introduced as "the otter" — he has a name.
- *
- * The art carries an opaque warm ground ellipse under the feet. It used to be hidden by cropping
- * every mascot inside a tinted circle, which made him look like a contact photo. Now the bottom
- * of the image fades out in CSS instead, so he stands directly on the page.
- */
-
-/**
- * One name per file in `public/assets/mascot`, as a type rather than a string.
- *
- * This was a plain `string`, and renaming the art to `cooper_*` left five call sites asking for
- * files that no longer existed. Nothing failed loudly: the dev server answers a missing asset
- * with index.html, so the page just showed a broken image. A union catches that at build time.
- */
+/** Asset names shipped in `public/assets/mascot`. */
 export type MascotName =
   | "cooper_avatar"
   | "cooper_done"

@@ -118,15 +118,11 @@ async def guard(request: Request, call_next: Any) -> Any:
     return await call_next(request)
 
 
-# ------------------------------------------------------------------------ shapes
-
-
 class Say(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
-    # Manual is the default on purpose: the model has a daily quota, and the rules parser handles
-    # the ordinary shapes without spending any of it. AI mode is opt-in, per message.
+    # Manual mode is local and remains the default.
     mode: Literal["manual", "ai"] = "manual"
-    # A browser key is deliberately request-scoped. It is never persisted, logged, or returned.
+    # This key is request-scoped and is never persisted, logged, or returned.
     gemini_api_key: str | None = Field(default=None, max_length=256)
 
 
@@ -176,9 +172,6 @@ class BulkIn(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=100)
 
 
-# ------------------------------------------------------------------------ helpers
-
-
 def current_hours() -> Hours:
     saved = store.get_setting(HOURS_SETTING)
     if saved:
@@ -187,12 +180,7 @@ def current_hours() -> Hours:
 
 
 def _is_local_item(item: Item) -> bool:
-    """Return whether Cooper owns an item and may change it.
-
-    Imported rows are mirrors of an external source. Keeping this predicate in one place makes
-    every mutation path obey the same boundary instead of relying on each route to remember that
-    ``source`` and ``owner_id`` carry different meanings.
-    """
+    """Return whether Cooper owns an item and may change it."""
     return item.source == "me" and item.owner_id == settings.owner_id
 
 
@@ -211,8 +199,7 @@ def find(session: Any, words: str) -> Item | None:
     needle = words.strip().lower()
     if not needle:
         return None
-    # AI verbs may only target items Cooper owns. Gmail confirmations stay visible as calendar
-    # commitments, but they can only change when a later Gmail sync reconciles them.
+    # External commitments remain visible but are changed only by their source sync.
     items = [item for item in store.open_items(session) if _is_local_item(item)]
 
     for item in items:
@@ -252,9 +239,7 @@ def google_events(*, days: int = 14) -> list[dict[str, Any]]:
             "title": entry.title,
             "start_at": entry.start.isoformat(),
             "end_at": entry.end.isoformat(),
-            # Google has no idea about our categories, so the title is all there is to go on.
             "category": guess_category(entry.title),
-            # `mine` marks events Cooper created, so the agenda does not show them twice.
             "mine": entry.mine,
             "source": "google",
         }
@@ -280,9 +265,6 @@ def sync_gmail_once() -> SyncSummary:
     checked_at = now()
     try:
         messages = gmail.list_messages(
-            # Gmail's bound is evaluated against a fresh clock inside the client. Its query is
-            # day-granular, so this second preserves the requested window while avoiding a
-            # race at the exact lower boundary when the client checks a fresh clock.
             after=(
                 checked_at
                 - dt.timedelta(days=settings.gmail_lookback_days)
@@ -297,8 +279,7 @@ def sync_gmail_once() -> SyncSummary:
 
     proposals: list[EmailProposal] = []
     skipped = 0
-    # Gmail lists newest first. Reconciling old-to-new means a later cancellation wins over the
-    # confirmation it refers to, while retaining nothing from the message after this loop.
+    # Apply messages oldest first so later cancellations win.
     for message in sorted(messages, key=lambda entry: getattr(entry, "internal_at", checked_at)):
         try:
             proposal = parse_confirmation(message, timezone=settings.timezone, now=checked_at)
@@ -319,9 +300,7 @@ def _reconcile_gmail_proposals(proposals: list[EmailProposal], *, skipped: int =
     created = updated = dropped = 0
     with store.session() as session:
         for proposal in proposals:
-            # Unlike a user-entered action, an email proposal must never receive a default end
-            # time from the shared validator. The parser is intentionally conservative, so an
-            # incomplete or malformed window is skipped before validation can invent anything.
+            # Do not let validation invent an end time for an email proposal.
             if not proposal.cancelled and (
                 proposal.start is None
                 or proposal.end is None
@@ -444,9 +423,6 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
         "timezone": settings.timezone,
-        # Everything still open, ranked, whether or not it has a time yet. A task is added
-        # straight onto the calendar now, so filtering booked work out of here emptied the plan
-        # the moment anything was added. "scheduled" is the calendar's feed, not a second list.
         "shortlist": [
             {**entry.item.to_dict(), "score": entry.score, "why": entry.why} for entry in ranked
         ],
@@ -469,9 +445,6 @@ def today_view(*, using_model: bool | None = None) -> dict[str, Any]:
             "skipped": gmail_counts.get("skipped", 0),
         },
     }
-
-
-# ------------------------------------------------------------------------- routes
 
 
 @app.get("/health")
@@ -498,16 +471,7 @@ def say(body: Say) -> dict[str, Any]:
 
     action = request_brain.read(body.text, recent, use_model=ai)
 
-    # In AI mode, a sentence shaped like a question — "what should I do", "is there room
-    # tomorrow" — gets a real answer instead of "here is what is next" or a generic question
-    # back. Nothing here writes to the database: an answer is text.
-    #
-    # Everything else that came back as "ask" already carries the right reply in
-    # `action.question`: the prompt now tells the model to use "ask" both for a genuinely
-    # ambiguous instruction ("Which one did you mean?") and for a sentence that is not a task at
-    # all ("I only turn sentences into calendar tasks and events, not write poems"). Routing
-    # every "ask" through `answer()` used to replace both of those specific, correct replies with
-    # one generic decline, which is what made a real multi-task request look like a refusal.
+    # Questions are answered as text and never reach the mutation path.
     if ai and (action.verb == "show" or looks_like_a_question(body.text)):
         answered = request_brain.answer(body.text, summaries)
         if answered:
@@ -621,9 +585,7 @@ def add(action: Action) -> dict[str, Any]:
                 "item": payload,
             }
 
-    # A task with no time of its own goes straight onto the calendar. Leaving it in the shortlist
-    # until you remembered to say "plan my day" was the single most confusing thing about this
-    # app: you added something, looked at the calendar, and it was not there.
+    # Sized tasks are placed immediately when they have no fixed start.
     if action.kind == "task" and not action.start:
         booked = place_one(payload["id"])
         if booked is not None:
@@ -640,7 +602,6 @@ def add(action: Action) -> dict[str, Any]:
             "item": payload,
         }
 
-    # An event already knows when it is, so say so rather than leaving you to go and look.
     if payload["start_at"]:
         return {
             "kind": "added",
@@ -741,8 +702,7 @@ def add_batch(action: Action) -> dict[str, Any]:
             session.add(item)
             created.append(item.id)
         session.flush()
-        # One change for the whole batch: before={} for every one of them means undo deletes
-        # each by id, the same as before={} means "undo removes this" for a single add.
+        # One change row lets undo remove the whole batch.
         store.record(
             session,
             label=f"Added {len(created)} tasks",
@@ -757,8 +717,7 @@ def add_batch(action: Action) -> dict[str, Any]:
         payload = result if result is not None else payloads[item_id]
         booked.append(payload)
         if payload["start_at"]:
-            # The next step cannot start before this one's slot ends. If this step did not fit
-            # anywhere, the floor does not move — the step after it is still tried from now.
+            # Sequence the next step after the slot just placed.
             floor = dt.datetime.fromisoformat(payload["end_at"])
 
     unplaced = sum(1 for payload in booked if not payload["start_at"])
@@ -963,9 +922,6 @@ def _local(moment: dt.datetime | None) -> dt.datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=ZoneInfo(settings.timezone))
 
 
-# ------------------------------------------------------------- direct item routes
-
-
 @app.post("/api/items")
 def create(body: NewItem) -> dict[str, Any]:
     """Manual mode's form: fields in, item out, no parsing and no model.
@@ -980,29 +936,22 @@ def create(body: NewItem) -> dict[str, Any]:
         kind="event" if body.start else body.kind,
         minutes=body.minutes,
         importance=body.importance,
-        # An empty category means "work it out from the title", the way the sentence path does,
-        # rather than forcing the person to categorise their own errand.
+        # Match sentence capture: an omitted category is inferred from the title.
         category=body.category or guess_category(body.title),
         due=body.due,
-        # A time from the form is a wall-clock time in the user's own zone. The sentence path
-        # tags naive times with the configured zone; the form must do the same, or a 3pm event
-        # gets stored as 3pm UTC and shows up in the evening. An offset the client did send is
-        # trusted as given.
+        # Form times are wall-clock values in the configured zone unless an offset is supplied.
         start=_local(body.start),
         end=_local(body.end),
         source="form",
     )
-    # Present or future only: a deadline or a start in the past is not something to schedule
-    # around, and almost always a misclick. The form's date input sets the same floor with
-    # `min`, but a request can arrive without one, so the rule lives here where it is enforced.
+    # Reject past dates here even when a client omits the input constraint.
     zone = ZoneInfo(settings.timezone)
     today = now().astimezone(zone).date()
     if body.due is not None and body.due < today:
         raise HTTPException(status_code=422, detail="A deadline can't be in the past.")
     if action.start is not None and action.start < now():
         raise HTTPException(status_code=422, detail="That time has already passed.")
-    # The same validation the model's output goes through: an event that ends before it starts
-    # becomes a question, a start with no end gets one, and so on.
+    # Form actions use the same validation as model output.
     action = validate(action)
     if action.is_question:
         raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
@@ -1177,9 +1126,6 @@ def changes() -> dict[str, Any]:
         }
 
 
-# ------------------------------------------------------------------ google oauth
-
-
 @app.post("/api/google/connect")
 def connect() -> dict[str, str]:
     state = secrets.token_urlsafe(16)
@@ -1198,7 +1144,6 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
     if not code:
         return _page("Nothing to do", "Google sent no authorization code.")
     if not expected or state != expected:
-        # Without this any page could finish an authorization on your behalf.
         return _page("Wrong origin", "That callback did not come from Cooper.")
 
     app.state.oauth_state = None

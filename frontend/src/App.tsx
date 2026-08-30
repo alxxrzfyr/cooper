@@ -23,7 +23,7 @@ import {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** The three answers to "what should this look like", in the order a segmented control shows. */
+/** Appearance choices shown in Settings. */
 const APPEARANCES: Array<{ id: Appearance; label: string }> = [
   { id: "light", label: "Light" },
   { id: "dark", label: "Dark" },
@@ -115,13 +115,7 @@ interface Notice {
   message: string;
 }
 
-/**
- * Why this is at the top, in the words the user typed rather than the number behind it.
- *
- * The score used to be shown as "0.23" with a four-bar breakdown of its terms, which explained
- * the formula rather than the task. The deadline is the formula now, so the deadline is what it
- * says.
- */
+/** Explain priority using the item's deadline and score details. */
 function why(item: Item): string {
   if (!item.due) return "no deadline";
   const day = item.due.slice(0, 10);
@@ -134,7 +128,6 @@ function why(item: Item): string {
 }
 
 export default function App() {
-  // The app opens on the dashboard: seeing the day should not require asking for it.
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
   const [serverModelAvailable, setServerModelAvailable] = useState(false);
@@ -156,8 +149,6 @@ export default function App() {
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
-      // Chat already renders the reply. A second copy as a toast would make AI mode feel like an
-      // activity log, so keep in-app notices for the other screens while retaining OS alerts.
       if (showToast && tab !== "chat") {
         setNotice({ kind, message });
         if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
@@ -213,9 +204,6 @@ export default function App() {
 
   useEffect(() => saveTurns(turns), [turns]);
 
-  // AI mode is only usable with a model key. A mode saved from a session that had one — or a key
-  // that was later removed — must not strand the user in a conversation that cannot answer and
-  // with no form to add through. A key can come from this browser or the deployment.
   useEffect(() => {
     if (loadResolved && !canUseAi && mode === "ai") {
       setMode("manual");
@@ -274,8 +262,6 @@ export default function App() {
         announce(result.kind, result.message, false);
 
         if (result.kind === "shown") {
-          // "What should I do?" deserves an actual answer in the conversation, not a nudge to
-          // go and look at another tab.
           const list = result.view.shortlist.slice(0, 4);
           reply({
             text: list.length
