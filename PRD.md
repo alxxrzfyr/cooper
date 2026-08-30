@@ -2,9 +2,9 @@
 
 One place for everything that takes my time — tasks, events, and errands — that I can talk to.
 
-Today it runs on my machine for me alone. It is being built so that other people can use it
-later, and that intent shapes a handful of decisions listed at the bottom. It does not mean
-building account features now.
+Today it runs on my machine for me alone. A small public version can also run for approved friends
+and family with Firebase sign-in, PostgreSQL, and owner-scoped data. That does not make it a team
+tool: there is still no sharing, projects, reports, or collaboration.
 
 ## The problem
 
@@ -153,8 +153,9 @@ brutally expensive if they are deferred, so they are settled now:
 4. **The shared key is a placeholder, not the design.** It is one user's front door. It is not
    authentication and must not be extended into a pretend version of it.
 
-And two things that are explicitly _not_ being solved yet: real accounts, and hosting. Both
-arrive together, with Postgres and a migration tool, in one deliberate piece of work.
+Accounts and hosting are intentionally narrow: Firebase identifies an approved person, PostgreSQL
+stores each owner's rows, and Google Calendar/Gmail consent stays per owner. Nothing about that
+adds sharing or team features.
 
 **The expensive thing to know about:** reading Gmail is a restricted permission. For me, in
 testing mode, it is free. For a published app with other users, Google requires a paid annual
@@ -175,8 +176,8 @@ Not a schedule. A dependency chain.
 5. **Outlook and Teams meetings.** Next, once an Azure app registration and the narrow read
    scopes are a deliberate decision. Teams assignments then feed the ranked list rather than the
    calendar.
-6. **Accounts, Postgres and hosting.** One piece of work, not spread out. Only when someone else
-   actually needs in.
+6. **Accounts, Postgres and hosting.** Built as one piece: Firebase Auth, owner-scoped rows,
+   PostgreSQL migrations, Cloud Run, and Firebase Hosting.
 
 ## How I will know it works
 

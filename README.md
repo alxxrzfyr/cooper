@@ -3,7 +3,8 @@
 A calendar you talk to. Type what's on your plate, it works out the task and the time, tells
 you what to do first, and puts it in your Google Calendar.
 
-Built for one person. Runs on your machine or as a private personal deployment.
+Runs on your machine for one person, or as a small public deployment for approved friends and
+family with Firebase Authentication.
 
 ```
 you: write the quarterly report, 90m, important, due friday
@@ -86,10 +87,10 @@ when it needs you.
 
 ## Two ways to talk to it
 
-Chat has a **Manual** and an **AI** switch, and Manual is the default.
+Chat has a **Form** and an **Ask** switch, and Form is the default.
 
-Manual is the rule-based parser. It runs offline, costs nothing, and handles the sentences you
-actually type. AI hands the sentence to Gemini and can also answer questions about your own tasks:
+Form is structured capture. It runs offline, costs nothing, and never calls a model. Ask hands the
+sentence to Gemini and can also answer questions about your own tasks:
 "what should I focus on this week", "is there room for the gym tomorrow". Answers are text only —
 they can never change your calendar, and Cooper declines anything that is not about your own work.
 
@@ -98,12 +99,11 @@ practice, all due Friday" — into several tasks at once, each booked so it does
 the one before it ends. It is still one undo, the same as adding one task: a batch is additive,
 not a project plan, and there is no dependency this app remembers between the tasks it created.
 
-Manual exists because most sentences do not need a model. It is the default, runs offline, and
-spends no Gemini quota. For a personal deployment, paste your own Gemini key into Settings when
-you want AI mode. The key stays in that browser and is sent only with AI messages. The optional
-server-side Gemini key path has been removed so a hosted app cannot silently share one person's
-AI quota with every browser. Without a browser key the AI switch disables itself and everything
-else still works.
+Form exists because most captures do not need a model. It is the default, runs offline, and spends
+no Gemini quota. Paste your own Gemini key into Settings when you want Ask mode. The key stays in
+that browser and is sent only with Ask messages. The server-side Gemini key path has been removed,
+so a hosted app cannot silently share one person's AI quota with every browser. Without a browser
+key the Ask switch disables itself and everything else still works.
 
 The Gemini provider and account control the actual quota. Cooper keeps usage small with the Manual
 default, a rules fast path for obvious commands, one bounded repair attempt, short output caps,
@@ -112,7 +112,8 @@ and a small answer context. Those limits reduce avoidable calls, but the app can
 
 ## What it is not
 
-Not a team tool. No accounts, no sharing, no projects, no boards, no reports, no streaks.
+Not a team tool. Accounts are only identity and data isolation; there is no sharing, no projects,
+no boards, no reports, no streaks.
 No audit log, because nobody audits their own calendar. If a feature only makes sense with a
 second user, it does not belong here.
 
@@ -141,8 +142,8 @@ verbs still need their conversation surface in AI mode.
 
 Read-only, all of it. Cooper never RSVPs for you and never creates a meeting.
 
-Accounts and multi-user tenancy are a separate, later, deliberate piece of work. SQLite stays the
-default because each personal deployment needs only its own persistent store.
+Accounts and multi-user tenancy now exist only for a small approved audience. SQLite stays the
+local default; hosted public use needs PostgreSQL because Cloud Run instances are disposable.
 
 ## Running it
 
@@ -162,33 +163,42 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
-That's the whole local setup. No migrations to run, no database to create, and no Gemini key is
-required unless you want AI mode.
+That's the whole local setup. SQLite is created automatically, and no Gemini key is required unless
+you want Ask mode. If you are testing a migration explicitly, run `uv run alembic upgrade head`.
 
-### Personal deployment
+### Public Firebase deployment
 
-The frontend is a static Vite build, while the API remains a FastAPI service with persistent
-storage. This means a static host such as Vercel or Cloudflare can serve the frontend, but the
-FastAPI backend still needs a Python host and a persistent data directory. Cooper does not add a
-provider-specific adapter.
+The public path is Firebase Hosting for the Vite app, Firebase Authentication for Google sign-in,
+Cloud Run for FastAPI, and PostgreSQL for durable state. Firebase Auth identifies the person; it
+does not grant Calendar or Gmail access. Each signed-in user connects Google separately from
+Settings, and those Calendar/Gmail refresh tokens are encrypted per owner.
 
-1. Run the backend on a Python host with its persistent `COOPER_DATABASE_URL` and set
-   `COOPER_ORIGIN` to the deployed frontend origin.
-2. Build the frontend with `VITE_COOPER_API` set to the backend URL and `VITE_COOPER_KEY` set to
-   the backend's shared key, then upload `frontend/dist` to the static host.
-3. Open the deployed app, go to Settings, and paste the user's own Gemini API key. It is stored
-   in that browser only and is included only on AI-mode requests. Manual mode needs no Gemini key.
+1. In Firebase, create a project, enable Authentication, and enable the Google provider.
+2. Add only the friends/family emails you allow to `COOPER_ALLOWED_EMAILS`.
+3. In Google Cloud, enable Calendar API and Gmail API, then create a Web application OAuth client.
+4. Add this OAuth callback exactly: `https://<firebase-site>.web.app/api/google/callback`.
+5. Use PostgreSQL: Cloud SQL or another compatible `postgresql+psycopg://...` database URL.
+6. Deploy the Dockerfile to Cloud Run service id `cooper-api` in `asia-southeast1`.
+7. Set Cloud Run secrets/env: `COOPER_AUTH_MODE=firebase`, `COOPER_FIREBASE_PROJECT_ID`,
+   `COOPER_ALLOWED_EMAILS`, `COOPER_DATABASE_URL`, `COOPER_ORIGIN`, Google OAuth values,
+   `COOPER_ENCRYPTION_KEY`, `COOPER_OAUTH_STATE_SECRET`, and `COOPER_SYNC_SECRET`.
+8. Deploy Firebase Hosting with `firebase.json`; `/api/**` and the OAuth callback rewrite to
+   Cloud Run, while the frontend keeps `VITE_COOPER_API=` empty.
+9. Add Cloud Scheduler to POST `/api/internal/google/sync` with `X-Cooper-Sync-Secret`.
 
-This is still a one-person deployment: the app has no accounts or login, and the shared key is a
-request guard rather than authentication. Keep the deployment private with the host's access
-controls or a private URL. `VITE_COOPER_KEY` is part of a static browser build, so it must not be
-treated as a secret. Gemini keys belong in browser Settings only.
+Cloud Run runs `alembic upgrade head` before starting Uvicorn. Local Uvicorn stays bound to
+`127.0.0.1`; the Dockerfile's `0.0.0.0` listener is only for Cloud Run's assigned container port.
+
+Firebase's Spark plan is fine for experimenting with Auth and Hosting, but this architecture needs
+Cloud Run and PostgreSQL. Linking billing upgrades the project to Blaze. Set budget alerts before
+inviting people. Gmail readonly is a restricted scope: personal/testing use is free, but a
+published app for broad public users can require Google's paid security assessment.
 
 ### Optional: better parsing
 
 Create a Gemini key in [AI Studio](https://aistudio.google.com/apikey), then paste it into
-Settings in the browser that should use AI mode. Without one, a rule-based parser handles the
-common shapes, and ranking and scheduling never use a model.
+Settings in the browser that should use Ask mode. Without one, structured Form capture handles
+common captures, and ranking and scheduling never use a model.
 
 Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
 sends only your own words and task titles, never event descriptions, locations, or attendees.
@@ -228,6 +238,7 @@ cooper/
   google.py    Calendar writes and Gmail reads, over REST
   sources.py   local, Google and Gmail commitment intervals
   watcher.py   fixed-interval Gmail sync entry point
+  auth.py      Firebase identity verification for hosted mode
   config.py    settings
 frontend/src/
   App.tsx      one screen
@@ -279,7 +290,7 @@ particular shows you Blink's auto-inversion rather than the real dark theme.
 
 ## Security, briefly
 
-No login, because one deployment is for one person. On a hosted deployment, keep the frontend and
-API private with the host's access controls; the API's shared key and pinned origin are not a
-replacement for authentication. A Gemini key entered in Settings stays in that browser, while
-the Google token remains encrypted at rest.
+Local mode uses a shared key on `127.0.0.1`. Hosted mode uses Firebase ID tokens plus an email
+allowlist, and every row is scoped by the verified Firebase UID. The shared key is not used in
+hosted mode. A Gemini key entered in Settings stays in that browser, while Google refresh tokens
+remain encrypted at rest per owner.

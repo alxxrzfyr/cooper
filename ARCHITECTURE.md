@@ -8,14 +8,15 @@ nothing below describes code that is not there.
 
 ```
 cooper/
-  config.py    ~50 lines   settings from .env; only COOPER_SHARED_KEY is required
-  db.py       ~250 lines   three tables, a session helper, the UTC column type
+  auth.py      ~90 lines   Firebase ID-token verification for hosted mode
+  config.py   ~140 lines   local/shared-key and hosted/Firebase settings
+  db.py       ~340 lines   three owner-scoped tables, a session helper, the UTC column type
   brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
   planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
   google.py   ~390 lines   Calendar and Gmail over REST; no SDK
   sources.py  ~100 lines   one busy-time pipe for every commitment source
   watcher.py  ~250 lines   one fixed Gmail sync timer
-  app.py      ~1,180 lines every route; the only thing that writes to the database
+  app.py      ~1,450 lines every route; the only thing that writes to the database
 ```
 
 ## Backend, future
@@ -59,9 +60,9 @@ frontend/src/
   theme.css         tokens, light and dark
 ```
 
-There is no frontend work currently planned beyond the existing Calendar/Gmail status and
-read-only event surfaces. New provider UI should extend those surfaces rather than creating a
-parallel settings or event model.
+The frontend can run in local mode with `X-Cooper-Key` or hosted mode with Firebase Google sign-in.
+Firebase sign-in only identifies the user; Calendar and Gmail access are separate Settings
+connections handled by the backend OAuth flow.
 
 `Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
 `add` the sentence path uses, and runs it through the public `validate` in `brain.py`. A typed
@@ -77,7 +78,7 @@ it cannot drift with the viewer's zone.
 
 ## Data
 
-Three tables today. The planned changes are additive columns, no new tables.
+Three tables today, all owner-scoped.
 
 **`item`** — a task _or_ an event. The only difference is whether the time is fixed, so they
 share a table. Splitting them into `task` and `scheduled_block` is what made the previous
@@ -101,27 +102,17 @@ source_ref    the provider event reference, so a move or cancellation finds it a
 `google_event_id` is an event Cooper _wrote_. `source_ref` is an event Cooper _read_. One is a
 mirror Cooper owns, the other is a fact it does not.
 
-**`setting`** — key/value. Working hours, the encrypted Google token, Gmail watcher health, and
-the watcher's last-checked marker. It is still one local owner's store.
+**`setting`** — `(owner_id, key)` value. Working hours, the encrypted Google token, durable OAuth
+nonce, Gmail watcher health, and the watcher's last-checked marker.
 
-**`change`** — `label`, `item_id`, `before`. Enough to undo the last thing, pruned to twenty
-rows. Not an audit log. Planned: `owner_id`.
+**`change`** — `owner_id`, `label`, `item_id`, `before`. Enough to undo the last thing, pruned to
+twenty rows per owner. Not an audit log.
 
 ### Databases
 
-SQLite today, via SQLAlchemy. `Store.__init__` calls `create_all`, which is the right amount of
-ceremony for three tables owned by one person.
-
-Postgres arrives with accounts, in the same piece of work, and should be a change to
-`COOPER_DATABASE_URL` and nothing else. Two things stand in the way, both known:
-
-- **`_add_new_columns()` uses `PRAGMA table_info`, which is SQLite-only.** It exists because
-  `create_all` adds missing tables but not missing columns. It is the one place that must be
-  replaced rather than ported.
-- **`create_all` is not a migration tool.** It works because a single owner can delete
-  `cooper.db`. Real users cannot, so accounts and a migration tool arrive together.
-
-Write no database-specific SQL from here on. That rule is what keeps the swap to one line.
+SQLite remains the local default, via SQLAlchemy. Hosted mode uses PostgreSQL by setting
+`COOPER_DATABASE_URL`. Alembic owns schema upgrades for both; `create_all` only makes a fresh local
+database convenient. Write no database-specific SQL from here on.
 
 ## The flow
 
@@ -209,7 +200,8 @@ ranked and shown but never given a block.
 
 ## Security
 
-One user on one machine today, so no login. That is only safe on localhost, so:
+Local mode is one user on one machine, protected only by a shared key. That is only safe on
+localhost, so:
 
 - bind `127.0.0.1`
 - every route except `/health` and the OAuth callback needs `X-Cooper-Key`
@@ -219,7 +211,13 @@ One user on one machine today, so no login. That is only safe on localhost, so:
   middleware, so raising would surface as a 500
 
 The shared key is one user's front door, not authentication. Do not extend it into a pretend
-version of one. Real accounts arrive with Postgres and hosting, as one piece of work.
+version of one.
+
+Hosted mode uses Firebase Authentication. The browser sends `Authorization: Bearer <Firebase ID
+token>`, `auth.py` verifies it lazily with Firebase Admin, and `app.py` scopes every query and
+change by the verified UID. A separate owner-bound Google OAuth grant supplies Calendar and Gmail
+access. The OAuth callback is protected by signed, durable, one-use state because Firebase cannot
+attach a bearer token to Google's redirect.
 
 **Gmail is a restricted scope.** Reading mail is among the heaviest permissions Google grants.
 Free in testing mode for a single developer; a published multi-user app requires a paid annual
