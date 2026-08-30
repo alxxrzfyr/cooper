@@ -3,7 +3,7 @@
 A calendar you talk to. Type what's on your plate, it works out the task and the time, tells
 you what to do first, and puts it in your Google Calendar.
 
-Built for one person. Runs on your machine.
+Built for one person. Runs on your machine or as a private personal deployment.
 
 ```
 you: write the quarterly report, 90m, important, due friday
@@ -98,8 +98,16 @@ practice, all due Friday" — into several tasks at once, each booked so it does
 the one before it ends. It is still one undo, the same as adding one task: a batch is additive,
 not a project plan, and there is no dependency this app remembers between the tasks it created.
 
-Manual exists because the free tier has a daily limit and most sentences do not need a model. With
-no key at all the AI switch disables itself and everything else still works.
+Manual exists because most sentences do not need a model. It is the default, runs offline, and
+spends no Gemini quota. For a personal deployment, paste your own Gemini key into Settings when
+you want AI mode. The key stays in that browser and is sent only with AI messages. The optional
+`COOPER_GEMINI_API_KEY` environment value remains available as a private server-side fallback.
+Without either key the AI switch disables itself and everything else still works.
+
+The Gemini provider and account control the actual quota. Cooper keeps usage small with the Manual
+default, a rules fast path for obvious commands, one bounded repair attempt, short output caps,
+and a small answer context. Those limits reduce avoidable calls, but the app cannot guarantee
+1,000 requests per day.
 
 ## What it is not
 
@@ -135,8 +143,8 @@ tasks with due dates, so the existing score handles them with no special case.
 
 Read-only, all of it. Cooper never RSVPs for you and never creates a meeting.
 
-Accounts, Postgres and hosting are a separate, later, deliberate piece of work. SQLite stays until
-then, because it needs no account, no bill, and no network.
+Accounts and multi-user tenancy are a separate, later, deliberate piece of work. SQLite stays the
+default because each personal deployment needs only its own persistent store.
 
 ## Running it
 
@@ -156,13 +164,35 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
-That's the whole setup. No migrations to run, no database to create, no API keys required.
+That's the whole local setup. No migrations to run, no database to create, and no Gemini key is
+required unless you want AI mode.
+
+### Personal deployment
+
+The frontend is a static Vite build, while the API remains a FastAPI service with persistent
+storage. This means a static host such as Vercel or Cloudflare can serve the frontend, but the
+FastAPI backend still needs a Python host and a persistent data directory. Cooper does not add a
+provider-specific adapter.
+
+1. Run the backend on a Python host with its persistent `COOPER_DATABASE_URL` and set
+   `COOPER_ORIGIN` to the deployed frontend origin.
+2. Build the frontend with `VITE_COOPER_API` set to the backend URL and `VITE_COOPER_KEY` set to
+   the backend's shared key, then upload `frontend/dist` to the static host.
+3. Open the deployed app, go to Settings, and paste the user's own Gemini API key. It is stored
+   in that browser only and is included only on AI-mode requests. Manual mode needs no Gemini key.
+
+This is still a one-person deployment: the app has no accounts or login, and the shared key is a
+request guard rather than authentication. Keep the deployment private with the host's access
+controls or a private URL. `VITE_COOPER_KEY` is part of a static browser build, so it must not be
+treated as a secret. Leave `COOPER_GEMINI_API_KEY` blank when each browser should provide its own
+key in Settings.
 
 ### Optional: better parsing
 
-Set `COOPER_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) and messier
-sentences work. Without it a rule-based parser handles the common shapes, and ranking and
-scheduling never used a model anyway.
+Set `COOPER_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) for a private
+server-side fallback, or paste the key into Settings for the browser that should use it. Without
+either one a rule-based parser handles the common shapes, and ranking and scheduling never use a
+model.
 
 Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
 sends only your own words and task titles, never event descriptions, locations, or attendees.
@@ -251,6 +281,7 @@ particular shows you Blink's auto-inversion rather than the real dark theme.
 
 ## Security, briefly
 
-No login, because there is one user on one machine. That is only safe on `127.0.0.1`, so the
-API requires a shared key, the origin is pinned, and the Google token is encrypted at rest.
-Putting this on the internet needs real authentication first, and that is out of scope.
+No login, because one deployment is for one person. On a hosted deployment, keep the frontend and
+API private with the host's access controls; the API's shared key and pinned origin are not a
+replacement for authentication. A Gemini key entered in Settings stays in that browser, while
+the Google token remains encrypted at rest.
