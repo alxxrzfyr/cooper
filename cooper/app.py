@@ -39,7 +39,7 @@ from cooper.brain import (
     validate,
 )
 from cooper.config import KEY_MIN, Settings
-from cooper.db import Change, Item, Store, aware, new_id, now
+from cooper.db import Change, Item, Setting, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.planner import Hours, Slot, place, rank
 from cooper.watcher import EmailProposal, parse_confirmation
@@ -114,6 +114,9 @@ async def guard(request: Request, call_next: Any) -> Any:
         return await call_next(request)
 
     if request.url.path == "/api/google/callback":
+        return await call_next(request)
+
+    if request.url.path == "/api/internal/google/sync":
         return await call_next(request)
 
     if settings.auth_mode == "local":
@@ -1390,6 +1393,53 @@ def sync_google(request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
     summary = sync_gmail_once(owner_id)
     return {"summary": dataclasses.asdict(summary), "view": today_view(owner_id)}
+
+
+def google_owner_ids() -> list[str]:
+    """Owners with a stored Google grant, without reading or returning token material."""
+    with store.session() as session:
+        rows = list(session.scalars(select(Setting).where(Setting.key == GOOGLE_SETTING)))
+    owners: list[str] = []
+    for row in rows:
+        value = row.value if isinstance(row.value, dict) else {}
+        if isinstance(value.get("token"), str) and value["token"]:
+            owners.append(row.owner_id)
+    return sorted(set(owners))
+
+
+def _check_sync_secret(request: Request) -> None:
+    expected = settings.sync_key()
+    supplied = request.headers.get("X-Cooper-Sync-Secret", "")
+    if not expected or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Wrong or missing sync secret.")
+
+
+@app.post("/api/internal/google/sync")
+def sync_all_google(request: Request) -> dict[str, int]:
+    _check_sync_secret(request)
+    totals = {
+        "owners": 0,
+        "imported": 0,
+        "updated": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failed": 0,
+    }
+    for owner_id in google_owner_ids():
+        totals["owners"] += 1
+        try:
+            summary = sync_gmail_once(owner_id)
+        except Exception:
+            totals["failed"] += 1
+            continue
+        if summary.error:
+            totals["failed"] += 1
+            continue
+        totals["imported"] += summary.created
+        totals["updated"] += summary.updated
+        totals["cancelled"] += summary.dropped
+        totals["skipped"] += summary.skipped
+    return totals
 
 
 def _page(title: str, message: str) -> HTMLResponse:

@@ -28,6 +28,7 @@ KEY = "test-key-that-is-long-enough-x"
 os.environ["COOPER_SHARED_KEY"] = KEY
 os.environ["COOPER_TIMEZONE"] = "Asia/Singapore"
 os.environ["COOPER_OAUTH_STATE_SECRET"] = "oauth-state-secret-long-enough"
+os.environ["COOPER_SYNC_SECRET"] = "sync-secret-that-is-long-enough"
 
 HEADERS = {"X-Cooper-Key": KEY}
 
@@ -61,6 +62,7 @@ def configured_client(
         monkeypatch.setenv("COOPER_FIREBASE_PROJECT_ID", "project")
         monkeypatch.setenv("COOPER_ALLOWED_EMAILS", allowed_emails)
         monkeypatch.setenv("COOPER_OAUTH_STATE_SECRET", "oauth-state-secret-long-enough")
+        monkeypatch.setenv("COOPER_SYNC_SECRET", "sync-secret-that-is-long-enough")
     else:
         monkeypatch.delenv("COOPER_FIREBASE_PROJECT_ID", raising=False)
         monkeypatch.delenv("COOPER_ALLOWED_EMAILS", raising=False)
@@ -386,6 +388,69 @@ class TestGmailReconciliation:
         assert gmail["last_error"] == "Google is not connected for this account."
         assert gmail["imported"] == 0
         assert gmail["skipped"] == 0
+
+    def test_internal_sync_requires_the_sync_secret(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            auth_headers = allow_firebase(module, monkeypatch)
+            monkeypatch.setattr(
+                module,
+                "sync_gmail_once",
+                lambda _owner_id: pytest.fail("sync ran without the internal secret"),
+            )
+
+            missing = client.post("/api/internal/google/sync", headers=auth_headers)
+            wrong = client.post(
+                "/api/internal/google/sync",
+                headers={"X-Cooper-Sync-Secret": "wrong"},
+            )
+
+        assert missing.status_code == 403
+        assert wrong.status_code == 403
+
+    def test_internal_sync_aggregates_owner_results_and_continues_after_failure(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            module.store.set_setting("alice", module.GOOGLE_SETTING, {"token": "alice-token"})
+            module.store.set_setting("bob", module.GOOGLE_SETTING, {"token": "bob-token"})
+            module.store.set_setting("charlie", module.GOOGLE_SETTING, {})
+            calls: list[str] = []
+
+            def sync_once(owner_id: str) -> module.SyncSummary:
+                calls.append(owner_id)
+                if owner_id == "bob":
+                    raise RuntimeError("mail transport failed")
+                return module.SyncSummary(created=2, updated=1, dropped=1, skipped=3)
+
+            monkeypatch.setattr(module, "sync_gmail_once", sync_once)
+
+            response = client.post(
+                "/api/internal/google/sync",
+                headers={"X-Cooper-Sync-Secret": "sync-secret-that-is-long-enough"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "owners": 2,
+            "imported": 2,
+            "updated": 1,
+            "cancelled": 1,
+            "skipped": 3,
+            "failed": 1,
+        }
+        assert calls == ["alice", "bob"]
 
     def test_sync_reconciles_imported_events_without_undo_history(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

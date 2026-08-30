@@ -93,6 +93,7 @@ def test_firebase_mode_requires_an_allowlist(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("COOPER_AUTH_MODE", "firebase")
     monkeypatch.setenv("COOPER_FIREBASE_PROJECT_ID", "project")
     monkeypatch.setenv("COOPER_OAUTH_STATE_SECRET", "oauth-state-secret-long-enough")
+    monkeypatch.setenv("COOPER_SYNC_SECRET", "sync-secret-that-is-long-enough")
     monkeypatch.setenv("COOPER_ALLOWED_EMAILS", "")
 
     with pytest.raises(ValidationError):
@@ -107,6 +108,7 @@ def test_firebase_mode_does_not_require_a_shared_key() -> None:
         firebase_project_id="project",
         allowed_emails=("friend@example.com",),
         oauth_state_secret="oauth-state-secret-long-enough",
+        sync_secret="sync-secret-that-is-long-enough",
     )
 
     assert settings.shared_key is None
@@ -122,6 +124,21 @@ def test_firebase_mode_requires_an_oauth_state_secret(monkeypatch: pytest.Monkey
             auth_mode="firebase",
             firebase_project_id="project",
             allowed_emails=("friend@example.com",),
+            sync_secret="sync-secret-that-is-long-enough",
+        )
+
+
+def test_firebase_mode_requires_a_sync_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COOPER_SYNC_SECRET", raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            shared_key=None,
+            auth_mode="firebase",
+            firebase_project_id="project",
+            allowed_emails=("friend@example.com",),
+            oauth_state_secret="oauth-state-secret-long-enough",
         )
 
 
