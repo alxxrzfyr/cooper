@@ -62,10 +62,14 @@
 
 ```python
 def test_firebase_identity_requires_verified_email(monkeypatch):
-    monkeypatch.setattr("firebase_admin.auth.verify_id_token", lambda token: {"uid": "u1", "email": "a@example.com", "email_verified": False})
+    monkeypatch.setattr(
+        "firebase_admin.auth.verify_id_token",
+        lambda token: {"uid": "u1", "email": "a@example.com", "email_verified": False},
+    )
     with pytest.raises(AuthFailure) as error:
         verify_firebase_token("token", project_id="project")
     assert error.value.status_code == 401
+
 
 def test_allowlist_is_case_insensitive():
     identity = AuthIdentity(uid="u1", email="Friend@Example.com")
