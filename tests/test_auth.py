@@ -145,3 +145,10 @@ def test_firebase_mode_requires_a_sync_secret(monkeypatch: pytest.MonkeyPatch) -
 def test_local_mode_requires_a_long_shared_key() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, shared_key="short", auth_mode="local")
+
+
+def test_server_side_gemini_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "server-secret")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, shared_key="test-key-that-is-long-enough-x")

@@ -101,8 +101,9 @@ not a project plan, and there is no dependency this app remembers between the ta
 Manual exists because most sentences do not need a model. It is the default, runs offline, and
 spends no Gemini quota. For a personal deployment, paste your own Gemini key into Settings when
 you want AI mode. The key stays in that browser and is sent only with AI messages. The optional
-`COOPER_GEMINI_API_KEY` environment value remains available as a private server-side fallback.
-Without either key the AI switch disables itself and everything else still works.
+server-side Gemini key path has been removed so a hosted app cannot silently share one person's
+AI quota with every browser. Without a browser key the AI switch disables itself and everything
+else still works.
 
 The Gemini provider and account control the actual quota. Cooper keeps usage small with the Manual
 default, a rules fast path for obvious commands, one bounded repair attempt, short output caps,
@@ -181,15 +182,13 @@ provider-specific adapter.
 This is still a one-person deployment: the app has no accounts or login, and the shared key is a
 request guard rather than authentication. Keep the deployment private with the host's access
 controls or a private URL. `VITE_COOPER_KEY` is part of a static browser build, so it must not be
-treated as a secret. Leave `COOPER_GEMINI_API_KEY` blank when each browser should provide its own
-key in Settings.
+treated as a secret. Gemini keys belong in browser Settings only.
 
 ### Optional: better parsing
 
-Set `COOPER_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) for a private
-server-side fallback, or paste the key into Settings for the browser that should use it. Without
-either one a rule-based parser handles the common shapes, and ranking and scheduling never use a
-model.
+Create a Gemini key in [AI Studio](https://aistudio.google.com/apikey), then paste it into
+Settings in the browser that should use AI mode. Without one, a rule-based parser handles the
+common shapes, and ranking and scheduling never use a model.
 
 Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
 sends only your own words and task titles, never event descriptions, locations, or attendees.

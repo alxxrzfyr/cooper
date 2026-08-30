@@ -6,6 +6,7 @@ the rest of the app on safe defaults.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -31,7 +32,6 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Singapore"
     owner_id: str = "local"
 
-    gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-flash-lite-latest"
 
     google_client_id: str | None = None
@@ -46,9 +46,6 @@ class Settings(BaseSettings):
 
     def key(self) -> str:
         return self.shared_key.get_secret_value() if self.shared_key else ""
-
-    def gemini_key(self) -> str | None:
-        return self.gemini_api_key.get_secret_value() if self.gemini_api_key else None
 
     def google_secret(self) -> str | None:
         return self.google_client_secret.get_secret_value() if self.google_client_secret else None
@@ -111,6 +108,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Settings:
+        if os.environ.get("COOPER_GEMINI_API_KEY", "").strip():
+            raise ValueError(
+                "COOPER_GEMINI_API_KEY is no longer supported. Add a Gemini key in the "
+                "browser Settings screen instead."
+            )
         if self.auth_mode == "local" and len(self.key()) < KEY_MIN:
             raise ValueError(
                 f"COOPER_SHARED_KEY must be at least {KEY_MIN} characters when "

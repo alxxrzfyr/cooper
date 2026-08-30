@@ -75,7 +75,7 @@ class OAuthState:
 settings = Settings()  # type: ignore[call-arg]
 store = Store(settings.database_url)
 brain = Brain(
-    api_key=settings.gemini_key(),
+    api_key=None,
     model=settings.gemini_model,
     timezone=settings.timezone,
 )
