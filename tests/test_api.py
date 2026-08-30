@@ -24,8 +24,18 @@ HEADERS = {"X-Cooper-Key": KEY}
 
 @pytest.fixture
 def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
-    """A fresh app against a throwaway database."""
+    """A fresh app against a throwaway database, with no integrations configured.
+
+    The optional credentials are overridden to empty. pydantic-settings reads the project's
+    `.env`, and actual environment variables take precedence over that file, so setting these
+    empty here makes the "no key" tests deterministic once a developer puts a real Gemini or
+    Google key in `.env`. A test that needs a key sets it with monkeypatch, which is the honest
+    way to say so.
+    """
     monkeypatch.setenv("COOPER_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "")
+    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_ID", "")
+    monkeypatch.setenv("COOPER_GOOGLE_CLIENT_SECRET", "")
     import importlib
 
     import cooper.app as module
