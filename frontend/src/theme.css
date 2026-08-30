@@ -1983,6 +1983,11 @@ button.slot:active {
 .frame {
   position: fixed;
   inset: 0;
+  /* Belt and braces with the portal: never let a parent's width rule shrink the blur. This was
+     clamped to a 760px strip by `.scroll > *`, which left a wide window sharp at the edges. */
+  width: 100%;
+  max-width: none;
+  margin: 0;
   z-index: 60;
   display: flex;
   align-items: flex-end;

@@ -1,99 +1,69 @@
 {
   "mascots": {
-    "profile_icon": {
-      "file": "assets/mascot/profile_icon.webp",
-      "width": 140,
-      "height": 177,
-      "format": "webp"
-    },
-    "task_active": {
-      "file": "assets/mascot/task_active.webp",
-      "width": 169,
-      "height": 165,
-      "format": "webp"
-    },
-    "activity_summary": {
-      "file": "assets/mascot/activity_summary.webp",
-      "width": 140,
-      "height": 166,
-      "format": "webp"
-    },
-    "empty_state_windows": {
-      "file": "assets/mascot/empty_state_windows.webp",
-      "width": 174,
-      "height": 168,
-      "format": "webp"
-    },
-    "activity_history": {
-      "file": "assets/mascot/activity_history.webp",
-      "width": 182,
-      "height": 175,
-      "format": "webp"
-    },
-    "first_run_state": {
-      "file": "assets/mascot/first_run_state.webp",
-      "width": 176,
-      "height": 161,
-      "format": "webp"
-    },
-    "degraded_mode_state": {
-      "file": "assets/mascot/degraded_mode_state.webp",
-      "width": 172,
-      "height": 169,
-      "format": "webp"
-    },
-    "credential_expired_state": {
-      "file": "assets/mascot/credential_expired_state.webp",
+    "cooper_reading": {
+      "file": "assets/mascot/cooper_reading.webp",
       "width": 178,
-      "height": 167,
-      "format": "webp"
-    },
-    "parse_ambiguity_state": {
-      "file": "assets/mascot/parse_ambiguity_state.webp",
-      "width": 128,
-      "height": 172,
-      "format": "webp"
-    },
-    "task_too_large_state": {
-      "file": "assets/mascot/task_too_large_state.webp",
-      "width": 194,
-      "height": 159,
+      "height": 178,
       "format": "webp"
     },
     "cooper_avatar": {
       "file": "assets/mascot/cooper_avatar.webp",
-      "width": 1024,
-      "height": 1024,
+      "width": 512,
+      "height": 512,
       "format": "webp"
     },
     "cooper_done": {
       "file": "assets/mascot/cooper_done.webp",
-      "width": 1024,
-      "height": 1024,
-      "format": "webp"
-    },
-    "cooper_scheduled": {
-      "file": "assets/mascot/cooper_scheduled.webp",
-      "width": 1024,
-      "height": 1024,
-      "format": "webp"
-    },
-    "cooper_thinking": {
-      "file": "assets/mascot/cooper_thinking.webp",
-      "width": 1024,
-      "height": 1024,
-      "format": "webp"
-    },
-    "cooper_undo": {
-      "file": "assets/mascot/cooper_undo.webp",
-      "width": 1024,
-      "height": 1024,
+      "width": 512,
+      "height": 512,
       "format": "webp"
     },
     "cooper_laptop": {
       "file": "assets/mascot/cooper_laptop.webp",
-      "width": 1024,
-      "height": 1024,
+      "width": 512,
+      "height": 512,
+      "format": "webp"
+    },
+    "cooper_scheduled": {
+      "file": "assets/mascot/cooper_scheduled.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp"
+    },
+    "cooper_thinking": {
+      "file": "assets/mascot/cooper_thinking.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp"
+    },
+    "cooper_undo": {
+      "file": "assets/mascot/cooper_undo.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp"
+    },
+    "cooper_tired": {
+      "file": "assets/mascot/cooper_tired.webp",
+      "width": 184,
+      "height": 184,
+      "format": "webp"
+    },
+    "cooper_painting": {
+      "file": "assets/mascot/cooper_painting.webp",
+      "width": 185,
+      "height": 185,
+      "format": "webp"
+    },
+    "cooper_waving": {
+      "file": "assets/mascot/cooper_waving.webp",
+      "width": 188,
+      "height": 188,
+      "format": "webp"
+    },
+    "cooper_puzzled": {
+      "file": "assets/mascot/cooper_puzzled.webp",
+      "width": 183,
+      "height": 183,
       "format": "webp"
     }
   },

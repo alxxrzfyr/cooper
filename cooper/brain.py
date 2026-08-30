@@ -77,6 +77,30 @@ Today is {today} ({weekday}) in {tz}.
 {recent}
 Sentence: {sentence}"""
 
+ANSWER_PROMPT = """You answer questions about one person's own tasks and calendar. Nothing else.
+
+Their open items are listed below. Answer only from that list and from today's date. If the
+question is not about their tasks, their time, or what to do next, say in one line that you only
+cover their tasks, and stop.
+
+How to write:
+  Talk like a person, not a report. Short sentences.
+  No semicolons. No em dashes. No colons that introduce a list.
+  No headings, no bullet points, no markdown, no bold.
+  Sixty words at the very most. Fewer is better.
+  If the list does not answer the question, say so plainly instead of guessing.
+
+Today is {today} ({weekday}) in {tz}.
+
+Their items:
+{items}
+
+Question: {question}"""
+
+# An answer is text, so nothing validates it the way the schema validates an action. Length is
+# the one thing worth enforcing: a model that starts writing an essay is not answering.
+ANSWER_LIMIT = 700
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Action:
@@ -110,12 +134,18 @@ class Brain:
     def using_model(self) -> bool:
         return bool(self._key)
 
-    def read(self, sentence: str, recent_titles: list[str]) -> Action:
+    def read(self, sentence: str, recent_titles: list[str], *, use_model: bool = True) -> Action:
+        """Sentence to action. `use_model=False` is Manual mode: rules only, no network, no quota.
+
+        Manual mode exists because the model has a daily limit and most sentences do not need it.
+        The rules parser handles the shapes people actually type, so leaning on Gemini for every
+        message spends a finite thing on a solved problem.
+        """
         text = " ".join(sentence.split())
         if not text:
             return Action(verb="ask", question="What would you like to add?")
 
-        if self._key:
+        if self._key and use_model:
             for attempt in (1, 2):
                 try:
                     payload = self._call_gemini(text, recent_titles, repair=attempt == 2)
@@ -124,6 +154,36 @@ class Brain:
                     continue
 
         return parse_with_rules(text, tz=self._tz)
+
+    def answer(self, question: str, items: list[str]) -> str | None:
+        """Answer a question about the given items, or None if the model cannot be reached.
+
+        Only the caller's own words and its own item summaries go out. Never notes, never event
+        descriptions, locations or attendees. Ask about anything else and the prompt tells the
+        model to decline, which keeps this a calendar assistant rather than a chatbot.
+        """
+        text = " ".join(question.split())
+        if not text or not self._key:
+            return None
+
+        today = dt.datetime.now(ZoneInfo(self._tz))
+        prompt = ANSWER_PROMPT.format(
+            today=today.date().isoformat(),
+            weekday=today.strftime("%A"),
+            tz=self._tz,
+            items="\n".join(f"  {line}" for line in items) or "  (nothing open)",
+            question=text,
+        )
+
+        try:
+            reply = self._generate(prompt)
+        except Exception:
+            return None
+
+        cleaned = " ".join(reply.split())
+        if not cleaned:
+            return None
+        return cleaned[:ANSWER_LIMIT]
 
     def _call_gemini(
         self,
@@ -143,29 +203,29 @@ class Brain:
         if repair:
             prompt += "\nYour last answer was not valid JSON for the schema. Try again."
 
-        body = json.dumps(
-            {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0,
-                    "responseMimeType": "application/json",
-                    "responseSchema": SCHEMA,
-                },
-            }
-        ).encode()
+        text = self._generate(prompt, schema=SCHEMA)
+        decoded = json.loads(text)
+        if not isinstance(decoded, dict):
+            raise ValueError("model did not return an object")
+        return decoded
+
+    def _generate(self, prompt: str, *, schema: dict[str, Any] | None = None) -> str:
+        """One call to Gemini. JSON when a schema is given, plain text when not."""
+        config: dict[str, Any] = {"temperature": 0}
+        if schema is not None:
+            config["responseMimeType"] = "application/json"
+            config["responseSchema"] = schema
+
+        body = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config})
         request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
             f"{GEMINI_URL}/{self._model}:generateContent",
-            data=body,
+            data=body.encode(),
             headers={"Content-Type": "application/json", "x-goog-api-key": self._key or ""},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
             envelope = json.loads(response.read())
-        text = envelope["candidates"][0]["content"]["parts"][0]["text"]
-        decoded = json.loads(text)
-        if not isinstance(decoded, dict):
-            raise ValueError("model did not return an object")
-        return decoded
+        return str(envelope["candidates"][0]["content"]["parts"][0]["text"])
 
 
 def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
@@ -316,6 +376,27 @@ _SHOW = re.compile(
     r"|today|next|show me|shortlist)\b.*$"
 )
 
+# Anything shaped like a question is not something to create. Without this, "what should I focus
+# on" became a task called "what is my plate", because the parser fell through to `add`.
+# Anchored with a word boundary so "whatsapp the client back" stays an instruction.
+_QUESTION = re.compile(
+    r"^(?:what|when|where|which|who|why|how"
+    r"|am i|are there|can i|did i|do i|does|is there|should i|will i)\b"
+)
+
+
+def looks_like_a_question(text: str) -> bool:
+    """True for a sentence that asks rather than instructs.
+
+    Used in two places: the rules parser refuses to create anything from one, and AI mode sends
+    one to the answer path. Deliberately code rather than prompt, because "did my question turn
+    into a task" is exactly the kind of mistake a model should not be allowed to make.
+    """
+    lowered = " ".join(text.lower().split())
+    if not lowered:
+        return False
+    return lowered.endswith("?") or bool(_QUESTION.match(lowered))
+
 
 def parse_with_rules(sentence: str, *, tz: str) -> Action:
     """The offline path. Handles the shapes people actually type."""
@@ -329,6 +410,10 @@ def parse_with_rules(sentence: str, *, tz: str) -> Action:
     if _SCHEDULE.match(lowered):
         return Action(verb="schedule")
     if _SHOW.match(lowered):
+        return Action(verb="show")
+    if looks_like_a_question(lowered):
+        # A question the rules cannot answer still must not become a task. Manual mode shows the
+        # list, AI mode answers it properly.
         return Action(verb="show")
 
     for pattern, verb in ((_COMPLETE, "complete"), (_DROP, "drop"), (_PIN, "pin")):

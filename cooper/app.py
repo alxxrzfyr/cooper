@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import secrets
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from cooper.brain import Action, Brain, guess_category
+from cooper.brain import Action, Brain, guess_category, looks_like_a_question
 from cooper.config import Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError
@@ -79,6 +79,9 @@ async def guard(request: Request, call_next: Any) -> Any:
 
 class Say(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
+    # Manual is the default on purpose: the model has a daily quota, and the rules parser handles
+    # the ordinary shapes without spending any of it. AI mode is opt-in, per message.
+    mode: Literal["manual", "ai"] = "manual"
 
 
 class HoursIn(BaseModel):
@@ -198,12 +201,11 @@ def today_view() -> dict[str, Any]:
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
         "timezone": settings.timezone,
-        # Only work that still needs a slot. Anything booked belongs under "scheduled", and
-        # showing it in both places made the same task look like two.
+        # Everything still open, ranked, whether or not it has a time yet. A task is added
+        # straight onto the calendar now, so filtering booked work out of here emptied the plan
+        # the moment anything was added. "scheduled" is the calendar's feed, not a second list.
         "shortlist": [
-            {**entry.item.to_dict(), "score": entry.score, "why": entry.why}
-            for entry in ranked
-            if not entry.item.scheduled
+            {**entry.item.to_dict(), "score": entry.score, "why": entry.why} for entry in ranked
         ],
         "scheduled": scheduled,
         "hours": hours.as_setting(),
@@ -234,12 +236,47 @@ def get_today() -> dict[str, Any]:
 @app.post("/api/say")
 def say(body: Say) -> dict[str, Any]:
     """The main entry point: one sentence in, one change out."""
+    ai = body.mode == "ai"
     with store.session() as session:
-        recent = [item.title for item in reversed(store.open_items(session))][:8]
+        open_items = store.open_items(session)
+        recent = [item.title for item in reversed(open_items)][:8]
+        summaries = [_summarise(item) for item in open_items] if ai else []
 
-    action = brain.read(body.text, recent)
+    action = brain.read(body.text, recent, use_model=ai)
+
+    # In AI mode a sentence that is not an instruction is a question, so answer it instead of
+    # replying "here is what is next". Nothing here writes to the database: an answer is text.
+    if ai and (action.verb in ("show", "ask") or looks_like_a_question(body.text)):
+        answered = brain.answer(body.text, summaries)
+        if answered:
+            return {
+                "kind": "answered",
+                "message": answered,
+                "source": "gemini",
+                "view": today_view(),
+            }
+
     result = run(action)
     return {**result, "source": action.source, "view": today_view()}
+
+
+def _summarise(item: Item) -> str:
+    """One line per item for the answer prompt.
+
+    Deliberately only the facts needed to reason about time and order. No notes, no event
+    description, no location, no attendees — rule five of the PRD.
+    """
+    zone = ZoneInfo(settings.timezone)
+    bits = [item.title, item.category]
+    if item.minutes:
+        bits.append(f"{item.minutes} min")
+    if item.importance != 3:
+        bits.append(f"importance {item.importance}")
+    if item.due:
+        bits.append(f"due {item.due.astimezone(zone).date().isoformat()}")
+    if item.start_at:
+        bits.append(f"at {item.start_at.astimezone(zone).strftime('%a %d %b %H:%M')}")
+    return " · ".join(bits)
 
 
 def run(action: Action) -> dict[str, Any]:
@@ -309,7 +346,84 @@ def add(action: Action) -> dict[str, Any]:
                 "item": payload,
             }
 
+    # A task with no time of its own goes straight onto the calendar. Leaving it in the shortlist
+    # until you remembered to say "plan my day" was the single most confusing thing about this
+    # app: you added something, looked at the calendar, and it was not there.
+    if action.kind == "task" and not action.start:
+        booked = place_one(payload["id"])
+        if booked is not None:
+            payload = booked
+            when = to_local(booked["start_at"])
+            return {
+                "kind": "added",
+                "message": f"Added “{payload['title']}”, {when}.",
+                "item": payload,
+            }
+        return {
+            "kind": "added",
+            "message": f"Added “{payload['title']}”. No room in your hours this week.",
+            "item": payload,
+        }
+
+    # An event already knows when it is, so say so rather than leaving you to go and look.
+    if payload["start_at"]:
+        return {
+            "kind": "added",
+            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}.",
+            "item": payload,
+        }
+
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
+
+
+def place_one(item_id: str) -> dict[str, Any] | None:
+    """Book one task into the first gap in your hours.
+
+    Returns the stored item, or None if it would not fit inside the week.
+
+    Uses the same `place` as a whole scheduling run, so there is still exactly one piece of code
+    that decides when something may happen, and it still only ever looks at working hours.
+    """
+    at = now()
+    hours = current_hours()
+    busy = busy_windows()
+
+    with store.session() as session:
+        item = session.get(Item, item_id)
+        if item is None or item.start_at is not None:
+            return None
+
+        slots = place(rank([item], at=at), busy=busy, hours=hours, at=at, days=7)
+        if not slots:
+            return None
+
+        slot = slots[0]
+        item.start_at = slot.start
+        item.end_at = slot.end
+        session.flush()
+        payload = item.to_dict()
+
+    if calendar.connected:
+        with contextlib.suppress(CalendarError):
+            event_id = calendar.add_block(
+                item_id=slot.item_id,
+                title=slot.title,
+                start=slot.start,
+                end=slot.end,
+            )
+            with store.session() as session:
+                stored = session.get(Item, item_id)
+                if stored:
+                    stored.google_event_id = event_id
+                    payload = stored.to_dict()
+
+    return payload
+
+
+def to_local(iso: str) -> str:
+    """ "Sun 10:00", in your timezone, from the ISO string an item carries."""
+    moment = dt.datetime.fromisoformat(iso).astimezone(ZoneInfo(settings.timezone))
+    return moment.strftime("%a %H:%M")
 
 
 def change_existing(action: Action) -> dict[str, Any]:
@@ -322,16 +436,21 @@ def change_existing(action: Action) -> dict[str, Any]:
             }
 
         before = item.to_dict()
+        # Each verb gets its own kind rather than a shared "changed", because the interface
+        # colours them differently: finishing something is green, dropping it is red.
         if action.verb == "complete":
             item.status = "done"
             item.done_at = now()
             label = f"Completed “{item.title}”"
+            kind = "completed"
         elif action.verb == "drop":
             item.status = "dropped"
             label = f"Dropped “{item.title}”"
+            kind = "dropped"
         else:
             item.pinned = 0 if item.pinned else 1
             label = f"{'Pinned' if item.pinned else 'Unpinned'} “{item.title}”"
+            kind = "pinned"
 
         store.record(session, label=label, item=item, before=before)
         payload = item.to_dict()
@@ -341,7 +460,7 @@ def change_existing(action: Action) -> dict[str, Any]:
         with contextlib.suppress(CalendarError):
             calendar.remove_block(event_id)
 
-    return {"kind": "changed", "message": label + ".", "item": payload}
+    return {"kind": kind, "message": label + ".", "item": payload}
 
 
 def schedule_now() -> list[Slot]:

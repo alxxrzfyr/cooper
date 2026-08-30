@@ -1,13 +1,12 @@
-import { Brand } from "./Brand";
 import { Mascot } from "./Mascot";
 
-export type Tab = "chat" | "plan" | "calendar" | "setup";
+export type Tab = "chat" | "plan" | "calendar" | "settings";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: "chat", label: "Chat", glyph: "◍" },
   { id: "plan", label: "Plan", glyph: "◎" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
-  { id: "setup", label: "Setup", glyph: "⚙" },
+  { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
 /**
@@ -22,7 +21,7 @@ export function Nav({
   current,
   todo,
   booked,
-  canUndo,
+  undo,
   busy,
   onChange,
   onUndo,
@@ -30,7 +29,7 @@ export function Nav({
   current: Tab;
   todo: number;
   booked: number;
-  canUndo: boolean;
+  undo: string | null;
   busy: boolean;
   onChange: (tab: Tab) => void;
   onUndo: () => void;
@@ -44,27 +43,31 @@ export function Nav({
   return (
     <>
       <header className="topbar">
-        {current === "chat" ? (
-          /* Whose thread this is, the way a messages app says it: face, then name. */
-          <div className="who">
-            <Mascot name="profile_icon" size="sm" decorative />
-            <span className="who__name">Cooper</span>
-          </div>
-        ) : (
-          <Brand />
-        )}
+        {/* Who you are talking to, the way a messages app says it: face, then name. */}
+        <div className="who">
+          <Mascot name="cooper_avatar" size="sm" decorative />
+          <span className="who__name">Cooper</span>
+        </div>
         <div className="topbar__spacer" />
-        {canUndo && (
-          <button type="button" className="topbar__action" disabled={busy} onClick={onUndo}>
+        {undo && (
+          <button
+            type="button"
+            className="topbar__action"
+            disabled={busy}
+            onClick={onUndo}
+            title={undo}
+          >
             Undo
           </button>
         )}
-        {current !== "chat" && <Mascot name="profile_icon" size="xs" decorative />}
       </header>
 
       <nav className="rail" aria-label="Sections">
         <div className="rail__brand">
-          <Brand />
+          <div className="who">
+            <Mascot name="cooper_avatar" size="sm" decorative />
+            <span className="who__name">Cooper</span>
+          </div>
         </div>
         {TABS.map((tab) => (
           <button
@@ -78,13 +81,21 @@ export function Nav({
               {tab.glyph}
             </span>
             <span className="rail__label">{tab.label}</span>
-            {count(tab.id) > 0 && <span className="rail__count">{count(tab.id)}</span>}
+            {count(tab.id) > 0 && (
+              <span className="rail__count">{count(tab.id)}</span>
+            )}
           </button>
         ))}
         <div className="rail__spacer" />
-        {canUndo && (
-          <button type="button" className="rail__undo" disabled={busy} onClick={onUndo}>
-            Undo
+        {undo && (
+          <button
+            type="button"
+            className="rail__undo"
+            disabled={busy}
+            onClick={onUndo}
+          >
+            <span className="undo__verb">Undo</span>
+            <span className="undo__what">{undo}</span>
           </button>
         )}
       </nav>

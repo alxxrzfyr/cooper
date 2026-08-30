@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Frame, TaskFrame } from "./Frame";
+
 import { Mascot } from "./Mascot";
 import type { CalendarEvent, Category, Item, View } from "./types";
 
@@ -200,31 +202,27 @@ export function Calendar({
   view,
   busy,
   onComplete,
+  onPin,
   onDrop,
 }: {
   view: View;
   busy: boolean;
   onComplete: (id: string) => void;
+  onPin: (id: string) => void;
   onDrop: (id: string) => void;
 }) {
   const today = new Date(view.now);
   const [mode, setMode] = useState<Mode>(loadMode);
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(today));
+  // Both are frames now rather than sections: a day, and one thing inside it.
   const [picked, setPicked] = useState<Date | null>(null);
+  const [chosen, setChosen] = useState<Item | null>(null);
 
   const entries = agenda(view.scheduled, view.events);
   const days = daysShown(mode, anchor);
 
-  /*
-   * A month cell is too small for titles on a phone, so the day you tap is spelled out
-   * underneath. That is the only place the detail exists at this size, which is why tapping
-   * selects rather than navigating.
-   */
-  const dayOf = (() => {
-    if (picked && days.some((d) => sameDay(d, picked))) return picked;
-    if (days.some((d) => sameDay(d, today))) return startOfDay(today);
-    return startOfMonth(anchor);
-  })();
+  /** Which day a switch to day view should land on: the one whose frame you last opened. */
+  const dayOf = picked ?? anchor;
 
   function choose(next: Mode): void {
     // Carry the day you were looking at, rather than dumping you on the first of the month.
@@ -348,42 +346,43 @@ export function Calendar({
   }
 
   /** A block in a timed grid. Actions only on Cooper's own, since Google's are not ours to edit. */
+  /**
+   * One entry on the grid. The whole thing opens its detail frame, where the actions live.
+   * They used to be two icon buttons crammed inside the block, which on a week grid left about
+   * eleven pixels for the title.
+   */
   function block(entry: Entry, compact: boolean) {
+    const label = `${entry.title} · ${clock(entry.start)}–${clock(entry.end)} · ${
+      CATEGORY_LABEL[entry.category]
+    }`;
+
+    if (!entry.item) {
+      // A Google event Cooper did not create. Nothing to act on, so it is not a button.
+      return (
+        <div
+          className={`slot slot--${entry.source} cat--${entry.category}`}
+          key={entry.key}
+          title={label}
+        >
+          <span className="slot__time">{clock(entry.start)}</span>
+          <span className="slot__title">{entry.title}</span>
+          {compact ? null : <span className="slot__from">Google</span>}
+        </div>
+      );
+    }
+
     return (
-      <div
+      <button
+        type="button"
         className={`slot slot--${entry.source} cat--${entry.category}`}
         key={entry.key}
-        title={`${entry.title} · ${clock(entry.start)}–${clock(entry.end)} · ${
-          CATEGORY_LABEL[entry.category]
-        }`}
+        title={label}
+        aria-label={label}
+        onClick={() => setChosen(entry.item ?? null)}
       >
         <span className="slot__time">{clock(entry.start)}</span>
         <span className="slot__title">{entry.title}</span>
-        {compact ? null : entry.source === "google" ? (
-          <span className="slot__from">Google</span>
-        ) : (
-          <span className="slot__actions">
-            <button
-              type="button"
-              className="iconbtn"
-              aria-label={`Mark “${entry.title}” done`}
-              disabled={busy}
-              onClick={() => entry.item && onComplete(entry.item.id)}
-            >
-              ✓
-            </button>
-            <button
-              type="button"
-              className="iconbtn"
-              aria-label={`Drop “${entry.title}”`}
-              disabled={busy}
-              onClick={() => entry.item && onDrop(entry.item.id)}
-            >
-              ✕
-            </button>
-          </span>
-        )}
-      </div>
+      </button>
     );
   }
 
@@ -451,8 +450,7 @@ export function Calendar({
       ) : null}
 
       {mode === "month" ? (
-        <>
-          <section className="group">
+        <section className="group">
             <div className="monthgrid">
               {WEEKDAY_INITIALS.map((initial, index) => (
                 <span
@@ -470,10 +468,9 @@ export function Calendar({
                   <button
                     type="button"
                     key={day.toDateString()}
-                    aria-pressed={sameDay(day, dayOf)}
                     className={`monthcell ${outside ? "is-outside" : ""} ${
                       sameDay(day, today) ? "is-today" : ""
-                    } ${sameDay(day, dayOf) ? "is-picked" : ""}`}
+                    }`}
                     aria-label={`${day.toLocaleDateString(undefined, {
                       weekday: "long",
                       day: "numeric",
@@ -499,22 +496,7 @@ export function Calendar({
                 );
               })}
             </div>
-          </section>
-
-          <section className="daydetail">
-            <div className="daygroup">
-              {dayLabel(dayOf, today)}
-              <span className="group__note">
-                {on(dayOf).length} {on(dayOf).length === 1 ? "thing" : "things"}
-              </span>
-            </div>
-            {on(dayOf).length === 0 ? (
-              <p className="daydetail__none">Nothing on this day.</p>
-            ) : (
-              on(dayOf).map((entry) => block(entry, false))
-            )}
-          </section>
-        </>
+        </section>
       ) : null}
 
       <footer className="calfoot">
@@ -524,6 +506,44 @@ export function Calendar({
           are ones Cooper placed; outlined ones came from your calendar.
         </p>
       </footer>
+
+      {picked && !chosen && (
+        <Frame
+          title={dayLabel(picked, today)}
+          subtitle={`${on(picked).length} ${on(picked).length === 1 ? "thing" : "things"}`}
+          onClose={() => setPicked(null)}
+          footer={
+            <button
+              type="button"
+              className="btn btn--quiet"
+              onClick={() => {
+                openDay(picked);
+                setPicked(null);
+              }}
+            >
+              Open this day
+            </button>
+          }
+        >
+          {on(picked).length === 0 ? (
+            <p className="frame__empty">Nothing on this day.</p>
+          ) : (
+            <div className="framelist">{on(picked).map((entry) => block(entry, false))}</div>
+          )}
+        </Frame>
+      )}
+
+      {chosen && (
+        <TaskFrame
+          item={chosen}
+          today={view.today}
+          busy={busy}
+          onClose={() => setChosen(null)}
+          onComplete={() => onComplete(chosen.id)}
+          onPin={() => onPin(chosen.id)}
+          onDrop={() => onDrop(chosen.id)}
+        />
+      )}
     </div>
   );
 }

@@ -27,7 +27,7 @@ The accent is one line. Swapping to green `#30B15C` or indigo `#5E5CE6` is a sin
 
 ## Structure
 
-Three sections — **Chat**, **Plan**, **Setup** — inside a shell that reshapes itself by CSS
+Four sections — **Chat**, **Plan**, **Calendar**, **Settings** — inside a shell that reshapes itself by CSS
 alone, with no width listener and nothing to keep in sync:
 
 - **Narrow** — frosted top bar, scrolling content, frosted composer, frosted bottom tab bar.
@@ -74,35 +74,75 @@ ambiguous, tired when the backend is down. Never as filler.
 Both of these made the interface look wrong on first attempt, and both are worth knowing before
 touching an image.
 
-**The mascot art has an opaque warm ground shadow baked under the feet**, roughly
+**The raw mascot art arrives on white paper, with a warm ground shadow under the feet**, roughly
 `rgb(218, 204, 190)`. Dropped straight onto a neutral surface, that beige ellipse floats and
-Cooper looks pasted on. This used to be solved by cropping him inside a tinted circle or
-squircle, which hid the ellipse but turned him into a contact photo in a chip.
+Cooper looks pasted on. Two earlier fixes were both wrong: cropping him inside a tinted circle
+turned him into a contact photo in a chip, and fading the bottom of the image with a CSS mask
+dissolved his feet along with the ground.
 
-The fix now is a mask, not a container: `.mascot` fades the bottom of the image out
-(`mask-image: linear-gradient(to bottom, #000 78%, transparent 99%)`) with `object-fit: contain`,
-so the ground dissolves and Cooper stands directly on whatever is behind him, light or dark.
-There is no shape class. Do not reintroduce one.
+The fix is to cut the art out once, in Python, rather than hide the problem in CSS:
 
-Do not try to fix this by editing the pixels either. Removing the warm tones programmatically
-eats the shading and the outlines, and the result looks damaged.
+```
+assets-src/mascot/*.{webp,jpeg}         raw, straight from the image model
+tools/mascot_cutout.py                  flood fill from the frame edge, de-halo, trim, square
+frontend/public/assets/mascot/*.webp     built, transparent, square, what the app loads
+```
 
-**The supplied wordmark is a webp with dark ink baked in**, averaging `rgb(113, 123, 118)`, so it
-almost vanished on black. The brand is now inline SVG plus real text in `Brand.tsx`, which
-inherits the theme colour. The leaf has its own variable, `--leaf`, because the supplied green is
-too dark to read on black.
+The flood fill only walks through light, unsaturated pixels, starting from the edge of the frame.
+Cooper is drawn with a closed dark outline, so the fill cannot leak into his cream belly or muzzle
+even though they are nearly paper-coloured — a plain colour threshold eats them, which is the trap.
+The ground shadow goes because it is connected to the paper. White objects that are *enclosed* by
+ink, like the laptop screen and the calendar cells, correctly survive.
 
-The lesson generalises: an image with baked-in colour cannot serve two themes. Draw it or give it
-a container.
+Two more things the script does, both of which the interface depends on: it fades the two-pixel
+antialiased rim so no white halo is left around the outline, and it squares every frame with equal
+margins. The raw art ranges from 128×172 to 1408×768, and unequal aspect ratios made Cooper change
+size from screen to screen inside a square box.
+
+So `.mascot` has nothing to do but pick a size. No container, no mask, no crop. Do not add one.
+And do not edit the pixels by colour alone: removing warm tones globally eats the shading and the
+outlines, and the result looks damaged.
+
+**Raw art is bigger than the art on screen, and that is on purpose.** The first set was 128–194px,
+which the browser had to upscale for a 124px box on a 2× display, so the linework looked soft. New
+art is generated at 1024px and built down to a 512px cap. Anything still soft in the interface is
+old art that has not been regenerated yet.
+
+**An image with baked-in colour cannot serve two themes.** The supplied wordmark was a webp with
+dark ink baked in and vanished on black. It is gone entirely: Cooper's face plus his name in real
+text is the identity now, in the top bar and in the rail, and text inherits the theme colour.
 
 **Every number explains itself.** The score is a tappable disclosure showing its four terms. A
 ranking you cannot interrogate is a ranking you stop trusting.
 
 **Say what happened, offer to undo it.** One reply strip, one line, with undo attached. No
-toasts stacking, no modals, no confirmation before the fact.
+toasts stacking, no confirmation before the fact.
 
-**Light and dark are both first class.** Written with `prefers-color-scheme`, and both are
-checked before shipping.
+**One exception, and it is deliberate: the frame.** Tapping a day in the month grid, or any task
+anywhere, opens a frame over a blurred app. This is not a dialog asking permission, it is the
+detail view, opened because you asked for it, closed by Escape or by tapping outside. It replaced
+two worse things: a panel under the month grid that shoved the calendar around as you tapped, and
+a score breakdown that expanded inside a list row. Nothing that interrupts you may be a frame.
+
+**Light and dark are both first class, and light is the default.** A calendar is a document, and
+documents are light unless you ask otherwise. The tokens hang off `:root[data-theme="dark"]`, never
+off `prefers-color-scheme`, so the theme is something you chose rather than something your laptop
+decided. `appearance.ts` resolves the three options — light, dark, system — down to the two the CSS
+knows about, and stores the answer in localStorage: it has to be readable before the first paint,
+which rules out the database. Both themes are checked before shipping.
+
+## Colour means two things, and they never overlap
+
+**Category, on the calendar.** Academics is purple, work is blue, organizations is orange, and
+personal is teal. Four hues, chosen so that a week is readable before you read any of it.
+
+**Outcome, in the chat and on buttons.** Green is something gained or finished, red is something
+removed or refused, blue is an answer rather than an action, and amber wants a look. These are
+`--tone-good`, `--tone-bad`, `--tone-answer` and `--tone-attention`.
+
+Personal used to be green. It is teal now, because green had to mean "done" everywhere without
+ambiguity, and a green calendar block beside a green chat bubble made both meaningless. The
+category palette is chosen around the semantic one, not the other way round.
 
 ## Copy
 

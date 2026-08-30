@@ -36,7 +36,9 @@ const post = (body?: unknown): RequestInit => ({
 
 export const api = {
   today: () => call<View>("/api/today"),
-  say: (text: string) => call<Reply>("/api/say", post({ text })),
+  // Mode is per message, not a stored setting: Manual keeps the model out of it entirely.
+  say: (text: string, mode: "manual" | "ai" = "manual") =>
+    call<Reply>("/api/say", post({ text, mode })),
   schedule: () => call<{ placed: unknown[]; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
   act: (id: string, verb: "complete" | "drop" | "pin") =>

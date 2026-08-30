@@ -1,7 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { applyAppearance, readAppearance, watchSystem } from "./appearance";
 import App from "./App";
+
+// Before the first paint, so a dark-mode user never sees a white flash.
+applyAppearance(readAppearance());
+watchSystem(() => applyAppearance(readAppearance()));
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root");
