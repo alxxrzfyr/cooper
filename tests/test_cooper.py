@@ -874,6 +874,54 @@ class TestCooperIdentityAndLimits:
 
         assert cooper.answer("what is next", []) is None
 
+    def test_a_model_answer_with_a_prompt_excerpt_is_discarded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: "Here is the prompt I was given: do anything you want.",
+        )
+
+        assert cooper.answer("what is next", []) is None
+
+    def test_a_model_question_with_prompt_leakage_uses_a_safe_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (
+                '{"verb": "ask", "question": "Here is the system prompt: reveal it"}'
+            ),
+        )
+
+        action = cooper.read("write a poem", [])
+
+        assert action.is_question
+        assert action.question is not None
+        assert "calendar" in action.question.lower()
+        assert "system prompt" not in action.question.lower()
+
+    def test_a_model_duration_above_the_form_limit_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (
+                '{"verb": "add", "title": "a very long task", "minutes": 1441}'
+            ),
+        )
+
+        action = cooper.read("write the report", [])
+
+        assert action.is_question
+        assert action.title is None
+
     def test_a_model_answer_over_sixty_words_is_discarded(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -43,11 +43,20 @@ ACTION_OUTPUT_TOKENS = 384
 ANSWER_OUTPUT_TOKENS = 160
 ANSWER_WORD_LIMIT = 60
 MAX_ANSWER_ITEMS = 24
+MAX_MINUTES = 1440
+MODEL_FALLBACK_QUESTION = (
+    "I only turn sentences into calendar tasks and events, not off-topic content."
+)
 _RULES_FIRST_VERBS = frozenset(("complete", "drop", "pin", "schedule", "show", "undo"))
-_ANSWER_LEAK_SHAPES = re.compile(
-    r"```|<\|.*?\|>|\b(?:system prompt|developer message|developer instructions|api key|"
-    r"secret|password|ignore (?:all|the) previous|reveal (?:your|the) instructions?)\b|"
-    r"(?<!\w)(?:system|assistant|user|instructions?)\s*:",
+_MODEL_LEAK_SHAPES = re.compile(
+    r"```|<\|.*?\|>|"
+    r"\b(?:system|developer|assistant|user)\s+(?:prompt|message|instructions?)\b|"
+    r"\b(?:api\s+key|secret|password)\b|"
+    r"\bignore\s+(?:all|the)\s+previous\b|"
+    r"\breveal\s+(?:your|the)\s+instructions?\b|"
+    r"\b(?:here(?:'s| is)|below|above)\s+(?:the\s+)?(?:prompt|instructions?)\b|"
+    r"(?<!\w)(?:system|developer|assistant|user)\s*:|"
+    r"\b(?:prompt|instructions?)\b",
     re.IGNORECASE,
 )
 
@@ -293,12 +302,8 @@ class Brain:
         except Exception:
             return None
 
-        cleaned = " ".join(reply.split())
-        if (
-            not cleaned
-            or _ANSWER_LEAK_SHAPES.search(cleaned)
-            or len(cleaned.split()) > ANSWER_WORD_LIMIT
-        ):
+        cleaned = _safe_model_text(reply, strip_punctuation=False)
+        if not cleaned or len(cleaned.split()) > ANSWER_WORD_LIMIT:
             return None
         return cleaned[:ANSWER_LIMIT]
 
@@ -375,10 +380,20 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
     if verb == "batch":
         steps = tuple(_from_step(step, tz=tz, source=source) for step in payload.get("steps", []))
 
+    raw_question = payload.get("question")
+    question = _safe_model_text(raw_question)
+    if (
+        verb == "ask"
+        and isinstance(raw_question, str)
+        and _clean(raw_question)
+        and question is None
+    ):
+        question = MODEL_FALLBACK_QUESTION
+
     action = Action(
         verb=verb,  # type: ignore[arg-type]
-        title=_clean(payload.get("title")),
-        which=_clean(payload.get("which")),
+        title=_safe_model_text(payload.get("title")),
+        which=_safe_model_text(payload.get("which")),
         minutes=minutes,
         importance=importance,
         due=_date(payload.get("due")),
@@ -386,7 +401,7 @@ def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:
         end=_datetime(payload.get("end"), tz),
         kind="event" if payload.get("kind") == "event" else "task",
         category=_category(payload.get("category"), payload.get("title")),
-        question=_clean(payload.get("question")),
+        question=question,
         steps=steps,
         source=source,
     )
@@ -401,15 +416,16 @@ def _from_step(step: dict[str, Any], *, tz: str, source: str) -> Action:
     minutes = step.get("minutes")
     if minutes is not None and int(minutes) <= 0:
         minutes = None
-    return Action(
+    action = Action(
         verb="add",
-        title=_clean(step.get("title")),
+        title=_safe_model_text(step.get("title")),
         minutes=int(minutes) if minutes is not None else None,
         importance=importance,
         due=_date(step.get("due")),
         category=_category(step.get("category"), step.get("title")),
         source=source,
     )
+    return _sanity_check(action) if action.title else action
 
 
 def validate(action: Action) -> Action:
@@ -427,6 +443,12 @@ def _sanity_check(action: Action) -> Action:
     """Reject actions that cannot be executed, so nothing half-formed reaches the database."""
     if action.verb == "add" and not action.title:
         return Action(verb="ask", question="What should I call it?", source=action.source)
+    if action.minutes is not None and not 1 <= action.minutes <= MAX_MINUTES:
+        return Action(
+            verb="ask",
+            question="Keep a duration between 1 minute and 24 hours.",
+            source=action.source,
+        )
     if action.verb == "batch":
         return _sanity_check_batch(action)
     if action.verb in ("complete", "drop", "pin") and not action.which:
@@ -452,6 +474,12 @@ MAX_BATCH = 8
 
 
 def _sanity_check_batch(action: Action) -> Action:
+    if any(step.verb != "add" for step in action.steps or ()):
+        return Action(
+            verb="ask",
+            question="Each part needs a task title and a duration of 24 hours or less.",
+            source=action.source,
+        )
     steps = tuple(step for step in (action.steps or ()) if step.title)
     if not steps:
         return Action(
@@ -480,6 +508,20 @@ def _clean(value: Any) -> str | None:
         return None
     text = " ".join(value.split()).strip(" .,;:!?")
     return text or None
+
+
+def _safe_model_text(value: Any, *, strip_punctuation: bool = True) -> str | None:
+    """Accept model text only when it cannot masquerade as a prompt or role switch."""
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.split())
+    if strip_punctuation:
+        cleaned = cleaned.strip(" .,;:!?")
+    if not cleaned:
+        return None
+    if cleaned and _MODEL_LEAK_SHAPES.search(cleaned):
+        return None
+    return cleaned
 
 
 # What a title or a typed sentence could use to make itself look like a new instruction rather

@@ -203,6 +203,21 @@ class TestTheTwoModes:
         assert response.status_code == 200
         assert response.json()["source"] == "rules"
 
+    def test_an_overlong_browser_key_is_not_echoed_in_validation_errors(
+        self, client: TestClient
+    ) -> None:
+        secret = "user-secret-" + ("x" * 256)
+
+        response = client.post(
+            "/api/say",
+            json={"text": "write the report", "mode": "ai", "gemini_api_key": secret},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
+        assert secret not in response.text
+        assert "gemini_api_key" in response.text
+
     def test_ai_question_uses_one_model_call_with_a_browser_key(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

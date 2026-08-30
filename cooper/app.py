@@ -17,6 +17,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -78,6 +79,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[SECRET_HEADER, "Content-Type"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return useful locations without reflecting request values into an error response.
+
+    In particular, Pydantic's normal error shape includes the rejected input. That would reflect
+    a browser-provided Gemini key when it exceeds its length bound, so values are intentionally
+    left out of every validation error Cooper returns.
+    """
+    detail = [
+        {
+            "type": error.get("type", "value_error"),
+            "loc": error.get("loc", ()),
+            "msg": "Invalid request.",
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse({"detail": detail}, status_code=422)
 
 
 @app.middleware("http")
