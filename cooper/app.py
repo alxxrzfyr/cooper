@@ -32,7 +32,7 @@ from cooper.brain import (
 )
 from cooper.config import Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
-from cooper.google import Calendar, CalendarError
+from cooper.google import Calendar, CalendarError, Gmail
 from cooper.planner import Hours, Slot, place, rank
 
 SECRET_HEADER = "X-Cooper-Key"
@@ -54,6 +54,7 @@ calendar = Calendar(
     calendar_id=settings.calendar_id,
 )
 calendar.load_token((store.get_setting(GOOGLE_SETTING) or {}).get("token"))
+gmail = Gmail(calendar)
 
 app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
 app.add_middleware(
@@ -973,8 +974,9 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
     app.state.oauth_state = None
     try:
         token, email = calendar.exchange(code)
-        store.set_setting(GOOGLE_SETTING, {"token": calendar.seal_token(token), "email": email})
-        calendar.load_token(calendar.seal_token(token))
+        sealed = calendar.seal_token(token)
+        store.set_setting(GOOGLE_SETTING, {"token": sealed, "email": email})
+        calendar.load_token(sealed)
     except CalendarError as failure:
         return _page("Could not connect", str(failure))
     return _page("Calendar connected", f"Cooper can now use {email or 'your calendar'}.")
@@ -982,8 +984,13 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 
 @app.post("/api/google/disconnect")
 def disconnect() -> dict[str, Any]:
-    store.set_setting(GOOGLE_SETTING, {})
-    calendar.load_token(None)
+    try:
+        calendar.revoke()
+    except CalendarError:
+        pass
+    finally:
+        store.set_setting(GOOGLE_SETTING, {})
+        calendar.load_token(None)
     return {"view": today_view()}
 
 

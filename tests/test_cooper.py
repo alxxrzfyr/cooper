@@ -7,9 +7,11 @@ keep the app from acting on the wrong thing.
 from __future__ import annotations
 
 import datetime as dt
+import io
 import os
 import pathlib
 import re
+import urllib.error
 from collections.abc import Iterator
 from zoneinfo import ZoneInfo
 
@@ -409,6 +411,137 @@ class TestStore:
             assert stored.owner_id == "local"
             assert stored.source == "google"
             assert stored.source_ref == "gcal-42"
+
+
+class TestGoogleTransport:
+    def calendar(self):
+        from cryptography.fernet import Fernet
+
+        from cooper.google import Calendar
+
+        calendar = Calendar(
+            client_id="client-id",
+            client_secret="client-secret",
+            redirect_uri="http://127.0.0.1:8000/api/google/callback",
+            encryption_key=Fernet.generate_key().decode(),
+        )
+        calendar.load_token(calendar.seal_token("refresh-token"))
+        return calendar
+
+    def test_consent_requests_only_calendar_events_and_gmail_readonly(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+
+        from cooper.google import GOOGLE_SCOPES
+
+        url = self.calendar().consent_url("nonce")
+
+        assert GOOGLE_SCOPES == (
+            "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/gmail.readonly",
+        )
+        assert parse_qs(urlparse(url).query)["scope"] == [" ".join(GOOGLE_SCOPES)]
+
+    def test_gmail_uses_calendars_shared_refreshed_access_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import Gmail
+
+        calendar = self.calendar()
+        seen: list[dict[str, str]] = []
+        monkeypatch.setattr(
+            calendar,
+            "_post_form",
+            lambda _url, form: seen.append(form) or {"access_token": "shared-access"},
+        )
+        gmail = Gmail(calendar)
+        monkeypatch.setattr(gmail, "_send", lambda request: {})
+
+        gmail.list_messages(after=NOW, max_results=1)
+
+        assert seen == [
+            {
+                "refresh_token": "refresh-token",
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "grant_type": "refresh_token",
+            }
+        ]
+
+    def test_gmail_lists_fixed_senders_and_returns_only_ephemeral_content(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from urllib.parse import parse_qs, urlparse
+
+        from cooper.google import Gmail
+
+        calendar = self.calendar()
+        monkeypatch.setattr(calendar, "access_token", lambda: "shared-access")
+        requests = []
+        responses = iter(
+            [
+                {"messages": [{"id": "raw-message-id"}]},
+                {
+                    "internalDate": "1788138000000",
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "events@luma.com"},
+                            {"name": "Subject", "value": "A meetup"},
+                        ],
+                        "body": {"data": "SGVsbG8gd29ybGQ"},
+                    },
+                },
+            ]
+        )
+
+        def send(request):
+            requests.append(request)
+            return next(responses)
+
+        gmail = Gmail(calendar)
+        monkeypatch.setattr(gmail, "_send", send)
+
+        messages = gmail.list_messages(after=NOW, max_results=999)
+
+        query = parse_qs(urlparse(requests[0].full_url).query)
+        assert query["maxResults"] == ["100"]
+        assert query["q"] == ["after:2026/08/31 from:(luma.com OR meetup.com OR eventbrite.com)"]
+        assert requests[1].full_url.endswith("/users/me/messages/raw-message-id?format=full")
+        assert messages[0].headers == {"From": "events@luma.com", "Subject": "A meetup"}
+        assert messages[0].body == "Hello world"
+        assert messages[0].internal_at == dt.datetime(2026, 8, 31, 1, 0, tzinfo=dt.UTC)
+        assert not hasattr(messages[0], "id")
+
+    def test_google_http_failures_become_a_safe_client_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarError, Gmail
+
+        calendar = self.calendar()
+        monkeypatch.setattr(calendar, "access_token", lambda: "shared-access")
+
+        def fail(_request, timeout):
+            raise urllib.error.HTTPError(
+                "https://gmail.googleapis.com", 403, "forbidden", {}, io.BytesIO(b"nope")
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", fail)
+
+        with pytest.raises(CalendarError, match="Google returned 403"):
+            Gmail(calendar).get_message("raw-message-id")
+
+    def test_revocation_failure_does_not_raise_or_keep_using_the_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarError
+
+        calendar = self.calendar()
+        monkeypatch.setattr(
+            calendar,
+            "_post_form",
+            lambda *_args: (_ for _ in ()).throw(CalendarError("Google is unavailable")),
+        )
+
+        calendar.revoke()
 
 
 class TestTimezones:

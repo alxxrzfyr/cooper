@@ -445,6 +445,48 @@ class TestGoogle:
 
         assert "access_denied" in response.text
 
+    def test_callback_seals_and_loads_the_single_saved_token(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        module.app.state.oauth_state = "valid-state"
+        sealed: list[str] = []
+        loaded: list[str | None] = []
+        monkeypatch.setattr(module.calendar, "exchange", lambda _code: ("refresh", None))
+        monkeypatch.setattr(
+            module.calendar, "seal_token", lambda token: sealed.append(token) or "sealed-token"
+        )
+        monkeypatch.setattr(module.calendar, "load_token", lambda token: loaded.append(token))
+
+        response = client.get("/api/google/callback?code=code&state=valid-state")
+
+        assert response.status_code == 200
+        assert sealed == ["refresh"]
+        assert loaded == ["sealed-token"]
+        assert module.store.get_setting(module.GOOGLE_SETTING) == {
+            "token": "sealed-token",
+            "email": None,
+        }
+
+    def test_disconnect_clears_local_token_when_remote_revoke_fails(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        module.store.set_setting(module.GOOGLE_SETTING, {"token": "sealed-token"})
+        monkeypatch.setattr(
+            module.calendar,
+            "revoke",
+            lambda: (_ for _ in ()).throw(module.CalendarError("Google is unavailable")),
+        )
+
+        response = client.post("/api/google/disconnect", headers=HEADERS)
+
+        assert response.status_code == 200
+        assert module.store.get_setting(module.GOOGLE_SETTING) == {}
+        assert module.calendar.connected is False
+
     def test_everything_works_with_the_calendar_off(self, client: TestClient) -> None:
         # No Google, no key, and a task still gets added, ranked and booked locally.
         body = say(client, "write the report, 60m")

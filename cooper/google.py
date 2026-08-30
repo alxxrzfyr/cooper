@@ -21,8 +21,14 @@ from cryptography.fernet import Fernet, InvalidToken
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 API = "https://www.googleapis.com/calendar/v3"
-SCOPE = "https://www.googleapis.com/auth/calendar.events"
+GMAIL_API = "https://gmail.googleapis.com/gmail/v1"
+GOOGLE_SCOPES = (
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.readonly",
+)
+GMAIL_SENDER_QUERY = "from:(luma.com OR meetup.com OR eventbrite.com)"
 TAG = "cooper"
 TIMEOUT = 20
 
@@ -37,6 +43,15 @@ class Busy:
     end: dt.datetime
     title: str
     mine: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class GmailMessage:
+    """The short-lived content a confirmation parser needs, and nothing else."""
+
+    headers: dict[str, str]
+    body: str
+    internal_at: dt.datetime
 
 
 class Calendar:
@@ -95,7 +110,7 @@ class Calendar:
                 "client_id": self._id or "",
                 "redirect_uri": self._redirect,
                 "response_type": "code",
-                "scope": SCOPE,
+                "scope": " ".join(GOOGLE_SCOPES),
                 # offline + consent is what actually returns a refresh token.
                 "access_type": "offline",
                 "prompt": "consent",
@@ -124,7 +139,8 @@ class Calendar:
             )
         return (str(token), _email_from(payload.get("id_token")))
 
-    def _access_token(self) -> str:
+    def access_token(self) -> str:
+        """Refresh and return the bearer token shared by Google's read-only clients."""
         if not self._refresh_token:
             raise CalendarError("Google Calendar is not connected.")
         payload = self._post_form(
@@ -140,6 +156,15 @@ class Calendar:
         if not token:
             raise CalendarError("Google refused the saved credential. Reconnect to continue.")
         return str(token)
+
+    def revoke(self) -> None:
+        """Ask Google to revoke the saved grant, without blocking local disconnect."""
+        if not self._refresh_token:
+            return
+        try:
+            self._post_form(REVOKE_URL, {"token": self._refresh_token})
+        except CalendarError:
+            return
 
     # ------------------------------------------------------------------ events
 
@@ -226,7 +251,7 @@ class Calendar:
             f"{API}{path}",
             data=json.dumps(body).encode() if body is not None else None,
             headers={
-                "Authorization": f"Bearer {self._access_token()}",
+                "Authorization": f"Bearer {self.access_token()}",
                 "Content-Type": "application/json",
             },
             method=method,
@@ -256,6 +281,105 @@ class Calendar:
             raise CalendarError(f"Could not reach Google: {error}") from error
         except json.JSONDecodeError as error:
             raise CalendarError("Google sent a response that was not JSON.") from error
+
+
+class Gmail:
+    """Read-only Gmail REST access using Calendar's shared OAuth refresh path."""
+
+    def __init__(self, calendar: Calendar) -> None:
+        self._calendar = calendar
+
+    _send = staticmethod(Calendar._send)
+
+    @property
+    def configured(self) -> bool:
+        return self._calendar.configured
+
+    @property
+    def connected(self) -> bool:
+        return self._calendar.connected
+
+    def list_messages(self, *, after: dt.datetime, max_results: int) -> list[GmailMessage]:
+        """Fetch recent confirmation candidates from the fixed sender allowlist.
+
+        Google message ids are used only to retrieve each message, then discarded before the
+        parser boundary. The lookback caller provides is encoded as a UTC calendar date and the
+        request size is capped so a watcher cannot accidentally drain a mailbox.
+        """
+        if not self.connected:
+            return []
+        if after.tzinfo is None:
+            raise CalendarError("Gmail lookback must include a timezone.")
+        bounded = max(1, min(max_results, 100))
+        day = after.astimezone(dt.UTC).date().strftime("%Y/%m/%d")
+        query = urllib.parse.urlencode(
+            {
+                "q": f"after:{day} {GMAIL_SENDER_QUERY}",
+                "maxResults": str(bounded),
+            }
+        )
+        payload = self._call("GET", f"/users/me/messages?{query}")
+        messages: list[GmailMessage] = []
+        for entry in payload.get("messages") or []:
+            message_id = entry.get("id") if isinstance(entry, dict) else None
+            if isinstance(message_id, str):
+                messages.append(self.get_message(message_id))
+        return messages
+
+    def get_message(self, message_id: str) -> GmailMessage:
+        """Fetch one message in memory; this client never changes mail."""
+        payload = self._call(
+            "GET", f"/users/me/messages/{urllib.parse.quote(message_id, safe='')}?format=full"
+        )
+        raw_payload = payload.get("payload")
+        if not isinstance(raw_payload, dict):
+            raw_payload = {}
+        headers = {
+            str(entry.get("name")): str(entry.get("value"))
+            for entry in raw_payload.get("headers") or []
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+        }
+        raw_date = payload.get("internalDate")
+        try:
+            internal_at = dt.datetime.fromtimestamp(int(raw_date) / 1000, tz=dt.UTC)
+        except (TypeError, ValueError, OverflowError, OSError):
+            internal_at = dt.datetime.fromtimestamp(0, tz=dt.UTC)
+        return GmailMessage(headers=headers, body=_gmail_body(raw_payload), internal_at=internal_at)
+
+    def _call(self, method: str, path: str) -> dict:
+        request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
+            f"{GMAIL_API}{path}",
+            headers={"Authorization": f"Bearer {self._calendar.access_token()}"},
+            method=method,
+        )
+        return self._send(request)
+
+
+def _gmail_body(payload: dict) -> str:
+    """Decode the smallest useful mail body without retaining the Gmail payload."""
+    candidates: list[tuple[str, str]] = []
+
+    def collect(part: dict) -> None:
+        body = part.get("body")
+        encoded = body.get("data") if isinstance(body, dict) else None
+        if isinstance(encoded, str):
+            try:
+                decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode(
+                    errors="replace"
+                )
+            except (ValueError, UnicodeDecodeError):
+                decoded = ""
+            candidates.append((str(part.get("mimeType") or ""), decoded))
+        for child in part.get("parts") or []:
+            if isinstance(child, dict):
+                collect(child)
+
+    collect(payload)
+    for preferred in ("text/plain", "text/html", ""):
+        for mime_type, decoded in candidates:
+            if mime_type == preferred and decoded:
+                return decoded
+    return ""
 
 
 def _moment(value: dict | None) -> dt.datetime | None:

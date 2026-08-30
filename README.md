@@ -167,21 +167,24 @@ scheduling never used a model anyway.
 Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
 sends only your own words and task titles, never event descriptions, locations, or attendees.
 
-### Optional: Google Calendar
+### Optional: Google Calendar and Gmail
 
 ```
 COOPER_GOOGLE_CLIENT_ID=...
 COOPER_GOOGLE_CLIENT_SECRET=...
+COOPER_GMAIL_LOOKBACK_DAYS=14
 COOPER_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Create a Google Cloud project, enable the Calendar API, add an OAuth client of type **Web
+Create a Google Cloud project, enable the Calendar API and Gmail API, add an OAuth client of type **Web
 application**, and set the redirect to `http://127.0.0.1:8000/api/google/callback` — use
 `127.0.0.1`, not `localhost`, because Google treats them as different.
 
-**The one trap:** a consent screen left in Testing mode expires refresh tokens after seven
-days. Sync will stop and it will look exactly like a bug in the code. It isn't. Publish the app
-or reconnect weekly.
+Calendar uses its event scope; Gmail uses the restricted, read-only Gmail scope. That is free for
+your own app in Testing mode, but a published app for other people needs Google's security review.
+**The one trap:** a consent screen left in Testing mode expires refresh tokens after seven days.
+Sync will stop and it will look exactly like a bug in the code. It isn't. Publish the app or
+reconnect weekly. Once the Gmail watcher is configured, start it with `python -m cooper.watcher`.
 
 Without these the calendar is simply off and everything else works.
 
