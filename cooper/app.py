@@ -9,9 +9,14 @@ touches the database, so a wrong answer from Gemini can be refused rather than a
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import dataclasses
 import datetime as dt
+import hashlib
+import hmac
+import json
 import secrets
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -33,7 +38,7 @@ from cooper.brain import (
     sanitize_for_prompt,
     validate,
 )
-from cooper.config import Settings
+from cooper.config import KEY_MIN, Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.planner import Hours, Slot, place, rank
@@ -41,9 +46,12 @@ from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
 HOURS_SETTING = "hours"
-GOOGLE_SETTING = "google"
+GOOGLE_SETTING = "google_token"
+GOOGLE_CONNECTED_SETTING = "google_connected"
+GOOGLE_OAUTH_NONCE_SETTING = "google_oauth_nonce"
 GMAIL_SETTING = "gmail"
 GOOGLE_NOT_CONNECTED = "Google is not connected for this account."
+OAUTH_STATE_SECONDS = 600
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -57,6 +65,13 @@ class SyncSummary:
     error: str | None = None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class OAuthState:
+    owner_id: str
+    nonce: str
+    expires_at: dt.datetime
+
+
 settings = Settings()  # type: ignore[call-arg]
 store = Store(settings.database_url)
 brain = Brain(
@@ -64,17 +79,6 @@ brain = Brain(
     model=settings.gemini_model,
     timezone=settings.timezone,
 )
-calendar = Calendar(
-    client_id=settings.google_client_id,
-    client_secret=settings.google_secret(),
-    redirect_uri=settings.google_redirect_uri,
-    encryption_key=settings.encryption(),
-    calendar_id=settings.calendar_id,
-)
-if settings.auth_mode == "local":
-    calendar.load_token((store.get_setting(settings.owner_id, GOOGLE_SETTING) or {}).get("token"))
-gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
-
 app = FastAPI(title="Cooper", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
@@ -110,9 +114,7 @@ async def guard(request: Request, call_next: Any) -> Any:
         return await call_next(request)
 
     if request.url.path == "/api/google/callback":
-        if settings.auth_mode == "local":
-            return await call_next(request)
-        return JSONResponse({"detail": "Invalid authentication token"}, status_code=401)
+        return await call_next(request)
 
     if settings.auth_mode == "local":
         supplied = request.headers.get(SECRET_HEADER, "")
@@ -206,6 +208,35 @@ def current_hours(owner_id: str) -> Hours:
     return Hours(timezone=settings.timezone)
 
 
+def google_calendar(owner_id: str) -> Calendar:
+    """Build a Calendar client from this owner's encrypted Google grant."""
+    calendar = Calendar(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_secret(),
+        redirect_uri=settings.google_redirect_uri,
+        encryption_key=settings.encryption(),
+        calendar_id=settings.calendar_id,
+    )
+    saved = store.get_setting(owner_id, GOOGLE_SETTING) or {}
+    token = saved.get("token") if isinstance(saved, dict) else None
+    calendar.load_token(token if isinstance(token, str) else None)
+    return calendar
+
+
+def google_gmail(owner_id: str) -> Gmail:
+    return Gmail(google_calendar(owner_id), lookback_days=settings.gmail_lookback_days)
+
+
+def connected_calendar(owner_id: str) -> Calendar | None:
+    calendar = google_calendar(owner_id)
+    return calendar if calendar.connected else None
+
+
+def _google_connected(owner_id: str) -> dict[str, Any]:
+    saved = store.get_setting(owner_id, GOOGLE_CONNECTED_SETTING) or {}
+    return saved if isinstance(saved, dict) else {}
+
+
 def _is_local_item(item: Item, owner_id: str) -> bool:
     """Return whether Cooper owns an item and may change it."""
     return item.source == "me" and item.owner_id == owner_id
@@ -252,13 +283,10 @@ def find(session: Any, owner_id: str, words: str) -> Item | None:
     return loose[0] if len(loose) == 1 else None
 
 
-def _calendar_connected(owner_id: str) -> bool:
-    return settings.auth_mode == "local" and owner_id == settings.owner_id and calendar.connected
-
-
 def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
     """Your real calendar, reduced to times and titles. Empty when Google is off."""
-    if not _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id)
+    if calendar is None:
         return []
     try:
         entries = calendar.busy(days=days)
@@ -284,8 +312,7 @@ def busy_windows(owner_id: str, *, days: int = 14) -> list[tuple[dt.datetime, dt
     Kept as a one-line wrapper so the schedulers below read the same as before and there is one
     obvious place — sources.py — where a new commitment source is added.
     """
-    source_calendar = calendar if _calendar_connected(owner_id) else None
-    return sources.busy_windows(store, owner_id, source_calendar, at=now(), days=days)
+    return sources.busy_windows(store, owner_id, connected_calendar(owner_id), at=now(), days=days)
 
 
 def sync_gmail_once(owner_id: str) -> SyncSummary:
@@ -295,7 +322,8 @@ def sync_gmail_once(owner_id: str) -> SyncSummary:
     receives the small proposal shape and is the one database writer for Gmail-backed Items.
     """
     checked_at = now()
-    if not _calendar_connected(owner_id):
+    gmail = google_gmail(owner_id)
+    if not gmail.connected:
         summary = SyncSummary(error=GOOGLE_NOT_CONNECTED)
         _record_gmail_health(owner_id, checked_at, summary)
         return summary
@@ -458,6 +486,9 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         undo_label = change.label if change else None
     gmail_health = store.get_setting(owner_id, GMAIL_SETTING) or {}
     gmail_counts = gmail_health.get("counts") or {}
+    calendar = google_calendar(owner_id)
+    gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
+    google_connected = _google_connected(owner_id)
 
     return {
         "now": at.isoformat(),
@@ -473,12 +504,12 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
             "configured": calendar.configured,
-            "connected": _calendar_connected(owner_id),
-            "email": (store.get_setting(owner_id, GOOGLE_SETTING) or {}).get("email"),
+            "connected": calendar.connected,
+            "email": google_connected.get("email"),
         },
         "gmail": {
             "configured": gmail.configured,
-            "connected": _calendar_connected(owner_id) and gmail.connected,
+            "connected": gmail.connected,
             "last_checked": gmail_health.get("last_checked"),
             "last_error": gmail_health.get("last_error"),
             "imported": gmail_counts.get("created", 0),
@@ -613,7 +644,8 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
         )
         payload = item.to_dict()
 
-    if action.kind == "event" and action.start and action.end and _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id)
+    if action.kind == "event" and action.start and action.end and calendar is not None:
         try:
             event_id = calendar.add_block(
                 item_id=payload["id"],
@@ -694,7 +726,8 @@ def place_one(
         session.flush()
         payload = item.to_dict()
 
-    if _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id)
+    if calendar is not None:
         with contextlib.suppress(CalendarError):
             event_id = calendar.add_block(
                 item_id=slot.item_id,
@@ -829,7 +862,8 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
         payload = item.to_dict()
         event_id = item.google_event_id if item.status != "open" else None
 
-    if event_id and _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id) if event_id else None
+    if event_id and calendar is not None:
         with contextlib.suppress(CalendarError):
             calendar.remove_block(event_id)
 
@@ -867,7 +901,8 @@ def schedule_now(owner_id: str) -> list[Slot]:
             before={"scheduled": [slot.item_id for slot in slots]},
         )
 
-    if _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id)
+    if calendar is not None:
         for slot in slots:
             try:
                 event_id = calendar.add_block(
@@ -899,7 +934,8 @@ def undo_last(owner_id: str) -> dict[str, Any]:
             if item is not None:
                 event_id = item.google_event_id
                 session.delete(item)
-                if event_id and _calendar_connected(owner_id):
+                calendar = connected_calendar(owner_id) if event_id else None
+                if event_id and calendar is not None:
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
         elif change.item_id:
@@ -911,7 +947,8 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                 item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
-                if item.google_event_id and _calendar_connected(owner_id):
+                calendar = connected_calendar(owner_id) if item.google_event_id else None
+                if item.google_event_id and calendar is not None:
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(item.google_event_id)
                 item.start_at = None
@@ -935,7 +972,8 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                     continue
                 event_id = item.google_event_id
                 session.delete(item)
-                if event_id and _calendar_connected(owner_id):
+                calendar = connected_calendar(owner_id) if event_id else None
+                if event_id and calendar is not None:
                     with contextlib.suppress(CalendarError):
                         calendar.remove_block(event_id)
 
@@ -1089,7 +1127,8 @@ def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
         # One change row for the batch: undo puts the whole set back in a single step.
         store.record(session, owner_id, label=label, item=None, before={"bulk": before})
 
-    if _calendar_connected(owner_id):
+    calendar = connected_calendar(owner_id)
+    if calendar is not None:
         for event_id in done_google:
             with contextlib.suppress(CalendarError):
                 calendar.remove_block(event_id)
@@ -1218,35 +1257,112 @@ def changes(request: Request) -> dict[str, Any]:
         }
 
 
+def _oauth_secret() -> str:
+    secret = settings.oauth_secret() or settings.key()
+    if len(secret) < KEY_MIN:
+        raise HTTPException(status_code=422, detail="COOPER_OAUTH_STATE_SECRET is not configured.")
+    return secret
+
+
+def _sign_oauth_state(state: OAuthState) -> str:
+    payload = {
+        "owner_id": state.owner_id,
+        "nonce": state.nonce,
+        "expires_at": state.expires_at.astimezone(dt.UTC).isoformat(),
+    }
+    encoded = _b64(json.dumps(payload, separators=(",", ":")).encode())
+    signature = hmac.new(_oauth_secret().encode(), encoded.encode(), hashlib.sha256).digest()
+    return f"{encoded}.{_b64(signature)}"
+
+
+def _verify_oauth_state(raw: str | None) -> OAuthState:
+    if not raw or "." not in raw:
+        raise ValueError("missing OAuth state")
+    encoded, signature = raw.split(".", 1)
+    expected = _b64(hmac.new(_oauth_secret().encode(), encoded.encode(), hashlib.sha256).digest())
+    if not hmac.compare_digest(signature, expected):
+        raise ValueError("bad OAuth state signature")
+    try:
+        payload = json.loads(_unb64(encoded))
+        owner_id = payload["owner_id"]
+        nonce = payload["nonce"]
+        expires_at = dt.datetime.fromisoformat(payload["expires_at"]).astimezone(dt.UTC)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError("bad OAuth state payload") from error
+    if not isinstance(owner_id, str) or not owner_id:
+        raise ValueError("bad OAuth state owner")
+    if not isinstance(nonce, str) or not nonce:
+        raise ValueError("bad OAuth state nonce")
+    if expires_at <= now():
+        raise ValueError("expired OAuth state")
+    return OAuthState(owner_id=owner_id, nonce=nonce, expires_at=expires_at)
+
+
+def _consume_oauth_nonce(state: OAuthState) -> bool:
+    saved = store.get_setting(state.owner_id, GOOGLE_OAUTH_NONCE_SETTING) or {}
+    if not isinstance(saved, dict) or saved.get("nonce") != state.nonce:
+        return False
+    try:
+        expires_at = dt.datetime.fromisoformat(str(saved.get("expires_at"))).astimezone(dt.UTC)
+    except ValueError:
+        expires_at = dt.datetime.fromtimestamp(0, tz=dt.UTC)
+    store.set_setting(state.owner_id, GOOGLE_OAUTH_NONCE_SETTING, {})
+    return expires_at > now()
+
+
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _unb64(raw: str) -> bytes:
+    try:
+        return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("bad base64") from error
+
+
 @app.post("/api/google/connect")
 def connect(request: Request) -> dict[str, str]:
     owner_id = request_owner(request).uid
-    if settings.auth_mode != "local" or owner_id != settings.owner_id:
-        raise HTTPException(status_code=409, detail="Google connection is local-only for now.")
-    state = secrets.token_urlsafe(16)
-    app.state.oauth_state = state
+    nonce = secrets.token_urlsafe(24)
+    expires_at = now() + dt.timedelta(seconds=OAUTH_STATE_SECONDS)
+    state = _sign_oauth_state(OAuthState(owner_id=owner_id, nonce=nonce, expires_at=expires_at))
+    calendar = google_calendar(owner_id)
     try:
-        return {"url": calendar.consent_url(state)}
+        url = calendar.consent_url(state)
     except CalendarError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    store.set_setting(
+        owner_id,
+        GOOGLE_OAUTH_NONCE_SETTING,
+        {"nonce": nonce, "expires_at": expires_at.isoformat()},
+    )
+    return {"url": url}
 
 
 @app.get("/api/google/callback")
 def callback(code: str | None = None, state: str | None = None, error: str | None = None):
-    expected = getattr(app.state, "oauth_state", None)
     if error:
         return _page("Not connected", f"Google said: {error}")
     if not code:
         return _page("Nothing to do", "Google sent no authorization code.")
-    if not expected or state != expected:
+    try:
+        owner_state = _verify_oauth_state(state)
+    except ValueError:
+        return _page("Wrong origin", "That callback did not come from Cooper.")
+    if not _consume_oauth_nonce(owner_state):
         return _page("Wrong origin", "That callback did not come from Cooper.")
 
-    app.state.oauth_state = None
+    calendar = google_calendar(owner_state.owner_id)
     try:
         token, email = calendar.exchange(code)
         sealed = calendar.seal_token(token)
-        store.set_setting(settings.owner_id, GOOGLE_SETTING, {"token": sealed, "email": email})
-        calendar.load_token(sealed)
+        store.set_setting(owner_state.owner_id, GOOGLE_SETTING, {"token": sealed})
+        store.set_setting(
+            owner_state.owner_id,
+            GOOGLE_CONNECTED_SETTING,
+            {"connected": True, "email": email, "connected_at": now().isoformat()},
+        )
     except CalendarError as failure:
         return _page("Could not connect", str(failure))
     return _page("Calendar connected", f"Cooper can now use {email or 'your calendar'}.")
@@ -1255,13 +1371,17 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
 @app.post("/api/google/disconnect")
 def disconnect(request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
-    connected = _calendar_connected(owner_id)
-    if connected:
+    calendar = connected_calendar(owner_id)
+    if calendar is not None:
         with contextlib.suppress(CalendarError):
             calendar.revoke()
     store.set_setting(owner_id, GOOGLE_SETTING, {})
-    if connected:
-        calendar.load_token(None)
+    store.set_setting(
+        owner_id,
+        GOOGLE_CONNECTED_SETTING,
+        {"connected": False, "email": None, "disconnected_at": now().isoformat()},
+    )
+    store.set_setting(owner_id, GOOGLE_OAUTH_NONCE_SETTING, {})
     return {"view": today_view(owner_id)}
 
 

@@ -62,6 +62,7 @@ class Calendar:
         client_secret: str | None,
         redirect_uri: str,
         encryption_key: str | None,
+        refresh_token: str | None = None,
         calendar_id: str = "primary",
     ) -> None:
         self._id = client_id
@@ -69,7 +70,7 @@ class Calendar:
         self._redirect = redirect_uri
         self._calendar = calendar_id
         self._fernet = Fernet(encryption_key.encode()) if encryption_key else None
-        self._refresh_token: str | None = None
+        self._refresh_token = refresh_token
 
     @property
     def configured(self) -> bool:
