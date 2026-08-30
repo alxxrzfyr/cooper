@@ -1149,6 +1149,26 @@ describe("manual mode as a form", () => {
     expect(await screen.findByRole("button", { name: "Add it" })).toBeDisabled();
   });
 
+  test("picking a day and a time makes an event, as a naive wall-clock start", async () => {
+    const calls = stub({});
+    render(<App />);
+    const user = await openChat();
+
+    await user.type(await screen.findByLabelText("What"), "team sync");
+    // Deadline is the native date picker; At is a select of half-hour slots.
+    const day = screen.getByLabelText("Deadline") as HTMLInputElement;
+    await user.type(day, "2099-09-05");
+    await user.selectOptions(screen.getByLabelText("At"), "14:00");
+    await user.click(screen.getByRole("button", { name: "Add it" }));
+
+    await waitFor(() => {
+      const created = calls.find((call) => call.url.endsWith("/api/items"));
+      expect(created).toBeDefined();
+      // No Z, no offset: a wall-clock string the backend tags with the configured zone.
+      expect(created?.body.start).toBe("2099-09-05T14:00:00");
+    });
+  });
+
   test("a stale AI mode falls back to Manual when there is no key", async () => {
     // AI could have been the saved mode from a session that had a key, or the key was removed.
     // Without one, staying in AI strands the user in a conversation that cannot answer and with

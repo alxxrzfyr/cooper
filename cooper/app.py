@@ -22,7 +22,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from cooper import sources
-from cooper.brain import Action, Brain, guess_category, looks_like_a_question, validate
+from cooper.brain import (
+    Action,
+    Brain,
+    guess_category,
+    looks_like_a_question,
+    sanitize_for_prompt,
+    validate,
+)
 from cooper.config import Settings
 from cooper.db import Change, Item, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError
@@ -272,9 +279,17 @@ def say(body: Say) -> dict[str, Any]:
 
     action = brain.read(body.text, recent, use_model=ai)
 
-    # In AI mode a sentence that is not an instruction is a question, so answer it instead of
-    # replying "here is what is next". Nothing here writes to the database: an answer is text.
-    if ai and (action.verb in ("show", "ask") or looks_like_a_question(body.text)):
+    # In AI mode, a sentence shaped like a question — "what should I do", "is there room
+    # tomorrow" — gets a real answer instead of "here is what is next" or a generic question
+    # back. Nothing here writes to the database: an answer is text.
+    #
+    # Everything else that came back as "ask" already carries the right reply in
+    # `action.question`: the prompt now tells the model to use "ask" both for a genuinely
+    # ambiguous instruction ("Which one did you mean?") and for a sentence that is not a task at
+    # all ("I only turn sentences into calendar tasks and events, not write poems"). Routing
+    # every "ask" through `answer()` used to replace both of those specific, correct replies with
+    # one generic decline, which is what made a real multi-task request look like a refusal.
+    if ai and (action.verb == "show" or looks_like_a_question(body.text)):
         answered = brain.answer(body.text, summaries)
         if answered:
             return {
@@ -293,9 +308,13 @@ def _summarise(item: Item) -> str:
 
     Deliberately only the facts needed to reason about time and order. No notes, no event
     description, no location, no attendees — rule five of the PRD.
+
+    A title is whatever the user typed to create the item, so it goes through the same guard as
+    anything else reaching a prompt as data: `sanitize_for_prompt` flattens the punctuation and
+    line breaks an injected instruction would need, before this line is ever built.
     """
     zone = ZoneInfo(settings.timezone)
-    bits = [item.title, item.category]
+    bits = [sanitize_for_prompt(item.title), item.category]
     if item.minutes:
         bits.append(f"{item.minutes} min")
     if item.importance != 3:
@@ -332,6 +351,9 @@ def run(action: Action) -> dict[str, Any]:
 
     if action.verb == "add":
         return add(action)
+
+    if action.verb == "batch":
+        return add_batch(action)
 
     return change_existing(action)
 
@@ -404,15 +426,21 @@ def add(action: Action) -> dict[str, Any]:
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
 
 
-def place_one(item_id: str) -> dict[str, Any] | None:
-    """Book one task into the first gap in your hours.
+def place_one(item_id: str, *, earliest: dt.datetime | None = None) -> dict[str, Any] | None:
+    """Book one task into the first gap in your hours, no earlier than `earliest`.
 
     Returns the stored item, or None if it would not fit inside the week.
 
     Uses the same `place` as a whole scheduling run, so there is still exactly one piece of code
     that decides when something may happen, and it still only ever looks at working hours.
+
+    `earliest` is how a batch sequences its steps without a dependency graph: each step after the
+    first is floored to the previous step's booked end, so "research, then slides" cannot come
+    back with slides before research even when research lands the busier of the two days.
     """
     at = now()
+    if earliest is not None and earliest > at:
+        at = earliest
     hours = current_hours()
     busy = busy_windows()
 
@@ -452,6 +480,78 @@ def to_local(iso: str) -> str:
     """ "Sun 10:00", in your timezone, from the ISO string an item carries."""
     moment = dt.datetime.fromisoformat(iso).astimezone(ZoneInfo(settings.timezone))
     return moment.strftime("%a %H:%M")
+
+
+def add_batch(action: Action) -> dict[str, Any]:
+    """Several related tasks from one sentence, created and booked in the order given.
+
+    Mirrors `bulk()`: several items change, but it is recorded as one `Change`, so a single undo
+    removes the whole batch rather than leaving three of four steps behind. There is no second
+    write path — each step is created through the same `Item` construction `add()` uses, and
+    booked through the same `place_one` a lone task goes through.
+
+    Sequencing is time, not a stored relationship. The PRD rules out "dependencies between
+    tasks" as a project-management feature this app must never become, so "before X then Y" is
+    expressed by flooring Y's earliest start at X's booked end, the same way working hours floor
+    every task's earliest start at the moment you asked. Nothing new is stored to make that true.
+    """
+    steps = action.steps or ()
+    created: list[dict[str, Any]] = []
+    floor: dt.datetime | None = None
+
+    with store.session() as session:
+        for step in steps:
+            item = Item(
+                id=new_id(),
+                kind="task",
+                title=step.title or "Untitled",
+                minutes=step.minutes,
+                importance=step.importance or 3,
+                category=step.category or "personal",
+                due=_as_due(step.due),
+                created_at=now(),
+            )
+            session.add(item)
+            created.append(item.id)
+        session.flush()
+        # One change for the whole batch: before={} for every one of them means undo deletes
+        # each by id, the same as before={} means "undo removes this" for a single add.
+        store.record(
+            session,
+            label=f"Added {len(created)} tasks",
+            item=None,
+            before={"batch": created},
+        )
+        payloads = {item_id: session.get(Item, item_id).to_dict() for item_id in created}  # type: ignore[union-attr]
+
+    booked: list[dict[str, Any]] = []
+    for item_id in created:
+        result = place_one(item_id, earliest=floor)
+        payload = result if result is not None else payloads[item_id]
+        booked.append(payload)
+        if payload["start_at"]:
+            # The next step cannot start before this one's slot ends. If this step did not fit
+            # anywhere, the floor does not move — the step after it is still tried from now.
+            floor = dt.datetime.fromisoformat(payload["end_at"])
+
+    unplaced = sum(1 for payload in booked if not payload["start_at"])
+    first = booked[0]
+    message = f"Added {len(booked)} tasks, starting with “{first['title']}”"
+    message += f", {to_local(first['start_at'])}." if first["start_at"] else "."
+    if unplaced:
+        message += f" {unplaced} could not fit in your hours this week."
+
+    return {
+        "kind": "added",
+        "message": message,
+        "item": first,
+        "chip": [
+            f"{payload['title']} · {to_local(payload['start_at'])}"
+            if payload["start_at"]
+            else f"{payload['title']} · no room this week"
+            for payload in booked
+        ],
+    }
 
 
 def change_existing(action: Action) -> dict[str, Any]:
@@ -570,6 +670,18 @@ def undo_last() -> dict[str, Any]:
                 item = session.get(Item, snapshot.get("id"))
                 if item is not None:
                     _restore(item, snapshot)
+        elif "batch" in before:
+            # A batch create: every step was a new item, so undo removes all of them, the same
+            # as undoing a single add removes the one item it created.
+            for item_id in before["batch"]:
+                item = session.get(Item, item_id)
+                if item is None:
+                    continue
+                event_id = item.google_event_id
+                session.delete(item)
+                if event_id:
+                    with contextlib.suppress(CalendarError):
+                        calendar.remove_block(event_id)
 
         change.undone = 1
         label = change.label
@@ -647,6 +759,15 @@ def create(body: NewItem) -> dict[str, Any]:
         end=_local(body.end),
         source="form",
     )
+    # Present or future only: a deadline or a start in the past is not something to schedule
+    # around, and almost always a misclick. The form's date input sets the same floor with
+    # `min`, but a request can arrive without one, so the rule lives here where it is enforced.
+    zone = ZoneInfo(settings.timezone)
+    today = now().astimezone(zone).date()
+    if body.due is not None and body.due < today:
+        raise HTTPException(status_code=422, detail="A deadline can't be in the past.")
+    if action.start is not None and action.start < now():
+        raise HTTPException(status_code=422, detail="That time has already passed.")
     # The same validation the model's output goes through: an event that ends before it starts
     # becomes a question, a start with no end gets one, and so on.
     action = validate(action)

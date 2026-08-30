@@ -93,6 +93,11 @@ actually type. AI hands the sentence to Gemini and can also answer questions abo
 "what should I focus on this week", "is there room for the gym tomorrow". Answers are text only —
 they can never change your calendar, and Cooper declines anything that is not about your own work.
 
+AI mode also turns one sentence describing several related things — "research, then slides, then
+practice, all due Friday" — into several tasks at once, each booked so it does not start before
+the one before it ends. It is still one undo, the same as adding one task: a batch is additive,
+not a project plan, and there is no dependency this app remembers between the tasks it created.
+
 Manual exists because the free tier has a daily limit and most sentences do not need a model. With
 no key at all the AI switch disables itself and everything else still works.
 
@@ -214,9 +219,9 @@ than a question.
 ## Verified
 
 ```
-uv run pytest      130 passed
+uv run pytest      177 passed
 uv run ruff check  clean
-npm test           68 passed
+npm test           73 passed
 npm run build      ok
 ```
 

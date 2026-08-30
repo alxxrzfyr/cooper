@@ -13,6 +13,11 @@ import type { Category, NewItem } from "./types";
  * The only required field is a title. Everything else has a sensible absence: no length means an
  * errand that is ranked but never booked, no deadline means it competes on importance and age,
  * no category means Cooper works one out from the title the way the sentence path does.
+ *
+ * Deadline is the platform's own date picker, floored at today so only present and future dates
+ * can be chosen — a deadline in the past is not a deadline, and the backend enforces the same.
+ * Time is a plain <select> of half-hour slots, which renders the same everywhere; a native time
+ * input was the part that behaved differently across browsers and phones.
  */
 
 const CATEGORIES: Array<{ id: Category; label: string }> = [
@@ -29,6 +34,35 @@ const IMPORTANCE: Array<{ value: number; label: string }> = [
   { value: 4, label: "Important" },
   { value: 5, label: "Critical" },
 ];
+
+/** A local YYYY-MM-DD, so the value matches what the backend expects and never shifts by zone. */
+function isoDay(at: Date): string {
+  const year = at.getFullYear();
+  const month = String(at.getMonth() + 1).padStart(2, "0");
+  const day = String(at.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** Today, as the earliest a deadline may be. A deadline in the past is not a deadline. */
+const TODAY = isoDay(new Date());
+
+/** Half-hour slots across the day as HH:MM, labelled in the reader's own clock format. */
+function timeOptions(): Array<{ value: string; label: string }> {
+  const slots: Array<{ value: string; label: string }> = [];
+  for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    const label = new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    slots.push({ value, label });
+  }
+  return slots;
+}
+
+const TIME_OPTIONS = timeOptions();
 
 export function Form({
   busy,
@@ -121,7 +155,14 @@ export function Form({
                 className="field__input"
                 type="date"
                 value={due}
-                onChange={(event) => setDue(event.target.value)}
+                // Only today or later: a deadline in the past is not a deadline. The backend
+                // enforces the same rule, so a browser that ignores min still cannot store one.
+                min={TODAY}
+                onChange={(event) => {
+                  setDue(event.target.value);
+                  // A time makes no sense without a day, so clearing the day clears the time.
+                  if (!event.target.value) setTime("");
+                }}
               />
             </div>
 
@@ -129,15 +170,21 @@ export function Form({
               <label className="field__label" htmlFor="f-time">
                 At
               </label>
-              <input
+              <select
                 id="f-time"
                 className="field__input"
-                type="time"
                 value={time}
                 disabled={!due}
-                title={due ? undefined : "Pick a date first"}
+                title={due ? undefined : "Pick a day first"}
                 onChange={(event) => setTime(event.target.value)}
-              />
+              >
+                <option value="">No time (a task, not an event)</option>
+                {TIME_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="field">
