@@ -82,19 +82,12 @@ export function Nav({
               {tab.glyph}
             </span>
             <span className="rail__label">{tab.label}</span>
-            {count(tab.id) > 0 && (
-              <span className="rail__count">{count(tab.id)}</span>
-            )}
+            {count(tab.id) > 0 && <span className="rail__count">{count(tab.id)}</span>}
           </button>
         ))}
         <div className="rail__spacer" />
         {undo && (
-          <button
-            type="button"
-            className="rail__undo"
-            disabled={busy}
-            onClick={onUndo}
-          >
+          <button type="button" className="rail__undo" disabled={busy} onClick={onUndo}>
             <span className="undo__verb">Undo</span>
             <span className="undo__what">{undo}</span>
           </button>

@@ -38,7 +38,7 @@ needs neither. Before you add code, answer these:
    for them now — `PRD.md` lists the only four things being done early for that reason.
 3. **Can it be a smaller change to an existing file instead of a new file?** Usually yes.
 
-If you find yourself writing an abstraction because a second implementation *might* appear, do
+If you find yourself writing an abstraction because a second implementation _might_ appear, do
 not. Write the one that exists. The one exception is `sources.py`, where the second, third and
 fourth implementations are named in `PRD.md` and are the point.
 

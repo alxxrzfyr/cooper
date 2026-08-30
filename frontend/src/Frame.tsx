@@ -88,12 +88,7 @@ export function Frame({
             <h2 className="frame__title">{title}</h2>
             {subtitle && <span className="frame__sub">{subtitle}</span>}
           </div>
-          <button
-            type="button"
-            className="frame__close"
-            aria-label="Close"
-            onClick={onClose}
-          >
+          <button type="button" className="frame__close" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </header>
@@ -127,10 +122,7 @@ export function TaskFrame({
   const late = item.due !== null && item.due.slice(0, 10) < today;
 
   const facts: Array<[string, ReactNode]> = [
-    [
-      item.kind === "event" ? "Event" : "Task",
-      CATEGORY_LABEL[item.category] ?? item.category,
-    ],
+    [item.kind === "event" ? "Event" : "Task", CATEGORY_LABEL[item.category] ?? item.category],
   ];
   if (item.start_at) {
     facts.push([
@@ -146,8 +138,7 @@ export function TaskFrame({
   }
   if (item.pinned) facts.push(["Pinned", "Kept at the top of today"]);
   if (item.google_event_id) facts.push(["Calendar", "In Google Calendar"]);
-  if (item.status !== "open")
-    facts.push(["Status", item.status === "done" ? "Done" : "Dropped"]);
+  if (item.status !== "open") facts.push(["Status", item.status === "done" ? "Done" : "Dropped"]);
 
   return (
     <Frame

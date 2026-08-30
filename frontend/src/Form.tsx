@@ -115,11 +115,9 @@ export function Form({
   return (
     <div className="scroll">
       <div className="opening opening--form">
-        <Mascot name="cooper_reading" size="md" decorative />
+        <Mascot name="cooper_reading" size="lg" decorative />
         <h2 className="opening__title">Add something</h2>
-        <p className="opening__text">
-          Fields, not a sentence. Nothing here leaves your machine.
-        </p>
+        <p className="opening__text">Fields, not a sentence. Nothing here leaves your machine.</p>
       </div>
 
       <form

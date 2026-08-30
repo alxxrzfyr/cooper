@@ -44,8 +44,7 @@ export const api = {
   // Bulk verbs are two steps: match lists what a phrase hits, bulk acts on the confirmed ids.
   bulkMatch: (words: string) =>
     call<{ matched: Item[]; count: number }>("/api/bulk/match", post({ words })),
-  bulk: (verb: "complete" | "drop", ids: string[]) =>
-    call<Reply>("/api/bulk", post({ verb, ids })),
+  bulk: (verb: "complete" | "drop", ids: string[]) => call<Reply>("/api/bulk", post({ verb, ids })),
   schedule: () => call<{ placed: unknown[]; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
   act: (id: string, verb: "complete" | "drop" | "pin") =>

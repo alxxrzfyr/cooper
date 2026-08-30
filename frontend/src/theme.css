@@ -26,6 +26,9 @@
   --accent-press: #0060df;
   --accent-wash: rgba(10, 132, 255, 0.12);
   --green: #34c759;
+  /* Brand only: the wordmark is a green-to-teal signature, never a status indicator. */
+  --wordmark-start: #14532d;
+  --wordmark-end: #65a30d;
   --amber: #ff9f0a;
   --red: #ff3b30;
 
@@ -68,8 +71,8 @@
   --r-xl: 26px;
   --pill: 999px;
 
-  --font: ui-rounded, "SF Pro Rounded", "Nunito", -apple-system, BlinkMacSystemFont, system-ui,
-    sans-serif;
+  --font:
+    ui-rounded, "SF Pro Rounded", "Nunito", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   --bar-h: 52px;
@@ -88,6 +91,8 @@
   --c-personal-line: #45b57e;
   --accent-press: #409cff;
   --accent-wash: rgba(10, 132, 255, 0.2);
+  --wordmark-start: #22c55e;
+  --wordmark-end: #86efac;
 
   --bg: #000000;
   --card: #1c1c1e;
@@ -236,6 +241,11 @@ select {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  color: var(--wordmark-start);
+  background: linear-gradient(110deg, var(--wordmark-start), var(--wordmark-end));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* Narrow layouts have room for the word and nothing else, so it stays a compact pill. */
@@ -436,7 +446,7 @@ select {
 }
 
 .composer__inner {
-  width: min(760px, 100%);
+  width: min(1100px, 100%);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -489,7 +499,10 @@ select {
   color: #fff;
   display: grid;
   place-items: center;
-  transition: transform 0.14s ease, background 0.14s ease, opacity 0.14s ease;
+  transition:
+    transform 0.14s ease,
+    background 0.14s ease,
+    opacity 0.14s ease;
 }
 
 .composer__send:hover:not(:disabled) {
@@ -552,7 +565,7 @@ select {
 }
 
 .thread > * {
-  width: min(760px, 100%);
+  width: min(1100px, 100%);
   margin-inline: auto;
 }
 
@@ -818,7 +831,7 @@ select {
 }
 
 .scroll > * {
-  width: min(760px, 100%);
+  width: min(1100px, 100%);
   margin-inline: auto;
   /* A flex item's automatic minimum is its content, which lets a wide grid escape its scroller. */
   min-width: 0;
@@ -1156,6 +1169,77 @@ select {
   color: var(--muted);
 }
 
+/* Notifications stay outside the conversation: they are transient feedback, not another line in
+   the AI thread or an audit log. The tone is carried by the same semantic colours as Cooper's
+   replies, with a mascot making the source obvious at a glance. */
+.notice {
+  --notice-tone: var(--faint);
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: 16px;
+  z-index: 50;
+  width: min(390px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 12px 10px;
+  border: 1px solid color-mix(in srgb, var(--notice-tone) 28%, var(--hair));
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--notice-tone) 12%, var(--card));
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: saturate(160%) blur(20px);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  animation: notice-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.notice--good {
+  --notice-tone: var(--tone-good);
+}
+
+.notice--bad {
+  --notice-tone: var(--tone-bad);
+}
+
+.notice--answer {
+  --notice-tone: var(--tone-answer);
+}
+
+.notice--attention {
+  --notice-tone: var(--tone-attention);
+}
+
+.notice__message {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.notice__close {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--pill);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.notice__close:hover {
+  background: color-mix(in srgb, var(--notice-tone) 16%, transparent);
+  color: var(--text);
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
 /* ==================================================================== empty */
 
 .empty {
@@ -1189,7 +1273,9 @@ select {
   font-size: 14.5px;
   background: var(--card);
   box-shadow: var(--shadow-sm);
-  transition: transform 0.14s ease, background 0.14s ease;
+  transition:
+    transform 0.14s ease,
+    background 0.14s ease;
 }
 
 .btn:active:not(:disabled) {
@@ -1269,12 +1355,15 @@ select {
   -webkit-appearance: none;
   padding-right: 30px;
   cursor: pointer;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
     linear-gradient(135deg, var(--muted) 50%, transparent 50%);
   background-position:
     calc(100% - 14px) calc(50% - 2px),
     calc(100% - 9px) calc(50% - 2px);
-  background-size: 5px 5px, 5px 5px;
+  background-size:
+    5px 5px,
+    5px 5px;
   background-repeat: no-repeat;
   background-color: var(--sunken);
 }
@@ -1415,7 +1504,9 @@ select {
   font-size: 13.5px;
   font-family: inherit;
   text-align: left;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease;
 }
 
 button.slot:hover {
@@ -1503,7 +1594,6 @@ button.slot:active {
   color: #fff;
 }
 
-
 /* ------------------------------------------------------------------ calendar ranges */
 
 .calbar {
@@ -1550,7 +1640,10 @@ button.slot:active {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text);
-  transition: background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.1s ease;
 }
 
 .segment[aria-pressed="true"] {
@@ -1859,7 +1952,6 @@ button.slot:active {
   }
 }
 
-
 /* ------------------------------------------------------ the calendar wants the whole window */
 
 /*
@@ -1954,7 +2046,6 @@ button.slot:active {
     text-align: right;
   }
 }
-
 
 /* ------------------------------------------------------ the day you tapped, spelled out */
 
@@ -2231,7 +2322,6 @@ button.slot:active {
   }
 }
 
-
 /* ------------------------------------------------------ Manual or AI, as a capsule */
 
 /*
@@ -2384,6 +2474,70 @@ button.slot:active {
 
 .segmented--wrap .segment {
   flex: 1 1 30%;
+}
+
+/* On a laptop the form has room to behave like a compact control surface rather than a phone
+   stack. Keeping this at the desktop breakpoint leaves the touch-friendly mobile arrangement
+   intact and lets the whole form stay visible without a second scroll region. */
+@media (min-width: 900px) {
+  .opening--form {
+    margin: 0 auto;
+    padding-top: 8px;
+    gap: 8px;
+  }
+
+  .opening > .mascot--lg {
+    width: 148px;
+    height: 148px;
+  }
+
+  .opening--form .opening__title {
+    font-size: 27px;
+  }
+
+  .opening--form .opening__text {
+    font-size: 16.5px;
+    max-width: 38ch;
+  }
+
+  .taskform {
+    width: min(1040px, 100%);
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 12px 16px;
+  }
+
+  .taskform > section:first-child,
+  .taskform > .btn {
+    grid-column: 1 / -1;
+  }
+
+  .taskform > section:first-child .inset {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+  }
+
+  .taskform > section:first-child .field + .field {
+    box-shadow: inset 0.5px 0 0 var(--hair);
+  }
+
+  .taskform .field {
+    padding: 9px 12px;
+  }
+
+  .taskform .field__input {
+    padding: 8px 10px;
+    font-size: 15px;
+  }
+
+  .taskform .hint {
+    font-size: 12px;
+  }
+
+  .taskform > section:nth-child(2),
+  .taskform > section:nth-child(3) {
+    min-width: 0;
+  }
 }
 
 /* The category chips carry their own colour when chosen, so the choice previews the calendar.

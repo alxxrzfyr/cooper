@@ -63,18 +63,10 @@ export function Row({
               {shortDay(item.start_at)} {clock(item.start_at)}
             </span>
           )}
-          {item.minutes !== null && (
-            <span className="tag">{item.minutes}m</span>
-          )}
+          {item.minutes !== null && <span className="tag">{item.minutes}m</span>}
           {item.due && (
-            <span
-              className={`tag ${late ? "tag--late" : dueToday ? "tag--due" : ""}`}
-            >
-              {late
-                ? "overdue"
-                : dueToday
-                  ? "due today"
-                  : `due ${shortDay(item.due)}`}
+            <span className={`tag ${late ? "tag--late" : dueToday ? "tag--due" : ""}`}>
+              {late ? "overdue" : dueToday ? "due today" : `due ${shortDay(item.due)}`}
             </span>
           )}
           {item.google_event_id && <span className="tag">Google</span>}

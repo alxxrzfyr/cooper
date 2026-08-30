@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "frontend/src/theme.css"
+        ],
+        "createdAt": "2026-08-30T12:21:36.913Z",
+        "reason": "User explicitly requested a green-ish gradient Cooper wordmark with light and dark variants."
+      }
+    ]
+  }
+}

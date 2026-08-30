@@ -16,12 +16,7 @@ const MODE_LABEL: Record<Mode, string> = {
 };
 const MODE_KEY = "cooper.calview.v1";
 
-const CATEGORIES: Category[] = [
-  "academics",
-  "work",
-  "organizations",
-  "personal",
-];
+const CATEGORIES: Category[] = ["academics", "work", "organizations", "personal"];
 const CATEGORY_LABEL: Record<Category, string> = {
   academics: "Academics",
   work: "Work",
@@ -31,10 +26,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
 
 const DAY_START = 7;
 const DAY_END = 22;
-const HOURS = Array.from(
-  { length: DAY_END - DAY_START },
-  (_, index) => index + DAY_START,
-);
+const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + DAY_START);
 const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"];
 const MONTH_ROWS = 6;
 
@@ -84,9 +76,7 @@ function dayName(at: Date): string {
 }
 
 function dayLabel(at: Date, today: Date): string {
-  const days = Math.round(
-    (startOfDay(at).getTime() - startOfDay(today).getTime()) / 86_400_000,
-  );
+  const days = Math.round((startOfDay(at).getTime() - startOfDay(today).getTime()) / 86_400_000);
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
@@ -127,9 +117,7 @@ function daysShown(mode: Mode, anchor: Date): Date[] {
     return Array.from({ length: 7 }, (_, index) => addDays(start, index));
   }
   const start = startOfWeek(startOfMonth(anchor));
-  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) =>
-    addDays(start, index),
-  );
+  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index));
 }
 
 // ------------------------------------------------------------------ entries
@@ -248,8 +236,7 @@ export function Calendar({
   function on(day: Date, hour?: number): Entry[] {
     return entries.filter(
       (entry) =>
-        sameDay(entry.start, day) &&
-        (hour === undefined || entry.start.getHours() === hour),
+        sameDay(entry.start, day) && (hour === undefined || entry.start.getHours() === hour),
     );
   }
 
@@ -265,11 +252,7 @@ export function Calendar({
       </h1>
 
       <div className="calbar">
-        <div
-          className="segmented segmented--inline"
-          role="group"
-          aria-label="Calendar range"
-        >
+        <div className="segmented segmented--inline" role="group" aria-label="Calendar range">
           {MODES.map((option) => (
             <button
               type="button"
@@ -292,9 +275,7 @@ export function Calendar({
           >
             ‹
           </button>
-          <span className="calnav__label">
-            {rangeLabel(mode, anchor, today)}
-          </span>
+          <span className="calnav__label">{rangeLabel(mode, anchor, today)}</span>
           <button
             type="button"
             className="iconbtn"
@@ -304,11 +285,7 @@ export function Calendar({
             ›
           </button>
           {days.some((day) => sameDay(day, today)) ? null : (
-            <button
-              type="button"
-              className="ghostbtn"
-              onClick={() => setAnchor(startOfDay(today))}
-            >
+            <button type="button" className="ghostbtn" onClick={() => setAnchor(startOfDay(today))}>
               Today
             </button>
           )}
@@ -336,9 +313,8 @@ export function Calendar({
           <Mascot name="cooper_reading" size="lg" decorative />
           <h2 className="empty__title">Nothing on the calendar</h2>
           <p className="empty__text">
-            Add a task with a time estimate and say &ldquo;plan my day&rdquo;,
-            or give something an exact time like &ldquo;dentist thursday
-            3pm&rdquo;.
+            Add a task with a time estimate and say &ldquo;plan my day&rdquo;, or give something an
+            exact time like &ldquo;dentist thursday 3pm&rdquo;.
           </p>
         </section>
       </div>
@@ -398,9 +374,7 @@ export function Calendar({
           <div className="daygrid">
             {HOURS.map((hour) => (
               <div className="daygrid__row" key={hour}>
-                <span className="daygrid__hour">
-                  {String(hour).padStart(2, "0")}
-                </span>
+                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
                 <div
                   className={`daygrid__slot ${working(anchor, hour) ? "daygrid__slot--open" : ""}`}
                 >
@@ -432,9 +406,7 @@ export function Calendar({
 
             {HOURS.map((hour) => (
               <div className="weekgrid__line" key={hour}>
-                <span className="daygrid__hour">
-                  {String(hour).padStart(2, "0")}
-                </span>
+                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
                 {days.map((day) => (
                   <div
                     key={day.toDateString()}
@@ -451,59 +423,53 @@ export function Calendar({
 
       {mode === "month" ? (
         <section className="group">
-            <div className="monthgrid">
-              {WEEKDAY_INITIALS.map((initial, index) => (
-                <span
-                  className="monthgrid__head"
-                  key={index}
-                  aria-hidden="true"
+          <div className="monthgrid">
+            {WEEKDAY_INITIALS.map((initial, index) => (
+              <span className="monthgrid__head" key={index} aria-hidden="true">
+                {initial}
+              </span>
+            ))}
+            {days.map((day) => {
+              const mine = on(day);
+              const outside = day.getMonth() !== anchor.getMonth();
+              return (
+                <button
+                  type="button"
+                  key={day.toDateString()}
+                  className={`monthcell ${outside ? "is-outside" : ""} ${
+                    sameDay(day, today) ? "is-today" : ""
+                  }`}
+                  aria-label={`${day.toLocaleDateString(undefined, {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
+                  onClick={() => setPicked(day)}
                 >
-                  {initial}
-                </span>
-              ))}
-              {days.map((day) => {
-                const mine = on(day);
-                const outside = day.getMonth() !== anchor.getMonth();
-                return (
-                  <button
-                    type="button"
-                    key={day.toDateString()}
-                    className={`monthcell ${outside ? "is-outside" : ""} ${
-                      sameDay(day, today) ? "is-today" : ""
-                    }`}
-                    aria-label={`${day.toLocaleDateString(undefined, {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
-                    onClick={() => setPicked(day)}
-                  >
-                    <span className="monthcell__num">{day.getDate()}</span>
-                    {mine.slice(0, 3).map((entry) => (
-                      <span
-                        className={`pill pill--${entry.source} cat--${entry.category}`}
-                        key={entry.key}
-                      >
-                        {entry.title}
-                      </span>
-                    ))}
-                    {mine.length > 3 ? (
-                      <span className="monthcell__more">
-                        +{mine.length - 3}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+                  <span className="monthcell__num">{day.getDate()}</span>
+                  {mine.slice(0, 3).map((entry) => (
+                    <span
+                      className={`pill pill--${entry.source} cat--${entry.category}`}
+                      key={entry.key}
+                    >
+                      {entry.title}
+                    </span>
+                  ))}
+                  {mine.length > 3 ? (
+                    <span className="monthcell__more">+{mine.length - 3}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </section>
       ) : null}
 
       <footer className="calfoot">
         {legend}
         <p className="hint">
-          Colour is the category. Shaded hours are yours to book. Filled entries
-          are ones Cooper placed; outlined ones came from your calendar.
+          Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
+          placed; outlined ones came from your calendar.
         </p>
       </footer>
 

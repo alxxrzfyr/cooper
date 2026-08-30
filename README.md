@@ -45,10 +45,10 @@ Installs as a PWA and opens offline. Phone gets a bottom tab bar, desktop gets a
 An **event** already has a time. The dentist chose it, not you. It goes straight on the calendar.
 
 A **task** has no time yet — just a size and a deadline. `write the report, 90m, due friday`
-tells you what and when-by, but not *when*. So tasks wait in a ranked list until you say
+tells you what and when-by, but not _when_. So tasks wait in a ranked list until you say
 "plan my day", and then Cooper finds real gaps in your working hours and drops them in.
 
-That's why there's a list *and* a calendar. The list lives on Home, ranked, and the calendar is
+That's why there's a list _and_ a calendar. The list lives on Home, ranked, and the calendar is
 when you pay it. The list is what you owe; the calendar is when you pay it.
 
 An errand is just a task you never sized. `buy milk` gets ranked and shown, and never eats a
@@ -120,12 +120,12 @@ last week"), which show you the list before acting.
 **Commitments you made elsewhere.** Meetings and classes and events you RSVP'd to should block
 your time before Cooper schedules anything into it. Four sources, one idea:
 
-| Source | What arrives |
-| --- | --- |
-| Google Calendar | your events — *works today* |
-| Outlook / Teams | your meetings |
-| Teams classes | assignments, which join the ranked list |
-| Gmail | Luma, Meetup and Eventbrite confirmations |
+| Source          | What arrives                              |
+| --------------- | ----------------------------------------- |
+| Google Calendar | your events — _works today_               |
+| Outlook / Teams | your meetings                             |
+| Teams classes   | assignments, which join the ranked list   |
+| Gmail           | Luma, Meetup and Eventbrite confirmations |
 
 Luma, Meetup and Eventbrite aren't integrated directly — they email you, so Gmail is the bridge
 and one connection covers all three.
@@ -211,7 +211,7 @@ tools/
 Three tables: `item` (a task or event — the difference is whether the time is fixed),
 `setting`, and `change` (just enough to undo the last thing).
 
-**The one rule worth knowing:** the model only ever *proposes* an action. `brain.py` validates
+**The one rule worth knowing:** the model only ever _proposes_ an action. `brain.py` validates
 it, `app.py` executes it. A wrong answer from Gemini gets refused, not applied. And when a
 reference is ambiguous, Cooper asks rather than picking — acting on the wrong task is worse
 than a question.
@@ -235,13 +235,13 @@ particular shows you Blink's auto-inversion rather than the real dark theme.
 
 ## Docs
 
-| File | What's in it |
-| --- | --- |
-| `PRD.md` | The seven requirements, and what it must never grow into |
-| `ARCHITECTURE.md` | The files, the three tables, the rules |
-| `AGENTS.md` | For anyone, human or otherwise, changing this code |
-| `CLAUDE.md` | Points at `AGENTS.md` |
-| `docs/DESIGN.md` | The look, and why it looks like that |
+| File              | What's in it                                             |
+| ----------------- | -------------------------------------------------------- |
+| `PRD.md`          | The seven requirements, and what it must never grow into |
+| `ARCHITECTURE.md` | The files, the three tables, the rules                   |
+| `AGENTS.md`       | For anyone, human or otherwise, changing this code       |
+| `CLAUDE.md`       | Points at `AGENTS.md`                                    |
+| `docs/DESIGN.md`  | The look, and why it looks like that                     |
 
 ## Security, briefly
 

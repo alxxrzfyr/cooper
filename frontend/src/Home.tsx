@@ -38,9 +38,7 @@ function why(item: Item, today: string): string {
   const day = item.due.slice(0, 10);
   if (day < today) return "overdue";
   if (day === today) return "due today";
-  const days = Math.round(
-    (new Date(day).getTime() - new Date(today).getTime()) / 86_400_000,
-  );
+  const days = Math.round((new Date(day).getTime() - new Date(today).getTime()) / 86_400_000);
   return days === 1 ? "due tomorrow" : `due in ${days} days`;
 }
 
@@ -60,11 +58,7 @@ interface Entry {
  * Events Cooper created come back from Google as well, so `mine` ones are dropped and the local
  * copy is kept — that is the one with actions attached.
  */
-function todayStrip(
-  scheduled: Item[],
-  events: CalendarEvent[],
-  today: string,
-): Entry[] {
+function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): Entry[] {
   const entries: Entry[] = [];
 
   for (const item of scheduled) {
@@ -123,9 +117,7 @@ export function Home({
   /** Still to come today, so the strip can lead with what has not happened yet. */
   const ahead = strip.filter((entry) => entry.end.getTime() >= now.getTime());
 
-  const attention = shortlist.filter(
-    (item) => item.due !== null && item.due.slice(0, 10) <= today,
-  );
+  const attention = shortlist.filter((item) => item.due !== null && item.due.slice(0, 10) <= today);
   const unbooked = shortlist.filter((item) => item.start_at === null);
   const scheduledCount = view.scheduled.filter((item) => item.start_at).length;
 
@@ -149,8 +141,8 @@ export function Home({
           <Mascot name="cooper_waving" size="lg" decorative />
           <h2 className="empty__title">Nothing on today</h2>
           <p className="empty__text">
-            Tell Cooper what&rsquo;s on your plate and it will show up here,
-            ranked and ready to book.
+            Tell Cooper what&rsquo;s on your plate and it will show up here, ranked and ready to
+            book.
           </p>
           <button type="button" className="btn btn--accent" onClick={onGoToChat}>
             Say something
@@ -190,9 +182,7 @@ export function Home({
           <div className="group__label">
             Today
             <span className="group__note">
-              {ahead.length === 0
-                ? "all done"
-                : `${ahead.length} left of ${strip.length}`}
+              {ahead.length === 0 ? "all done" : `${ahead.length} left of ${strip.length}`}
             </span>
           </div>
           <div className="inset">
@@ -277,8 +267,8 @@ export function Home({
             </button>
           )}
           <p className="hint">
-            Anything without a length is never given a block, so errands stay on
-            the list rather than eating an hour.
+            Anything without a length is never given a block, so errands stay on the list rather
+            than eating an hour.
           </p>
         </section>
       )}

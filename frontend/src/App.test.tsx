@@ -114,9 +114,7 @@ function stub(routes: Routes) {
       const withView = (r: Reply): Reply => ({ ...r, view: currentView });
 
       if (url.includes("/api/today")) {
-        return routes.failView
-          ? json({ detail: "connection refused" }, 500)
-          : json(currentView);
+        return routes.failView ? json({ detail: "connection refused" }, 500) : json(currentView);
       }
       if (url.includes("/api/say")) {
         const configured = routes.say ?? reply();
@@ -177,7 +175,9 @@ describe("first impression", () => {
     await openAi();
 
     // Manual is a form now, so the sentence examples live under AI, and they are questions.
-    expect(await screen.findByRole("button", { name: /what should I focus on/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /what should I focus on/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /most urgent thing/i })).toBeInTheDocument();
   });
 
@@ -290,14 +290,20 @@ describe("manual and ai", () => {
     await screen.findByText(/Added/);
     expect(bubbleTones()).toContain("bubble--good");
 
-    stub({ view: view({ using_model: true }), say: reply({ kind: "dropped", message: "Dropped “the report”." }) });
+    stub({
+      view: view({ using_model: true }),
+      say: reply({ kind: "dropped", message: "Dropped “the report”." }),
+    });
     await user.type(screen.getByLabelText("Say something to Cooper"), "drop the report{Enter}");
     await screen.findByText(/Dropped/);
     expect(bubbleTones()).toContain("bubble--bad");
   });
 
   test("completing is green, because green is not just for new things", async () => {
-    stub({ view: view({ using_model: true }), say: reply({ kind: "completed", message: "Completed “the report”." }) });
+    stub({
+      view: view({ using_model: true }),
+      say: reply({ kind: "completed", message: "Completed “the report”." }),
+    });
     render(<App />);
     const user = await openAi();
 
@@ -308,7 +314,10 @@ describe("manual and ai", () => {
   });
 
   test("a question wants your attention rather than celebrating", async () => {
-    stub({ view: view({ using_model: true }), say: { status: 409, detail: "“review” matches 2 items" } });
+    stub({
+      view: view({ using_model: true }),
+      say: { status: 409, detail: "“review” matches 2 items" },
+    });
     render(<App />);
     const user = await openAi();
 
@@ -350,14 +359,11 @@ describe("appearance", () => {
   test("system asks the machine, and the machine says dark", async () => {
     stub({});
     // jsdom reports no preference, so the dark preference has to be stubbed to test the branch.
-    vi.stubGlobal(
-      "matchMedia",
-      (query: string) => ({
-        matches: query.includes("dark"),
-        addEventListener: () => {},
-        removeEventListener: () => {},
-      }),
-    );
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("dark"),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
     const user = await openSettings();
 
     await user.click(await screen.findByRole("button", { name: "System" }));
@@ -416,7 +422,10 @@ describe("the conversation", () => {
   });
 
   test("asking what to do gets answered in the conversation", async () => {
-    stub({ view: view({ using_model: true }), say: reply({ kind: "shown", message: "Here is what is next." }) });
+    stub({
+      view: view({ using_model: true }),
+      say: reply({ kind: "shown", message: "Here is what is next." }),
+    });
     render(<App />);
     const user = await openAi();
 
@@ -446,7 +455,10 @@ describe("the conversation", () => {
   });
 
   test("an ambiguous reference comes back as a question in the conversation", async () => {
-    stub({ view: view({ using_model: true }), say: { status: 409, detail: "“review” matches 2 items: review a, review b" } });
+    stub({
+      view: view({ using_model: true }),
+      say: { status: 409, detail: "“review” matches 2 items: review a, review b" },
+    });
     render(<App />);
     const user = await openAi();
 
@@ -501,7 +513,9 @@ describe("the list", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click((await screen.findAllByRole("button", { name: /Open .*quarterly report/ }))[0]);
+    await user.click(
+      (await screen.findAllByRole("button", { name: /Open .*quarterly report/ }))[0],
+    );
 
     const frame = await screen.findByRole("dialog", { name: "write the quarterly report" });
     // The facts that were spread across tags in the row are spelled out here.
@@ -541,9 +555,7 @@ describe("the list", () => {
 
     await user.click((await screen.findAllByRole("button", { name: /Mark .* done/ }))[0]);
 
-    await waitFor(() =>
-      expect(calls.some((call) => call.url.includes("/complete"))).toBe(true),
-    );
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/complete"))).toBe(true));
   });
 
   test("pinning happens in the frame, and calls the backend", async () => {
@@ -630,7 +642,9 @@ describe("working hours", () => {
 
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
-    expect(await screen.findByText(/Nothing is ever booked outside these hours/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Nothing is ever booked outside these hours/),
+    ).toBeInTheDocument();
   });
 
   test("changing the end hour saves it", async () => {
@@ -728,7 +742,12 @@ describe("the calendar", () => {
   });
 
   test("your own Google events show up beside booked work", async () => {
-    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
     stub({ view: view({ scheduled: [booked], events: [event()] }) });
     render(<App />);
 
@@ -740,11 +759,24 @@ describe("the calendar", () => {
 
   test("events Cooper created are not listed twice", async () => {
     // Our own blocks come back from Google too. `mine` marks them so only the local copy shows.
-    const booked = { ...ranked(), id: "b1", title: "write the report", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      title: "write the report",
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
     stub({
       view: view({
         scheduled: [booked],
-        events: [event({ title: "write the report", mine: true, start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" })],
+        events: [
+          event({
+            title: "write the report",
+            mine: true,
+            start_at: "2026-08-31T02:00:00+00:00",
+            end_at: "2026-08-31T03:00:00+00:00",
+          }),
+        ],
       }),
     });
     render(<App />);
@@ -833,7 +865,17 @@ describe("the calendar", () => {
   });
 
   test("stepping away from today, and coming back", async () => {
-    stub({ view: view({ scheduled: [{ ...ranked(), start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" }] }) });
+    stub({
+      view: view({
+        scheduled: [
+          {
+            ...ranked(),
+            start_at: "2026-08-31T02:00:00+00:00",
+            end_at: "2026-08-31T03:00:00+00:00",
+          },
+        ],
+      }),
+    });
     render(<App />);
     const user = await openCalendar();
 
@@ -868,7 +910,12 @@ describe("the calendar", () => {
   });
 
   test("a booked block opens its frame, and Done completes it there", async () => {
-    const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00", end_at: "2026-08-31T03:00:00+00:00" };
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      start_at: "2026-08-31T02:00:00+00:00",
+      end_at: "2026-08-31T03:00:00+00:00",
+    };
     const calls = stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
     const user = await openCalendar();
@@ -1179,9 +1226,6 @@ describe("manual mode as a form", () => {
     await openChat();
 
     expect(await screen.findByLabelText("What")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manual" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "Manual" })).toHaveAttribute("aria-pressed", "true");
   });
 });

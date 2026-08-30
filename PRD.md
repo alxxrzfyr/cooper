@@ -24,24 +24,24 @@ Five things go wrong with my time, and they are the same problem wearing five ha
 
 Requirements 1–6 work today. 7 is the build, and its shared pipe is already in place.
 
-| # | Requirement | Done when |
-| --- | --- | --- |
-| 1 | Turn one plain sentence into a task or an event | Nine of ten sentences I actually type need no correction |
-| 2 | Tell me what to work on first, and why | Every row shows a score I can expand into its reasons |
-| 3 | Put the top of that list into real time | Blocks land in Google Calendar, only inside hours I chose |
-| 4 | Let me take it back | One undo reverses the last thing, including a whole scheduling run |
-| 5 | Show me my day without being asked | One screen: what's next, what's today, what needs attention, what arrived |
-| 6 | Capture without talking to it | A form with the fields I actually fill, no parsing involved |
-| 7 | Know about commitments I made elsewhere | Meetings, classes and RSVP'd events all block time before anything is scheduled into it |
+| #   | Requirement                                     | Done when                                                                               |
+| --- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1   | Turn one plain sentence into a task or an event | Nine of ten sentences I actually type need no correction                                |
+| 2   | Tell me what to work on first, and why          | Every row shows a score I can expand into its reasons                                   |
+| 3   | Put the top of that list into real time         | Blocks land in Google Calendar, only inside hours I chose                               |
+| 4   | Let me take it back                             | One undo reverses the last thing, including a whole scheduling run                      |
+| 5   | Show me my day without being asked              | One screen: what's next, what's today, what needs attention, what arrived               |
+| 6   | Capture without talking to it                   | A form with the fields I actually fill, no parsing involved                             |
+| 7   | Know about commitments I made elsewhere         | Meetings, classes and RSVP'd events all block time before anything is scheduled into it |
 
 ### What each of the new three means
 
-**5 — The dashboard.** *Built.* The app opens here, not on the chat. Four things on it: the single next
+**5 — The dashboard.** _Built._ The app opens here, not on the chat. Four things on it: the single next
 thing to do, today's fixed events and booked blocks in one strip, anything overdue or running out
 of runway, and what has arrived from elsewhere since I last looked. The ranked list is a section
 on this screen, not an errand I run.
 
-**6 — Manual is a form.** *Built.* Manual mode stopped meaning "type a sentence and simple rules
+**6 — Manual is a form.** _Built._ Manual mode stopped meaning "type a sentence and simple rules
 read it," which was the worst of both. It is a form now: title, deadline, how long, category,
 importance. No parsing, no network, no misreads. AI mode is where I talk. Two doors, same room. A
 typed item goes through the same validation and the same single writer as a parsed one, so there
@@ -54,12 +54,12 @@ tested; wiring the two steps into the AI conversation as a shown list is the pie
 
 **7 — Commitments from elsewhere.** Four sources, one idea:
 
-| Source | What arrives | Shape |
-| --- | --- | --- |
-| Google Calendar | my events | busy time |
-| Outlook / Teams | my meetings | busy time |
-| Teams classes | assignments, with due dates | ranked tasks |
-| Gmail | Luma, Meetup and Eventbrite confirmations | busy time |
+| Source          | What arrives                              | Shape        |
+| --------------- | ----------------------------------------- | ------------ |
+| Google Calendar | my events                                 | busy time    |
+| Outlook / Teams | my meetings                               | busy time    |
+| Teams classes   | assignments, with due dates               | ranked tasks |
+| Gmail           | Luma, Meetup and Eventbrite confirmations | busy time    |
 
 Everything except assignments arrives as the same thing: time that is already spoken for, which
 the scheduler must route around. Assignments are the exception and arrive as tasks with due
@@ -153,7 +153,7 @@ brutally expensive if they are deferred, so they are settled now:
 4. **The shared key is a placeholder, not the design.** It is one user's front door. It is not
    authentication and must not be extended into a pretend version of it.
 
-And two things that are explicitly *not* being solved yet: real accounts, and hosting. Both
+And two things that are explicitly _not_ being solved yet: real accounts, and hosting. Both
 arrive together, with Postgres and a migration tool, in one deliberate piece of work.
 
 **The expensive thing to know about:** reading Gmail is a restricted permission. For me, in

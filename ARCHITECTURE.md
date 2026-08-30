@@ -62,6 +62,7 @@ frontend/src/
 ## Frontend, planned
 
 ```
+
 ```
 
 `Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
@@ -80,7 +81,7 @@ it cannot drift with the viewer's zone.
 
 Three tables today. The planned changes are additive columns, no new tables.
 
-**`item`** — a task *or* an event. The only difference is whether the time is fixed, so they
+**`item`** — a task _or_ an event. The only difference is whether the time is fixed, so they
 share a table. Splitting them into `task` and `scheduled_block` is what made the previous
 version sprawl.
 
@@ -99,7 +100,7 @@ source_ref    the id it has over there, so an update finds it again
 ```
 
 `google_event_id` and `source_ref` are not the same thing and must not be merged.
-`google_event_id` is an event Cooper *wrote*. `source_ref` is an event Cooper *read*. One is a
+`google_event_id` is an event Cooper _wrote_. `source_ref` is an event Cooper _read_. One is a
 mirror Cooper owns, the other is a fact it does not.
 
 **`setting`** — key/value. Working hours, encrypted tokens, and the watcher's last-seen marker
@@ -145,7 +146,7 @@ planner.place()       pure fitting, inside working hours, around sources.busy()
 google.add_block()    best effort; a failure leaves it scheduled locally
 ```
 
-The important part of that diagram is the join. An event parsed out of an email is a *proposal*
+The important part of that diagram is the join. An event parsed out of an email is a _proposal_
 and goes through the same validation as a sentence you typed. There is no second write path.
 
 ## The rules the code enforces
@@ -216,7 +217,7 @@ One user on one machine today, so no login. That is only safe on localhost, so:
 - every route except `/health` and the OAuth callback needs `X-Cooper-Key`
 - CORS pinned to one origin
 - the Google refresh token is encrypted with Fernet before it touches the database
-- the refusal is *returned* from middleware, not raised — exception handlers do not run for
+- the refusal is _returned_ from middleware, not raised — exception handlers do not run for
   middleware, so raising would surface as a 500
 
 The shared key is one user's front door, not authentication. Do not extend it into a pretend

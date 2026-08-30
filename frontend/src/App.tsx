@@ -1,24 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "./theme.css";
-import {
-  applyAppearance,
-  type Appearance,
-  readAppearance,
-  saveAppearance,
-} from "./appearance";
+import { applyAppearance, type Appearance, readAppearance, saveAppearance } from "./appearance";
 import { api } from "./api";
 import { Calendar } from "./Calendar";
-import {
-  Chat,
-  loadMode,
-  loadTurns,
-  saveMode,
-  saveTurns,
-  type Mode,
-  type Turn,
-} from "./Chat";
-import { Mascot } from "./Mascot";
+import { Chat, loadMode, loadTurns, saveMode, saveTurns, type Mode, type Turn } from "./Chat";
+import { Mascot, type MascotName } from "./Mascot";
 import { Home } from "./Home";
 import { Form } from "./Form";
 import { Nav, type Tab } from "./Nav";
@@ -30,6 +17,7 @@ import {
   type NewItem,
   type Ranked,
   type Reply,
+  type ReplyKind,
   type View,
 } from "./types";
 
@@ -46,6 +34,58 @@ function id(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+type BrowserPermission = NotificationPermission | "unsupported";
+
+function browserPermission(): BrowserPermission {
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    return "unsupported";
+  }
+  return window.Notification.permission;
+}
+
+function noticeTone(kind: ReplyKind): "good" | "bad" | "answer" | "attention" | "plain" {
+  switch (kind) {
+    case "added":
+    case "completed":
+    case "pinned":
+    case "scheduled":
+      return "good";
+    case "dropped":
+      return "bad";
+    case "answered":
+      return "answer";
+    case "question":
+    case "note":
+    case "undone":
+      return "attention";
+    default:
+      return "plain";
+  }
+}
+
+function noticeFace(kind: ReplyKind): MascotName {
+  switch (kind) {
+    case "question":
+      return "cooper_puzzled";
+    case "note":
+      return "cooper_tired";
+    case "scheduled":
+      return "cooper_scheduled";
+    case "dropped":
+    case "undone":
+      return "cooper_undo";
+    case "answered":
+      return "cooper_thinking";
+    default:
+      return "cooper_done";
+  }
+}
+
+interface Notice {
+  kind: ReplyKind;
+  message: string;
+}
+
 /**
  * Why this is at the top, in the words the user typed rather than the number behind it.
  *
@@ -59,9 +99,7 @@ function why(item: Item): string {
   const today = new Date().toISOString().slice(0, 10);
   if (day < today) return "overdue";
   if (day === today) return "due today";
-  const days = Math.round(
-    (new Date(day).getTime() - new Date(today).getTime()) / 86_400_000,
-  );
+  const days = Math.round((new Date(day).getTime() - new Date(today).getTime()) / 86_400_000);
   if (days === 1) return "due tomorrow";
   return `due in ${days} days`;
 }
@@ -76,9 +114,61 @@ export default function App() {
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
   const [mode, setMode] = useState<Mode>(loadMode);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
+  const noticeTimer = useRef<number | null>(null);
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  const announce = useCallback(
+    (kind: ReplyKind, message: string, showToast = true) => {
+      // Chat already renders the reply. A second copy as a toast would make AI mode feel like an
+      // activity log, so keep in-app notices for the other screens while retaining OS alerts.
+      if (showToast && tab !== "chat") {
+        setNotice({ kind, message });
+        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        noticeTimer.current = window.setTimeout(() => {
+          setNotice(null);
+          noticeTimer.current = null;
+        }, 5200);
+      }
+
+      if (
+        document.visibilityState === "hidden" &&
+        browserAlerts === "granted" &&
+        "Notification" in window
+      ) {
+        new window.Notification("Cooper", {
+          body: message,
+          icon: `/assets/mascot/${noticeFace(kind)}.webp`,
+          tag: "cooper-update",
+        });
+      }
+    },
+    [browserAlerts, tab],
+  );
+
+  const enableBrowserAlerts = useCallback(async () => {
+    if (!("Notification" in window)) {
+      announce("note", "This browser does not support notifications.");
+      return;
+    }
+    const permission = await window.Notification.requestPermission();
+    setBrowserAlerts(permission);
+    announce(
+      permission === "granted" ? "added" : "note",
+      permission === "granted"
+        ? "Browser notifications are on."
+        : "Browser notifications stay off until you allow them.",
+    );
+  }, [announce]);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    };
+  }, []);
 
   /** Applied from state, so the page and the picker can never disagree. */
   useEffect(() => applyAppearance(appearance), [appearance]);
@@ -105,9 +195,7 @@ export default function App() {
       setView(await api.today());
       setFailure(null);
     } catch (error) {
-      setFailure(
-        error instanceof Error ? error.message : "Cannot reach Cooper.",
-      );
+      setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     }
   }, []);
 
@@ -128,10 +216,7 @@ export default function App() {
   }, []);
 
   function reply(turn: Omit<Turn, "id" | "at" | "who">) {
-    setTurns((current) => [
-      ...current,
-      { ...turn, id: id(), at: Date.now(), who: "otter" },
-    ]);
+    setTurns((current) => [...current, { ...turn, id: id(), at: Date.now(), who: "otter" }]);
   }
 
   /** Send one sentence and let the otter answer. */
@@ -142,16 +227,14 @@ export default function App() {
 
       setTab("chat");
       setText("");
-      setTurns((current) => [
-        ...current,
-        { id: id(), at: Date.now(), who: "you", text: said },
-      ]);
+      setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
       setBusy(true);
 
       try {
         const result = await api.say(said, mode);
         setView(result.view);
         setFailure(null);
+        announce(result.kind, result.message, false);
 
         if (result.kind === "shown") {
           // "What should I do?" deserves an actual answer in the conversation, not a nudge to
@@ -177,20 +260,22 @@ export default function App() {
         }
       } catch (error) {
         if (error instanceof ApiError) {
+          const kind = error.status === 409 ? "question" : "note";
           reply({
             text: error.message,
-            kind: error.status === 409 ? "question" : "note",
+            kind,
           });
+          announce(kind, error.message);
         } else {
-          setFailure(
-            error instanceof Error ? error.message : "Something went wrong.",
-          );
+          const message = error instanceof Error ? error.message : "Something went wrong.";
+          setFailure(message);
+          announce("note", message);
         }
       } finally {
         setBusy(false);
       }
     },
-    [busy, mode],
+    [announce, busy, mode],
   );
 
   /** Buttons elsewhere in the app also narrate themselves into the conversation. */
@@ -202,6 +287,7 @@ export default function App() {
         setView(result.view);
         setFailure(null);
         if (narrate && "kind" in result) {
+          announce(result.kind, result.message);
           reply({
             text: result.message,
             kind: result.kind,
@@ -215,16 +301,17 @@ export default function App() {
             text: error.message,
             kind: error.status === 409 ? "question" : "note",
           });
+          announce(error.status === 409 ? "question" : "note", error.message);
         } else {
-          setFailure(
-            error instanceof Error ? error.message : "Something went wrong.",
-          );
+          const message = error instanceof Error ? error.message : "Something went wrong.";
+          setFailure(message);
+          announce("note", message);
         }
       } finally {
         setBusy(false);
       }
     },
-    [],
+    [announce],
   );
 
   /** Manual mode's form: post the fields and let Cooper narrate it into the conversation. */
@@ -258,15 +345,10 @@ export default function App() {
             <div className="banner__body">
               <span className="banner__title">Cooper isn&rsquo;t running</span>
               <span className="banner__text">
-                Start it with{" "}
-                <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
+                Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
               </span>
             </div>
-            <button
-              type="button"
-              className="btn btn--quiet"
-              onClick={() => void load()}
-            >
+            <button type="button" className="btn btn--quiet" onClick={() => void load()}>
               Retry
             </button>
           </div>
@@ -292,9 +374,7 @@ export default function App() {
             thinking={busy}
             mode={mode}
             canUseAi={view?.using_model ?? false}
-            manualForm={
-              <Form busy={busy} onSubmit={addFromForm} />
-            }
+            manualForm={<Form busy={busy} onSubmit={addFromForm} />}
             onMode={(next) => {
               setMode(next);
               saveMode(next);
@@ -338,8 +418,7 @@ export default function App() {
                 </div>
               </div>
               <p className="hint">
-                Light unless you say otherwise. System follows whatever your
-                machine is doing.
+                Light unless you say otherwise. System follows whatever your machine is doing.
               </p>
             </section>
 
@@ -385,13 +464,11 @@ export default function App() {
                       )
                     }
                   >
-                    {Array.from({ length: 24 }, (_, index) => index + 1).map(
-                      (hour) => (
-                        <option key={hour} value={hour}>
-                          {String(hour).padStart(2, "0")}:00
-                        </option>
-                      ),
-                    )}
+                    {Array.from({ length: 24 }, (_, index) => index + 1).map((hour) => (
+                      <option key={hour} value={hour}>
+                        {String(hour).padStart(2, "0")}:00
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="daypick">
@@ -408,9 +485,7 @@ export default function App() {
                               ...hours,
                               weekdays: hours.weekdays.includes(index)
                                 ? hours.weekdays.filter((day) => day !== index)
-                                : [...hours.weekdays, index].sort(
-                                    (a, b) => a - b,
-                                  ),
+                                : [...hours.weekdays, index].sort((a, b) => a - b),
                             }),
                           false,
                         )
@@ -441,9 +516,7 @@ export default function App() {
                   />
                 </div>
               </div>
-              <p className="hint">
-                Nothing is ever booked outside these hours.
-              </p>
+              <p className="hint">Nothing is ever booked outside these hours.</p>
             </section>
 
             <section className="group">
@@ -471,9 +544,7 @@ export default function App() {
                       type="button"
                       className="btn btn--quiet"
                       onClick={() =>
-                        void api
-                          .connect()
-                          .then(({ url }) => (window.location.href = url))
+                        void api.connect().then(({ url }) => (window.location.href = url))
                       }
                     >
                       Connect
@@ -497,31 +568,75 @@ export default function App() {
                   <span className="field__label">
                     {view.using_model ? "Gemini" : "Offline rules"}
                   </span>
-                  <span className="tag">
-                    {view.using_model ? "on" : "no key"}
-                  </span>
+                  <span className="tag">{view.using_model ? "on" : "no key"}</span>
                 </div>
               </div>
               {!view.using_model && (
                 <p className="hint">
-                  Works fine without a key. Add one for messier sentences.
-                  Ranking never uses a model.
+                  Works fine without a key. Add one for messier sentences. Ranking never uses a
+                  model.
                 </p>
               )}
             </section>
 
+            <section className="group">
+              <div className="group__label">Notifications</div>
+              <div className="inset">
+                <div className="field">
+                  <span className="field__label">Browser alerts</span>
+                  <span className="tag">
+                    {browserAlerts === "unsupported"
+                      ? "Not available"
+                      : browserAlerts === "granted"
+                        ? "On"
+                        : browserAlerts === "denied"
+                          ? "Blocked"
+                          : "Off"}
+                  </span>
+                  {browserAlerts === "default" && (
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      onClick={() => void enableBrowserAlerts()}
+                    >
+                      Enable
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="hint">
+                Cooper shows a small in-app notice for each change. Browser alerts appear only when
+                this app is in the background.
+              </p>
+            </section>
+
             {turns.length > 0 && (
-              <button
-                type="button"
-                className="btn btn--full"
-                onClick={() => setTurns([])}
-              >
+              <button type="button" className="btn btn--full" onClick={() => setTurns([])}>
                 Clear conversation
               </button>
             )}
           </div>
         )}
       </main>
+
+      {notice && (
+        <div
+          className={`notice notice--${noticeTone(notice.kind)}`}
+          role="status"
+          aria-live="polite"
+        >
+          <Mascot name={noticeFace(notice.kind)} size="sm" decorative />
+          <p className="notice__message">{notice.message}</p>
+          <button
+            type="button"
+            className="notice__close"
+            aria-label="Dismiss notification"
+            onClick={() => setNotice(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {detail && (
         <TaskFrame
@@ -565,12 +680,7 @@ export default function App() {
                 disabled={busy || !text.trim()}
                 onClick={() => void say(text)}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="19"
-                  height="19"
-                  aria-hidden="true"
-                >
+                <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
                   <path
                     d="M12 19V6.4l-5.3 5.3a1 1 0 0 1-1.4-1.4l7-7a1 1 0 0 1 1.4 0l7 7a1 1 0 0 1-1.4 1.4L14 6.4V19a1 1 0 0 1-2 0Z"
                     fill="currentColor"
