@@ -15,6 +15,7 @@ import {
 } from "./firebase";
 import { Home } from "./Home";
 import { Form } from "./Form";
+import { Landing } from "./Landing";
 import { Mascot, type MascotName } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
@@ -130,19 +131,6 @@ type AuthState =
   | { kind: "signed-out" }
   | { kind: "signed-in"; user: FirebaseUser };
 
-function SignInSurface({ busy, onSignIn }: { busy: boolean; onSignIn: () => void }) {
-  return (
-    <div className="scroll auth-screen">
-      <Mascot name="cooper_waving" size="lg" decorative />
-      <h1 className="largetitle">Sign in</h1>
-      <p className="empty__text">Use your approved Google account to open Cooper.</p>
-      <button type="button" className="btn" disabled={busy} onClick={onSignIn}>
-        Continue with Google
-      </button>
-    </div>
-  );
-}
-
 function AuthSetupErrorSurface({ message }: { message: string }) {
   return (
     <div className="scroll auth-screen" role="alert">
@@ -257,6 +245,7 @@ export default function App() {
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
+  const publicLanding = firebaseConfigured && authState.kind === "signed-out";
   const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
 
   const clearConversation = useCallback(() => {
@@ -520,7 +509,7 @@ export default function App() {
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
 
   return (
-    <div className="app">
+    <div className={`app${publicLanding ? " app--public" : ""}`}>
       <Nav
         current={tab}
         todo={shortlist.length}
@@ -536,10 +525,12 @@ export default function App() {
 
         {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
 
-        {firebaseConfigured && authState.kind === "signed-out" && (
-          <SignInSurface
+        {publicLanding && (
+          <Landing
             busy={busy}
+            error={failure}
             onSignIn={() => {
+              setFailure(null);
               setBusy(true);
               void signInWithGoogle().catch((error: unknown) => {
                 setBusy(false);
