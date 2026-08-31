@@ -64,6 +64,11 @@ The frontend can run in local mode with `X-Cooper-Key` or hosted mode with Fireb
 Firebase sign-in only identifies the user; Calendar and Gmail access are separate Settings
 connections handled by the backend OAuth flow.
 
+The browser resolves its public configuration at startup: Firebase Hosting supplies the Firebase
+Web config through `/__/firebase/init.json`, while local Vite development keeps the browser on
+same-origin `/api` paths and attaches the backend key in the development proxy. A frontend
+environment file is therefore optional compatibility input, not part of the normal setup.
+
 `Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
 `add` the sentence path uses, and runs it through the public `validate` in `brain.py`. A typed
 task is booked, undone and mirrored to Google exactly like a parsed one, and `app.py` is still the
