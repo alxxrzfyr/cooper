@@ -82,10 +82,19 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
+      - name: Check Firebase deploy credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRYTHECOOPER || secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::Add FIREBASE_SERVICE_ACCOUNT_TRYTHECOOPER or FIREBASE_SERVICE_ACCOUNT in GitHub repository Actions secrets."
+            exit 1
+          fi
+
       - name: Deploy live Firebase Hosting site
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRYTHECOOPER || secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: trythecooper
           channelId: live
 
