@@ -2,12 +2,7 @@ import { LegalPage } from "./LegalPage";
 
 export function TermsPage() {
   return (
-    <LegalPage
-      eyebrow="The small print"
-      title="Terms of Use"
-      updated="August 31, 2026"
-      tone="peach"
-    >
+    <LegalPage title="Terms of Use" updated="August 31, 2026" tone="peach">
       <p className="legal-page__intro">
         Cooper is a personal planning workspace available to invited friends and family. Each user
         has their own workspace. By using it, you agree to use the service lawfully, keep your

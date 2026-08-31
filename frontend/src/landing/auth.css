@@ -1,7 +1,16 @@
+@font-face {
+  font-family: "Excalifont";
+  src: url("/assets/Excalifont-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 /* Dedicated auth styling keeps the sign-in action calm and easy to leave. */
 .public-page.auth-page {
   --auth-bg: #f2f5f1;
   --auth-glow: color-mix(in srgb, var(--accent) 10%, transparent);
+  --auth-copy: #5f645f;
   background: radial-gradient(circle at 78% 16%, var(--auth-glow), transparent 31%), var(--auth-bg);
 }
 
@@ -12,6 +21,7 @@
 :root[data-theme="dark"] .public-page.auth-page {
   --auth-bg: #161b18;
   --auth-glow: color-mix(in srgb, var(--accent) 13%, transparent);
+  --auth-copy: #b5bcb6;
 }
 
 :root[data-theme="dark"] .public-page.auth-page--signup {
@@ -71,7 +81,7 @@
 
 .auth-page__kicker {
   margin: 0 0 15px;
-  color: var(--public-accent-text);
+  color: var(--text);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -88,7 +98,7 @@
 .auth-page__intro > p:last-of-type {
   max-width: 35ch;
   margin-top: 20px;
-  color: var(--muted);
+  color: var(--auth-copy, var(--muted));
   font-size: clamp(15px, 1.25vw, 18px);
   line-height: 1.5;
 }
@@ -106,16 +116,17 @@
 }
 
 .auth-page__note .mascot {
-  width: 82px;
-  height: 82px;
+  width: 98px;
+  height: 98px;
 }
 
 .auth-page__note span {
   max-width: 170px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
+  color: var(--text);
+  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.2;
 }
 
 .auth-page .landing__auth-card {
@@ -137,7 +148,7 @@
 
 .auth-page .landing__auth-kicker {
   margin-bottom: 14px;
-  color: var(--public-accent-text);
+  color: var(--text);
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -151,6 +162,7 @@
 
 .auth-page .landing__auth-card > p:not(.landing__error):not(.landing__fineprint) {
   margin-top: 14px;
+  color: var(--auth-copy, var(--muted));
   font-size: 14px;
 }
 
@@ -238,8 +250,12 @@
   }
 
   .auth-page__note .mascot {
-    width: 70px;
-    height: 70px;
+    width: 82px;
+    height: 82px;
+  }
+
+  .auth-page__note span {
+    font-size: 16px;
   }
 }
 

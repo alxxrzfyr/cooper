@@ -2,12 +2,7 @@ import { LegalPage } from "./LegalPage";
 
 export function PrivacyPage() {
   return (
-    <LegalPage
-      eyebrow="Your information"
-      title="Privacy Policy"
-      updated="August 31, 2026"
-      tone="green"
-    >
+    <LegalPage title="Privacy Policy" updated="August 31, 2026" tone="green">
       <p className="legal-page__intro">
         Cooper is designed to keep planning personal. This page explains what the current invited
         deployment handles and why. It is a plain-language product notice, not a substitute for a

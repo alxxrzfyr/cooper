@@ -4,7 +4,6 @@ import { Mascot } from "../Mascot";
 import "./auth.css";
 
 interface LegalPageProps {
-  eyebrow: string;
   title: string;
   updated: string;
   tone: "green" | "peach";
@@ -20,7 +19,7 @@ function PublicBrand() {
   );
 }
 
-export function LegalPage({ eyebrow, title, updated, tone, children }: LegalPageProps) {
+export function LegalPage({ title, updated, tone, children }: LegalPageProps) {
   return (
     <div className={`public-page legal-page legal-page--${tone}`}>
       <header className="public-page__header legal-page__header">
@@ -33,7 +32,6 @@ export function LegalPage({ eyebrow, title, updated, tone, children }: LegalPage
 
       <section className="legal-page__main" aria-labelledby="legal-page-title">
         <div className="legal-page__heading">
-          <p className="legal-page__kicker">{eyebrow}</p>
           <h1 id="legal-page-title">{title}</h1>
           <p className="legal-page__updated">Last updated {updated}</p>
         </div>
