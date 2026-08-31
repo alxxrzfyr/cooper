@@ -158,7 +158,7 @@ describe("public auth flow", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: /turn one sentence/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
 

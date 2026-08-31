@@ -8,11 +8,13 @@ describe("public landing", () => {
   test("shows the value proposition and both account intents", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: /turn one sentence/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Create account" })).not.toHaveLength(0);
     expect(screen.getAllByRole("link", { name: "Log in" })).not.toHaveLength(0);
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Capture" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Say it once. See what matters." }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Read-only by default")).toBeInTheDocument();
   });
 

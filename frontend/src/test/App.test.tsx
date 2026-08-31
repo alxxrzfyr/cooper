@@ -265,9 +265,7 @@ describe("first impression", () => {
 
     render(<App />);
 
-    expect(
-      screen.getByRole("heading", { name: /turn one sentence into time you can trust/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
   });

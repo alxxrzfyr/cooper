@@ -37,7 +37,7 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /turn one sentence/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Your day, untangled." })).not.toBeInTheDocument();
   });
 
   test("lets visitors view the overview if auth checking stalls", async () => {
@@ -45,7 +45,7 @@ describe("public route surface", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "View the overview" }));
 
-    expect(screen.getByRole("heading", { name: /turn one sentence/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Checking your account…" })).toBeDisabled();
   });
 

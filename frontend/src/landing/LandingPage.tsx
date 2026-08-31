@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type WheelEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode, type WheelEvent } from "react";
 
 import { Mascot } from "../Mascot";
 import { AuthCard } from "./AuthCard";
@@ -12,15 +12,134 @@ interface LandingProps {
 }
 
 const PANELS = [
-  { id: "top", label: "Start" },
-  { id: "why", label: "Benefits" },
-  { id: "how", label: "How it works" },
-  { id: "connected", label: "Connections" },
-  { id: "auth", label: "Get started" },
+  { id: "untangle", label: "Untangle" },
+  { id: "prioritize", label: "Prioritize" },
+  { id: "room", label: "Make room" },
+  { id: "start", label: "Start" },
 ] as const;
 
 function panelId(id: string): string {
   return `landing-${id}`;
+}
+
+function WindowChrome({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="landing__product-window">
+      <div className="landing__window-bar">
+        <span className="landing__window-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span>{label}</span>
+        <span className="landing__window-status">Cooper</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TodayMock() {
+  return (
+    <WindowChrome label="Today">
+      <div className="landing__today-mock">
+        <aside className="landing__mock-rail" aria-hidden="true">
+          <span className="landing__mock-avatar">C</span>
+          <span className="landing__mock-rail-line landing__mock-rail-line--active" />
+          <span className="landing__mock-rail-line" />
+          <span className="landing__mock-rail-line" />
+          <span className="landing__mock-rail-line landing__mock-rail-line--short" />
+        </aside>
+        <div className="landing__mock-day">
+          <div className="landing__mock-day-head">
+            <div>
+              <span className="landing__mock-kicker">Monday, August 31</span>
+              <strong>Good evening</strong>
+            </div>
+            <span className="landing__mock-pill">3 open</span>
+          </div>
+          <div className="landing__mock-task landing__mock-task--focus">
+            <span className="landing__mock-check" aria-hidden="true" />
+            <span>
+              <strong>Write the quarterly report</strong>
+              <small>Work · 90 min · due Friday</small>
+            </span>
+            <em>next</em>
+          </div>
+          <div className="landing__mock-task">
+            <span className="landing__mock-check" aria-hidden="true" />
+            <span>
+              <strong>Practice university presentation</strong>
+              <small>Academics · 30 min</small>
+            </span>
+          </div>
+          <div className="landing__mock-task landing__mock-task--muted">
+            <span className="landing__mock-check" aria-hidden="true" />
+            <span>
+              <strong>Gym</strong>
+              <small>Personal · Sun 7:00 PM</small>
+            </span>
+          </div>
+        </div>
+      </div>
+    </WindowChrome>
+  );
+}
+
+function ChatMock() {
+  return (
+    <WindowChrome label="Cooper chat">
+      <div className="landing__chat-mock">
+        <div className="landing__chat-line landing__chat-line--you">clear my Friday afternoon</div>
+        <div className="landing__chat-line landing__chat-line--cooper">
+          <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
+          <span>There’s room at 2:00 PM. I’ll keep the morning clear.</span>
+        </div>
+        <div className="landing__chat-result">
+          <span className="landing__mock-kicker">Suggested block</span>
+          <strong>Friday · 2:00–3:30 PM</strong>
+          <small>around your calendar, inside your working hours</small>
+        </div>
+      </div>
+    </WindowChrome>
+  );
+}
+
+function CalendarMock() {
+  return (
+    <WindowChrome label="Calendar">
+      <div className="landing__calendar-mock">
+        <div className="landing__calendar-head">
+          <strong>September 2026</strong>
+          <span>Week 36</span>
+        </div>
+        <div className="landing__calendar-grid" aria-hidden="true">
+          {["M", "T", "W", "T", "F"].map((day, index) => (
+            <span key={`${day}-${index}`} className="landing__calendar-day">
+              {day}
+            </span>
+          ))}
+          <span>31</span>
+          <span>1</span>
+          <span>2</span>
+          <span className="landing__calendar-event">CS101</span>
+          <span>4</span>
+          <span>7</span>
+          <span className="landing__calendar-event landing__calendar-event--cooper">Report</span>
+          <span>9</span>
+          <span>10</span>
+          <span>11</span>
+        </div>
+        <div className="landing__calendar-note">
+          <span className="landing__mock-check" aria-hidden="true" />
+          <span>
+            <strong>Cooper’s block</strong>
+            <small>Only the time Cooper placed is writable.</small>
+          </span>
+        </div>
+      </div>
+    </WindowChrome>
+  );
 }
 
 export function LandingPage({
@@ -49,10 +168,8 @@ export function LandingPage({
   function horizontalWheel(event: WheelEvent<HTMLDivElement>): void {
     const element = track.current;
     if (!element || typeof window === "undefined") return;
-
     const wide = window.matchMedia?.("(min-width: 900px)").matches ?? false;
     if (!wide || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-
     event.preventDefault();
     element.scrollBy({ left: event.deltaY, behavior: "auto" });
   }
@@ -75,27 +192,13 @@ export function LandingPage({
   }
 
   return (
-    <div className="landing">
+    <div className="landing landing--keeby">
       <header className="landing__header">
         <a className="landing__brand" href="/" aria-label="Cooper home">
           <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
           <span className="landing__wordmark">Cooper</span>
         </a>
-
-        <nav className="landing__nav" aria-label="Landing sections">
-          {PANELS.map((panel, index) => (
-            <button
-              type="button"
-              className="landing__nav-link"
-              key={panel.id}
-              aria-current={activeIndex === index ? "page" : undefined}
-              onClick={() => moveTo(panel.id)}
-            >
-              {panel.label}
-            </button>
-          ))}
-        </nav>
-
+        <p className="landing__header-note">A calmer way to keep your promises to yourself.</p>
         <div className="landing__actions">
           <a className="landing__quiet" href="/login">
             Log in
@@ -116,117 +219,60 @@ export function LandingPage({
         onKeyDown={trackKeyDown}
         onScroll={trackScroll}
       >
-        <section className="landing__panel landing__panel--hero" id={panelId("top")}>
+        <section
+          className="landing__panel landing__panel--hero landing__panel--untangle"
+          id={panelId("untangle")}
+        >
           <div className="landing__copy">
-            <p className="landing__eyebrow">Talk to Cooper about your day</p>
-            <h1>Turn one sentence into time you can trust.</h1>
+            <p className="landing__eyebrow">01 / Untangle</p>
+            <h1>Your day, untangled.</h1>
             <p className="landing__lede">
-              Tell Cooper what needs doing. It turns your words into a ranked task, then finds a
-              real place for it around the commitments you already made.
+              Say what needs doing. Cooper gives it a place, a reason, and a next step you can see.
             </p>
-            <div className="landing__flow" aria-label="Example Cooper workflow">
-              <div className="landing__flow-row">
-                <span className="landing__flow-label">You say</span>
-                <span className="landing__flow-value">“write the quarterly report by Friday”</span>
-              </div>
-              <div className="landing__flow-row">
-                <span className="landing__flow-label">Cooper finds</span>
-                <span className="landing__flow-value">Task · work · 90 minutes · due Friday</span>
-              </div>
-              <div className="landing__flow-row">
-                <span className="landing__flow-label">Your day gets</span>
-                <span className="landing__flow-value">
-                  Mon · 10:00 AM, around what is already booked
-                </span>
-              </div>
-            </div>
-            <div className="landing__cta-row">
-              <a className="landing__primary" href="/signup">
-                Create your account
-              </a>
-              <button type="button" className="landing__secondary" onClick={() => moveTo("how")}>
-                See how it works
-              </button>
-            </div>
+            <a className="landing__primary" href="/signup">
+              Create your account
+            </a>
             <p className="landing__hint">Google sign-in creates your account the first time.</p>
           </div>
-
-          <div className="landing__hero-art">
+          <div className="landing__stage landing__stage--today">
+            <TodayMock />
             <Mascot name="cooper_landing_hero" size="lg" decorative loading="eager" />
-            <div className="landing__art-note">
-              <span>Tasks</span>
-              <span>Events</span>
-              <span>Errands</span>
+            <span className="landing__stage-caption">One quiet place for the whole day.</span>
+          </div>
+        </section>
+
+        <section
+          className="landing__panel landing__panel--how landing__panel--prioritize"
+          id={panelId("prioritize")}
+        >
+          <div className="landing__stage landing__stage--chat">
+            <ChatMock />
+            <Mascot name="cooper_landing_sort" size="md" decorative />
+          </div>
+          <div className="landing__copy landing__copy--narrow">
+            <p className="landing__eyebrow">02 / Prioritize</p>
+            <h2>Say it once. See what matters.</h2>
+            <p className="landing__body">
+              Cooper keeps the useful parts of a thought, then shows why one thing belongs before
+              the next.
+            </p>
+            <div className="landing__proof-line">
+              <strong>Capture → reason → next</strong>
+              <span>No dashboards to maintain. No new system to learn.</span>
             </div>
           </div>
         </section>
 
-        <section className="landing__panel landing__panel--why" id={panelId("why")}>
+        <section
+          className="landing__panel landing__panel--connected landing__panel--room"
+          id={panelId("room")}
+        >
           <div className="landing__copy landing__copy--narrow">
-            <h2>Your day, without the detective work.</h2>
+            <p className="landing__eyebrow">03 / Make room</p>
+            <h2>Make room around what is already booked.</h2>
             <p className="landing__body">
-              Cooper turns scattered commitments into one gentle next step, so you can spend your
-              attention on the work itself.
-            </p>
-          </div>
-          <div className="landing__benefits">
-            <article>
-              <span className="landing__number">01</span>
-              <h3>Capture in one breath.</h3>
-              <p>Write the thought as it arrives. Cooper keeps the useful parts.</p>
-            </article>
-            <article>
-              <span className="landing__number">02</span>
-              <h3>Know what matters next.</h3>
-              <p>Every task has a visible reason for where it sits in your day.</p>
-            </article>
-            <article>
-              <span className="landing__number">03</span>
-              <h3>Make room for the rest.</h3>
-              <p>Work blocks fit inside your hours and around commitments already made.</p>
-            </article>
-          </div>
-        </section>
-
-        <section className="landing__panel landing__panel--how" id={panelId("how")}>
-          <div className="landing__copy">
-            <h2>From thought to time in three moves.</h2>
-            <p className="landing__body">
-              The form is quiet when you need certainty. The conversation is there when you need a
-              little help.
-            </p>
-          </div>
-          <div className="landing__steps">
-            <article>
-              <Mascot name="cooper_landing_capture" size="md" decorative />
-              <span>01</span>
-              <h3>Capture</h3>
-              <p>Put the task, event, or errand somewhere you can trust.</p>
-            </article>
-            <article>
-              <Mascot name="cooper_landing_sort" size="md" decorative />
-              <span>02</span>
-              <h3>Prioritize</h3>
-              <p>See what deserves attention first and why it earned that place.</p>
-            </article>
-            <article>
-              <Mascot name="cooper_landing_ready" size="md" decorative />
-              <span>03</span>
-              <h3>Schedule</h3>
-              <p>Give the next work a real time, only inside the hours you chose.</p>
-            </article>
-          </div>
-        </section>
-
-        <section className="landing__panel landing__panel--connected" id={panelId("connected")}>
-          <div className="landing__connected-art">
-            <Mascot name="cooper_landing_overwhelmed" size="lg" decorative />
-          </div>
-          <div className="landing__copy landing__copy--narrow">
-            <h2>The commitments you already made, in one view.</h2>
-            <p className="landing__body">
-              Google Calendar events and known Gmail confirmations block time without becoming
-              another list to maintain.
+              Calendar events and Gmail confirmations block time without becoming another list to
+              maintain.
             </p>
             <div className="landing__boundary">
               <div>
@@ -235,21 +281,28 @@ export function LandingPage({
               </div>
               <div>
                 <strong>Works without Google</strong>
-                <span>Local capture, ranking, and scheduling do not depend on an account.</span>
+                <span>Local capture, ranking, and scheduling stay useful on their own.</span>
               </div>
             </div>
           </div>
+          <div className="landing__stage landing__stage--calendar">
+            <CalendarMock />
+            <Mascot name="cooper_landing_ready" size="md" decorative />
+          </div>
         </section>
 
-        <section className="landing__panel landing__panel--auth auth-screen" id={panelId("auth")}>
+        <section
+          className="landing__panel landing__panel--auth landing__panel--start auth-screen"
+          id={panelId("start")}
+        >
           <div className="landing__copy landing__copy--narrow">
-            <h2>Start with a clearer day.</h2>
+            <p className="landing__eyebrow">04 / Start</p>
+            <h2>Start with a calmer next step.</h2>
             <p className="landing__body">
               Your tasks stay yours. Your schedule gets a little easier to see.
             </p>
             <Mascot name="cooper_waving" size="md" decorative />
           </div>
-
           <AuthCard
             intent="signup"
             busy={busy}
@@ -303,5 +356,4 @@ export function LandingPage({
   );
 }
 
-// Keep the original export name for the landing component's focused tests and existing imports.
 export const Landing = LandingPage;
