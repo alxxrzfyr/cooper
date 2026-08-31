@@ -1494,7 +1494,7 @@
   font-size: 13px;
 }
 
-.auth-page .public-page__back span:first-child {
+.auth-page .public-page__back > span:first-child {
   display: grid;
   width: 25px;
   height: 25px;
@@ -1510,8 +1510,8 @@
     transform 0.16s ease;
 }
 
-.auth-page .public-page__back:hover span:first-child,
-.auth-page .public-page__back:focus-visible span:first-child {
+.auth-page .public-page__back:hover > span:first-child,
+.auth-page .public-page__back:focus-visible > span:first-child {
   border-color: var(--public-accent-text);
   color: var(--public-accent-text);
   transform: translateX(-2px);
