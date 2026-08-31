@@ -6,7 +6,7 @@ const firebaseMock = vi.hoisted(() => ({
   authMode: "local" as "local" | "firebase",
 }));
 
-vi.mock("./firebase", () => ({
+vi.mock("../firebase", () => ({
   get clientAuthMode() {
     return firebaseMock.authMode;
   },
@@ -18,8 +18,8 @@ vi.mock("./firebase", () => ({
   subscribeToAuth: vi.fn(),
 }));
 
-import App from "./App";
-import type { Ranked, Reply, View } from "./types";
+import App from "../App";
+import type { Ranked, Reply, View } from "../types";
 
 function ranked(): Ranked {
   return {

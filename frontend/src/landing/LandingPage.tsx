@@ -1,14 +1,13 @@
-import { useRef, useState, type WheelEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type WheelEvent } from "react";
 
-import { Mascot } from "./Mascot";
-
-import "./Landing.css";
-
-type AuthIntent = "signup" | "login";
+import { Mascot } from "../Mascot";
+import { AuthCard } from "./AuthCard";
 
 interface LandingProps {
   busy: boolean;
   error: string | null;
+  authEnabled?: boolean;
+  authLoading?: boolean;
   onSignIn: () => void;
 }
 
@@ -24,25 +23,27 @@ function panelId(id: string): string {
   return `landing-${id}`;
 }
 
-export function Landing({ busy, error, onSignIn }: LandingProps) {
-  const [intent, setIntent] = useState<AuthIntent>("signup");
+export function LandingPage({
+  busy,
+  error,
+  authEnabled = true,
+  authLoading = false,
+  onSignIn,
+}: LandingProps) {
   const track = useRef<HTMLDivElement>(null);
-  const authCard = useRef<HTMLElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  function moveTo(id: string, nextIntent?: AuthIntent): void {
-    if (nextIntent) setIntent(nextIntent);
-
+  function moveTo(id: string): void {
+    const nextIndex = PANELS.findIndex((panel) => panel.id === id);
+    if (nextIndex >= 0) setActiveIndex(nextIndex);
     const target = document.getElementById(panelId(id));
     if (!target || typeof target.scrollIntoView !== "function") return;
     target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
   }
 
-  function focusAuth(nextIntent: AuthIntent): void {
-    setIntent(nextIntent);
-    const card = authCard.current;
-    if (card && typeof card.scrollIntoView === "function") {
-      card.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-    }
+  function moveBy(delta: number): void {
+    const nextIndex = Math.min(Math.max(activeIndex + delta, 0), PANELS.length - 1);
+    moveTo(PANELS[nextIndex].id);
   }
 
   function horizontalWheel(event: WheelEvent<HTMLDivElement>): void {
@@ -56,25 +57,38 @@ export function Landing({ busy, error, onSignIn }: LandingProps) {
     element.scrollBy({ left: event.deltaY, behavior: "auto" });
   }
 
+  function trackKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveBy(1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveBy(-1);
+    }
+  }
+
+  function trackScroll(): void {
+    const element = track.current;
+    if (!element || element.clientWidth <= 0) return;
+    const nextIndex = Math.round(element.scrollLeft / element.clientWidth);
+    setActiveIndex(Math.min(Math.max(nextIndex, 0), PANELS.length - 1));
+  }
+
   return (
     <div className="landing">
       <header className="landing__header">
-        <button
-          type="button"
-          className="landing__brand"
-          aria-label="Cooper home"
-          onClick={() => moveTo("top")}
-        >
-          <Mascot name="cooper_avatar" size="xs" decorative />
+        <a className="landing__brand" href="/" aria-label="Cooper home">
+          <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
           <span className="landing__wordmark">Cooper</span>
-        </button>
+        </a>
 
         <nav className="landing__nav" aria-label="Landing sections">
-          {PANELS.slice(1, 4).map((panel) => (
+          {PANELS.map((panel, index) => (
             <button
               type="button"
               className="landing__nav-link"
               key={panel.id}
+              aria-current={activeIndex === index ? "page" : undefined}
               onClick={() => moveTo(panel.id)}
             >
               {panel.label}
@@ -83,12 +97,12 @@ export function Landing({ busy, error, onSignIn }: LandingProps) {
         </nav>
 
         <div className="landing__actions">
-          <button type="button" className="landing__quiet" onClick={() => focusAuth("login")}>
+          <a className="landing__quiet" href="/login">
             Log in
-          </button>
-          <button type="button" className="landing__header-cta" onClick={() => focusAuth("signup")}>
+          </a>
+          <a className="landing__header-cta" href="/signup">
             Create account
-          </button>
+          </a>
         </div>
       </header>
 
@@ -99,22 +113,37 @@ export function Landing({ busy, error, onSignIn }: LandingProps) {
         aria-label="Cooper overview"
         tabIndex={0}
         onWheel={horizontalWheel}
+        onKeyDown={trackKeyDown}
+        onScroll={trackScroll}
       >
         <section className="landing__panel landing__panel--hero" id={panelId("top")}>
           <div className="landing__copy">
-            <p className="landing__eyebrow">A calmer day starts here</p>
-            <h1>A calmer place for everything that takes your time.</h1>
+            <p className="landing__eyebrow">Talk to Cooper about your day</p>
+            <h1>Turn one sentence into time you can trust.</h1>
             <p className="landing__lede">
-              Capture a thought, find what matters, and give your day room to breathe.
+              Tell Cooper what needs doing. It turns your words into a ranked task, then finds a
+              real place for it around the commitments you already made.
             </p>
+            <div className="landing__flow" aria-label="Example Cooper workflow">
+              <div className="landing__flow-row">
+                <span className="landing__flow-label">You say</span>
+                <span className="landing__flow-value">“write the quarterly report by Friday”</span>
+              </div>
+              <div className="landing__flow-row">
+                <span className="landing__flow-label">Cooper finds</span>
+                <span className="landing__flow-value">Task · work · 90 minutes · due Friday</span>
+              </div>
+              <div className="landing__flow-row">
+                <span className="landing__flow-label">Your day gets</span>
+                <span className="landing__flow-value">
+                  Mon · 10:00 AM, around what is already booked
+                </span>
+              </div>
+            </div>
             <div className="landing__cta-row">
-              <button
-                type="button"
-                className="landing__primary"
-                onClick={() => focusAuth("signup")}
-              >
+              <a className="landing__primary" href="/signup">
                 Create your account
-              </button>
+              </a>
               <button type="button" className="landing__secondary" onClick={() => moveTo("how")}>
                 See how it works
               </button>
@@ -123,7 +152,7 @@ export function Landing({ busy, error, onSignIn }: LandingProps) {
           </div>
 
           <div className="landing__hero-art">
-            <Mascot name="cooper_landing_hero" size="lg" decorative />
+            <Mascot name="cooper_landing_hero" size="lg" decorative loading="eager" />
             <div className="landing__art-note">
               <span>Tasks</span>
               <span>Events</span>
@@ -221,48 +250,58 @@ export function Landing({ busy, error, onSignIn }: LandingProps) {
             <Mascot name="cooper_waving" size="md" decorative />
           </div>
 
-          <aside className="landing__auth-card" ref={authCard} aria-labelledby="landing-auth-title">
-            <span className="landing__auth-kicker">Your first step</span>
-            <h2 id="landing-auth-title">
-              {intent === "signup" ? "Create your Cooper account" : "Log in to Cooper"}
-            </h2>
-            <p>
-              Use your approved Google account. The first sign-in creates your account; returning
-              users log in the same way.
-            </p>
-            <div className="landing__auth-switch" role="group" aria-label="Account action">
-              <button
-                type="button"
-                aria-pressed={intent === "signup"}
-                onClick={() => setIntent("signup")}
-              >
-                Create account
-              </button>
-              <button
-                type="button"
-                aria-pressed={intent === "login"}
-                onClick={() => setIntent("login")}
-              >
-                Log in
-              </button>
-            </div>
-            <button type="button" className="landing__google" disabled={busy} onClick={onSignIn}>
-              {busy ? "Opening Google…" : "Continue with Google"}
-            </button>
-            {error && (
-              <p className="landing__error" role="alert">
-                {error}
-              </p>
-            )}
-            <p className="landing__fineprint">No password to remember. Sign out any time.</p>
-          </aside>
+          <AuthCard
+            intent="signup"
+            busy={busy}
+            error={error}
+            authEnabled={authEnabled}
+            authLoading={authLoading}
+            onSignIn={onSignIn}
+          />
         </section>
       </div>
 
-      <div className="landing__scroll-cue" aria-hidden="true">
-        <span>Scroll to explore</span>
-        <span>→</span>
+      <div className="landing__navigation">
+        <div className="landing__progress" role="group" aria-label="Landing sections">
+          {PANELS.map((panel, index) => (
+            <button
+              type="button"
+              key={panel.id}
+              className="landing__progress-dot"
+              aria-label={`Go to ${panel.label}`}
+              aria-current={activeIndex === index ? "page" : undefined}
+              onClick={() => moveTo(panel.id)}
+            >
+              <span aria-hidden="true" />
+              <span className="visually-hidden">{panel.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="landing__pager">
+          <button
+            type="button"
+            aria-label="Previous section"
+            disabled={activeIndex === 0}
+            onClick={() => moveBy(-1)}
+          >
+            ←
+          </button>
+          <span>
+            {String(activeIndex + 1).padStart(2, "0")} / {String(PANELS.length).padStart(2, "0")}
+          </span>
+          <button
+            type="button"
+            aria-label="Next section"
+            disabled={activeIndex === PANELS.length - 1}
+            onClick={() => moveBy(1)}
+          >
+            →
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+// Keep the original export name for the landing component's focused tests and existing imports.
+export const Landing = LandingPage;

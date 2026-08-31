@@ -30,7 +30,7 @@ vi.mock("firebase/auth", () => ({
 
 async function loadFirebase() {
   vi.resetModules();
-  return import("./firebase");
+  return import("../firebase");
 }
 
 beforeEach(() => {

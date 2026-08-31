@@ -46,7 +46,7 @@ const firebaseMock = vi.hoisted(() => {
   };
 });
 
-vi.mock("./firebase", () => ({
+vi.mock("../firebase", () => ({
   get clientAuthMode() {
     return firebaseMock.authMode;
   },
@@ -71,8 +71,8 @@ vi.mock("./firebase", () => ({
   subscribeToAuth: firebaseMock.subscribe,
 }));
 
-import App from "./App";
-import type { Reply, View } from "./types";
+import App from "../App";
+import type { Reply, View } from "../types";
 
 function view(overrides: Partial<View> = {}): View {
   return {
@@ -138,6 +138,29 @@ afterEach(() => {
 });
 
 describe("public auth flow", () => {
+  test("public legal routes do not load the protected workspace", () => {
+    window.history.replaceState({}, "", "/privacy");
+    const fetch = vi.fn(async () => json(view()));
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  test("unknown public paths fall back to the landing surface", () => {
+    window.history.replaceState({}, "", "/not-a-page");
+    const fetch = vi.fn(async () => json(view()));
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: /turn one sentence/i })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test("local mode keeps the shared key header", async () => {
     const calls: Headers[] = [];
     vi.stubGlobal(
@@ -163,7 +186,8 @@ describe("public auth flow", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("status", { name: "Loading Cooper’s day" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
 
     await emitFirebaseUser(null);
@@ -188,7 +212,8 @@ describe("public auth flow", () => {
       .click(await screen.findByRole("button", { name: "Continue with Google" }));
 
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
-    expect(document.querySelectorAll(".who__name")).toHaveLength(2);
+    expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cooper home" })).toBeInTheDocument();
     expect(document.querySelector(".auth-screen .mascot")).toHaveAttribute(
       "src",
       "/assets/mascot/cooper_waving.webp",

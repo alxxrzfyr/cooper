@@ -57,17 +57,19 @@ export function Mascot({
   name,
   size = "md",
   decorative = false,
+  loading = "lazy",
 }: {
   name: MascotName;
   size?: MascotSize;
   decorative?: boolean;
+  loading?: "eager" | "lazy";
 }) {
   return (
     <img
       className={`mascot mascot--${size}`}
       src={`/assets/mascot/${name}.webp`}
       alt={decorative ? "" : ALT[name]}
-      loading="lazy"
+      loading={loading}
       decoding="async"
     />
   );

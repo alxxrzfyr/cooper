@@ -26,7 +26,7 @@ afterEach(() => {
 describe("API runtime configuration", () => {
   test("uses the runtime API base and local key", async () => {
     vi.resetModules();
-    const { api } = await import("./api");
+    const { api } = await import("../api");
 
     await api.today();
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 async function loadRuntimeModule() {
   vi.resetModules();
-  return import("./runtime-config");
+  return import("../runtime-config");
 }
 
 beforeEach(() => {

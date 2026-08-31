@@ -1,9 +1,54 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import App from "./App";
-import type { CalendarEvent, Item, Ranked, Reply, View } from "./types";
+import App from "../App";
+import type { CalendarEvent, Item, Ranked, Reply, View } from "../types";
+
+interface TestFirebaseUser {
+  uid: string;
+  email: string | null;
+  getIdToken: ReturnType<typeof vi.fn<() => Promise<string>>>;
+}
+
+const firebaseMock = vi.hoisted(() => ({
+  authMode: "local" as "local" | "firebase",
+  configured: false,
+  currentUser: null as TestFirebaseUser | null,
+  observer: null as ((user: TestFirebaseUser | null) => void) | null,
+  signInWithGoogle: vi.fn<() => Promise<void>>(async () => undefined),
+  signOutUser: vi.fn<() => Promise<void>>(async () => undefined),
+  unsubscribe: vi.fn(),
+}));
+
+vi.mock("../firebase", () => ({
+  get clientAuthMode() {
+    return firebaseMock.authMode;
+  },
+  get firebaseConfigured() {
+    return firebaseMock.authMode === "firebase" && firebaseMock.configured;
+  },
+  get firebaseConfigError() {
+    return firebaseMock.authMode === "firebase" && !firebaseMock.configured
+      ? "Firebase auth is selected, but the public Firebase config is incomplete."
+      : null;
+  },
+  get auth() {
+    return firebaseMock.authMode === "firebase" && firebaseMock.configured
+      ? {
+          get currentUser() {
+            return firebaseMock.currentUser;
+          },
+        }
+      : null;
+  },
+  signInWithGoogle: firebaseMock.signInWithGoogle,
+  signOutUser: firebaseMock.signOutUser,
+  subscribeToAuth: (callback: (user: TestFirebaseUser | null) => void) => {
+    firebaseMock.observer = callback;
+    return firebaseMock.unsubscribe;
+  },
+}));
 
 interface GmailHealthFixture {
   configured: boolean;
@@ -82,26 +127,42 @@ function reply(overrides: Partial<Reply> = {}): Reply {
 
 /** Navigate from the dashboard to the conversation. */
 async function openChat(user = userEvent.setup()) {
-  await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+  await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
   return user;
 }
 
 /** Navigate to the AI conversation. */
 async function openAi(user = userEvent.setup()) {
-  await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
-  await user.click(await screen.findByRole("button", { name: "AI" }));
+  await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
+  await user.click(await screen.findByRole("button", { name: "Ask" }));
   return user;
 }
 
 interface Routes {
   view?: View;
   todayView?: View;
+  today?: View | { status: number; detail: string };
   say?: Reply | { status: number; detail: string };
   failView?: boolean;
 }
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requestBody(body: BodyInit | null | undefined): Record<string, unknown> {
+  if (!body) return {};
+  const parsed: unknown = JSON.parse(String(body));
+  return isJsonObject(parsed) ? parsed : {};
+}
+
 function stub(routes: Routes) {
-  const calls: Array<{ url: string; method: string; body?: any }> = [];
+  const calls: Array<{
+    url: string;
+    method: string;
+    headers: Headers;
+    body: Record<string, unknown>;
+  }> = [];
   const json = (payload: unknown, status = 200) =>
     new Response(JSON.stringify(payload), {
       status,
@@ -115,15 +176,19 @@ function stub(routes: Routes) {
       calls.push({
         url,
         method: init?.method ?? "GET",
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        headers: new Headers(init?.headers),
+        body: requestBody(init?.body),
       });
 
       const currentView = routes.view ?? view();
-      const loadedView = routes.todayView ?? currentView;
+      const loadedView = routes.today ?? routes.todayView ?? currentView;
       const withView = (r: Reply): Reply => ({ ...r, view: currentView });
 
       if (url.includes("/api/today")) {
-        return routes.failView ? json({ detail: "connection refused" }, 500) : json(loadedView);
+        if (routes.failView) return json({ detail: "connection refused" }, 500);
+        return "status" in loadedView
+          ? json({ detail: loadedView.detail }, loadedView.status)
+          : json(loadedView);
       }
       if (url.includes("/api/say")) {
         const configured = routes.say ?? reply();
@@ -161,6 +226,13 @@ function stub(routes: Routes) {
 
 beforeEach(() => {
   vi.stubEnv("VITE_COOPER_KEY", "test-key");
+  firebaseMock.authMode = "local";
+  firebaseMock.configured = false;
+  firebaseMock.currentUser = null;
+  firebaseMock.observer = null;
+  firebaseMock.signInWithGoogle.mockClear();
+  firebaseMock.signOutUser.mockClear();
+  firebaseMock.unsubscribe.mockClear();
   // The conversation persists in localStorage, so each test starts from an empty one.
   localStorage.clear();
 });
@@ -170,7 +242,55 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+function firebaseUser(token: string, email = "friend@example.com", uid = token): TestFirebaseUser {
+  return {
+    uid,
+    email,
+    getIdToken: vi.fn(async () => token),
+  };
+}
+
+async function emitFirebaseUser(user: TestFirebaseUser | null): Promise<void> {
+  firebaseMock.currentUser = user;
+  await act(async () => {
+    firebaseMock.observer?.(user);
+  });
+}
+
 describe("first impression", () => {
+  test("shows a dashboard skeleton while today is loading", async () => {
+    let resolveToday!: (response: Response) => void;
+    const pendingToday = new Promise<Response>((resolve) => {
+      resolveToday = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/api/today")) return pendingToday;
+        return new Response(JSON.stringify({}), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    render(<App />);
+
+    const loading = screen.getByRole("status", { name: "Loading Cooper’s day" });
+    expect(loading).toHaveAttribute("aria-busy", "true");
+    expect(loading.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Up next")).not.toBeInTheDocument();
+
+    resolveToday(
+      new Response(JSON.stringify(view()), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading Cooper’s day" })).not.toBeInTheDocument();
+  });
+
   test("opens on the dashboard, not the conversation", async () => {
     stub({});
     render(<App />);
@@ -234,6 +354,95 @@ describe("first impression", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Cooper isn’t running");
   });
 
+  test("local mode keeps the shared key header", async () => {
+    const calls = stub({});
+
+    render(<App />);
+
+    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(calls[0]?.headers.get("X-Cooper-Key")).toBe("test-key");
+    expect(calls[0]?.headers.has("Authorization")).toBe(false);
+  });
+
+  test("Firebase mode waits for auth before loading protected data", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const calls = stub({});
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+
+    await emitFirebaseUser(null);
+
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  test("signed-out Firebase users can start Google sign-in", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const calls = stub({});
+
+    render(<App />);
+    await emitFirebaseUser(null);
+
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("button", { name: "Continue with Google" }));
+
+    expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cooper home" })).toBeInTheDocument();
+    expect(document.querySelector(".auth-screen .mascot")).toHaveAttribute(
+      "src",
+      "/assets/mascot/cooper_waving.webp",
+    );
+  });
+
+  test("signed-in Firebase requests use the bearer token", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const calls = stub({});
+
+    render(<App />);
+    await emitFirebaseUser(firebaseUser("firebase-id-token"));
+
+    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(calls[0]?.headers.get("Authorization")).toBe("Bearer firebase-id-token");
+    expect(calls[0]?.headers.has("X-Cooper-Key")).toBe(false);
+  });
+
+  test("an expired Firebase token returns to sign-in", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    stub({ today: { status: 401, detail: "Invalid authentication token" } });
+
+    render(<App />);
+    await emitFirebaseUser(firebaseUser("expired-token"));
+
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
+  });
+
+  test("Firebase sign-out uses client auth only", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    stub({});
+
+    render(<App />);
+    await emitFirebaseUser(firebaseUser("firebase-id-token", "friend@example.com"));
+    await userEvent.setup().click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+
+    expect(await screen.findByText("friend@example.com")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
+  });
+
   test("offline parsing is stated under settings without alarm", async () => {
     stub({});
     render(<App />);
@@ -256,8 +465,8 @@ describe("first impression", () => {
     await user.type(key, "AIza-browser-key");
 
     expect(localStorage.getItem("cooper.gemini_key.v1")).toBe("AIza-browser-key");
-    await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
-    expect(await screen.findByRole("button", { name: "AI" })).not.toBeDisabled();
+    await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
+    expect(await screen.findByRole("button", { name: "Ask" })).not.toBeDisabled();
     expect(calls.every((call) => !call.body?.gemini_api_key)).toBe(true);
   });
 });
@@ -275,11 +484,11 @@ describe("manual and ai", () => {
     render(<App />);
     await openChat();
 
-    expect(await screen.findByRole("button", { name: "Manual" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "Form" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByRole("button", { name: "AI" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Ask" })).toHaveAttribute("aria-pressed", "false");
     // Manual is also what an omitted mode means on the wire, so the two cannot drift apart.
   });
 
@@ -299,7 +508,7 @@ describe("manual and ai", () => {
     render(<App />);
     const user = await openChat();
 
-    await user.click(await screen.findByRole("button", { name: "AI" }));
+    await user.click(await screen.findByRole("button", { name: "Ask" }));
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
 
     expect(calls.find((call) => call.url.includes("/api/say"))?.body.mode).toBe("ai");
@@ -326,7 +535,7 @@ describe("manual and ai", () => {
     render(<App />);
     await openChat();
 
-    expect(await screen.findByRole("button", { name: "AI" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "Ask" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -345,9 +554,9 @@ describe("manual and ai", () => {
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
     expect(screen.getByText("this browser")).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Clear" }));
-    await user.click((await screen.findAllByRole("button", { name: /Chat/ }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "AI" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled());
     expect(calls.filter((call) => call.url.includes("/api/today")).length).toBeGreaterThan(1);
   });
 
@@ -357,7 +566,7 @@ describe("manual and ai", () => {
     render(<App />);
     await openChat();
 
-    expect(await screen.findByRole("button", { name: "AI" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Ask" })).toBeDisabled();
     expect(screen.getByText(/No model key/)).toBeInTheDocument();
   });
 
@@ -369,7 +578,7 @@ describe("manual and ai", () => {
     render(<App />);
     const user = await openChat();
 
-    await user.click(await screen.findByRole("button", { name: "AI" }));
+    await user.click(await screen.findByRole("button", { name: "Ask" }));
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
     await screen.findByText("Start with the report.");
 
@@ -774,9 +983,20 @@ describe("navigation", () => {
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
-    for (const label of ["Home", "Chat", "Calendar", "Settings"]) {
+    for (const label of ["Home", "Cooper", "Calendar", "Settings"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
+  });
+
+  test("Cooper's rail groups the day tools and uses real icons", async () => {
+    stub({ view: view({ using_model: true }) });
+    render(<App />);
+
+    const rail = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
+    expect(within(rail).getByRole("group", { name: "Your day" })).toBeInTheDocument();
+    expect(within(rail).getByRole("group", { name: "Settings" })).toBeInTheDocument();
+    expect(within(rail).getByText("Your time, untangled")).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Cooper" }).querySelector("svg")).toBeTruthy();
   });
 
   test("both a rail and a tab bar exist, so CSS can choose", async () => {
@@ -1214,7 +1434,7 @@ describe("the mascot", () => {
     render(<App />);
 
     // Rendered twice on purpose: once in the top bar, once in the wide-screen rail.
-    expect((await screen.findAllByText("Cooper")).length).toBe(2);
+    expect(document.querySelectorAll(".who__name")).toHaveLength(2);
   });
 
   test("header identity mascots fit beside the Cooper wordmark", async () => {
@@ -1391,7 +1611,7 @@ describe("the dashboard", () => {
     await waitFor(() => expect(calls.some((call) => call.url.includes("/complete"))).toBe(true));
 
     await openChat(user);
-    await user.click(await screen.findByRole("button", { name: "AI" }));
+    await user.click(await screen.findByRole("button", { name: "Ask" }));
     expect(screen.getByRole("status")).toHaveTextContent("Completed.");
     expect(screen.queryByRole("log")).not.toBeInTheDocument();
   });
@@ -1405,7 +1625,7 @@ describe("the dashboard", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Say something" }));
 
-    expect(within(nav).getByRole("button", { name: /Chat/ })).toHaveAttribute(
+    expect(within(nav).getByRole("button", { name: /Cooper/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -1480,6 +1700,6 @@ describe("manual mode as a form", () => {
     await openChat();
 
     expect(await screen.findByLabelText("What")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manual" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Form" })).toHaveAttribute("aria-pressed", "true");
   });
 });

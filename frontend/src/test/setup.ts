@@ -5,4 +5,7 @@ import { afterEach } from "vitest";
 
 // Vitest globals are off, so Testing Library's automatic cleanup never registers. Without this
 // the DOM accumulates between tests and every query finds duplicates.
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.history.replaceState({}, "", "/");
+});

@@ -9,11 +9,11 @@ const bootstrap = vi.hoisted(() => {
   return { state, ready, release: () => release() };
 });
 
-vi.mock("./runtime-config", () => ({
+vi.mock("../runtime-config", () => ({
   loadRuntimeConfig: vi.fn(() => bootstrap.ready),
 }));
 
-vi.mock("./App", () => ({
+vi.mock("../App", () => ({
   default: () => {
     bootstrap.state.appRendered = true;
     return null;
@@ -28,7 +28,7 @@ describe("application bootstrap", () => {
   test("waits for runtime configuration before importing and rendering the app", async () => {
     document.body.innerHTML = '<div id="root"></div>';
 
-    await import("./main");
+    await import("../main");
     await Promise.resolve();
 
     expect(bootstrap.state.appRendered).toBe(false);

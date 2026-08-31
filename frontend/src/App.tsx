@@ -15,7 +15,7 @@ import {
 } from "./firebase";
 import { Home } from "./Home";
 import { Form } from "./Form";
-import { Landing } from "./Landing";
+import { PublicRoutes, readPublicRoute } from "./landing/PublicRoutes";
 import { Mascot, type MascotName } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
@@ -240,12 +240,17 @@ export default function App() {
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
   const noticeTimer = useRef<number | null>(null);
   const firebaseSubject = useRef<string | null>(null);
+  const authEpoch = useRef(0);
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
-  const publicLanding = firebaseConfigured && authState.kind === "signed-out";
+  const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
+  const publicRoute = readPublicRoute(pathname);
+  const isRootPath = (pathname.replace(/\/+$/, "") || "/") === "/";
+  const publicSurface = !isRootPath || (firebaseConfigured && authState.kind !== "signed-in");
+  const workspaceVisible = canLoadProtectedData && !publicSurface;
   const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
 
   const clearConversation = useCallback(() => {
@@ -263,6 +268,7 @@ export default function App() {
       const nextSubject = user?.uid ?? null;
       if (firebaseSubject.current !== nextSubject) {
         firebaseSubject.current = nextSubject;
+        authEpoch.current += 1;
         clearConversation();
       }
       setAuthState(user ? { kind: "signed-in", user } : { kind: "signed-out" });
@@ -273,6 +279,7 @@ export default function App() {
 
   const signOutOfFirebase = useCallback(() => {
     if (!firebaseConfigured) return;
+    authEpoch.current += 1;
     firebaseSubject.current = null;
     clearConversation();
     setView(null);
@@ -287,6 +294,15 @@ export default function App() {
     signOutOfFirebase();
     return true;
   }, [signOutOfFirebase]);
+
+  const startSignIn = useCallback(() => {
+    setFailure(null);
+    setBusy(true);
+    void signInWithGoogle().catch((error: unknown) => {
+      setBusy(false);
+      setFailure(error instanceof Error ? error.message : "Could not start sign in.");
+    });
+  }, []);
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
@@ -352,25 +368,28 @@ export default function App() {
   }, [canUseAi, loadResolved, mode]);
 
   const load = useCallback(async () => {
-    if (!canLoadProtectedData) return;
+    if (!workspaceVisible) return;
+    const requestEpoch = authEpoch.current;
     setLoadResolved(false);
     setFailure(null);
     try {
       const nextView = await api.today();
+      if (requestEpoch !== authEpoch.current) return;
       setView(nextView);
       setServerModelAvailable(nextView.using_model);
       setFailure(null);
     } catch (error) {
+      if (requestEpoch !== authEpoch.current) return;
       if (error instanceof ApiError && error.status === 401 && returnToSignIn()) return;
       setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     } finally {
-      setLoadResolved(true);
+      if (requestEpoch === authEpoch.current) setLoadResolved(true);
     }
-  }, [canLoadProtectedData, returnToSignIn]);
+  }, [returnToSignIn, workspaceVisible]);
 
   useEffect(() => {
-    if (canLoadProtectedData) void load();
-  }, [canLoadProtectedData, load]);
+    if (workspaceVisible) void load();
+  }, [load, workspaceVisible]);
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -393,6 +412,7 @@ export default function App() {
     async (sentence: string) => {
       const said = sentence.trim();
       if (!said || busy) return;
+      const requestEpoch = authEpoch.current;
 
       setTab("chat");
       setText("");
@@ -401,6 +421,7 @@ export default function App() {
 
       try {
         const result = await api.say(said, mode, geminiKey);
+        if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
         announce(result.kind, result.message, false);
@@ -426,6 +447,7 @@ export default function App() {
           });
         }
       } catch (error) {
+        if (requestEpoch !== authEpoch.current) return;
         if (error instanceof ApiError) {
           if (error.status === 401 && returnToSignIn()) return;
           const kind = error.status === 409 ? "question" : "note";
@@ -449,15 +471,18 @@ export default function App() {
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
   const act = useCallback(
     async (work: () => Promise<Reply | { view: View }>) => {
+      const requestEpoch = authEpoch.current;
       setBusy(true);
       try {
         const result = await work();
+        if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
         if ("kind" in result) {
           announce(result.kind, result.message);
         }
       } catch (error) {
+        if (requestEpoch !== authEpoch.current) return;
         if (error instanceof ApiError) {
           if (error.status === 401 && returnToSignIn()) return;
           const kind = error.status === 409 ? "question" : "note";
@@ -475,12 +500,15 @@ export default function App() {
   );
 
   const connectGoogle = useCallback(async () => {
+    const requestEpoch = authEpoch.current;
     setBusy(true);
     try {
       const { url } = await api.connect();
+      if (requestEpoch !== authEpoch.current) return;
       setFailure(null);
       window.location.href = url;
     } catch (error) {
+      if (requestEpoch !== authEpoch.current) return;
       if (error instanceof ApiError) {
         if (error.status === 401 && returnToSignIn()) return;
         const kind = error.status === 409 ? "question" : "note";
@@ -509,406 +537,414 @@ export default function App() {
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
 
   return (
-    <div className={`app${publicLanding ? " app--public" : ""}`}>
-      <Nav
-        current={tab}
-        todo={shortlist.length}
-        booked={scheduled.length}
-        undo={view?.undo ?? null}
-        busy={busy}
-        onChange={setTab}
-        onUndo={() => void act(() => api.undo())}
-      />
+    <div className={`app${publicSurface ? " app--public" : ""}`}>
+      {!publicSurface && (
+        <Nav
+          current={tab}
+          todo={shortlist.length}
+          booked={scheduled.length}
+          undo={view?.undo ?? null}
+          busy={busy}
+          onChange={setTab}
+          onUndo={() => void act(() => api.undo())}
+        />
+      )}
 
       <main className="main">
-        {authState.kind === "config-error" && <AuthSetupErrorSurface message={authState.message} />}
-
-        {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
-
-        {publicLanding && (
-          <Landing
+        {publicSurface ? (
+          <PublicRoutes
+            route={publicRoute}
             busy={busy}
-            error={failure}
-            onSignIn={() => {
-              setFailure(null);
-              setBusy(true);
-              void signInWithGoogle().catch((error: unknown) => {
-                setBusy(false);
-                setFailure(error instanceof Error ? error.message : "Could not start sign in.");
-              });
-            }}
+            error={failure ?? (authState.kind === "config-error" ? authState.message : null)}
+            authEnabled={firebaseConfigured}
+            authLoading={authState.kind === "loading"}
+            onSignIn={startSignIn}
           />
-        )}
-
-        {canLoadProtectedData && failure && (
-          <div className="banner" role="alert">
-            <Mascot name="cooper_tired" size="sm" decorative />
-            <div className="banner__body">
-              <span className="banner__title">Cooper isn&rsquo;t running</span>
-              <span className="banner__text">
-                Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
-              </span>
-            </div>
-            <button type="button" className="btn btn--quiet" onClick={() => void load()}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        {canLoadProtectedData && tab === "home" && view && (
-          <Home
-            view={view}
-            busy={busy}
-            onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
-            onOpen={setDetail}
-            onSchedule={() => void act(() => api.schedule())}
-            onGoToChat={() => {
-              setTab("chat");
-              input.current?.focus();
-            }}
-          />
-        )}
-
-        {canLoadProtectedData && !loadResolved && !view && loadingTab && (
-          <LoadingSurface tab={loadingTab} />
-        )}
-
-        {canLoadProtectedData && tab === "chat" && (
-          <Chat
-            turns={turns}
-            thinking={busy}
-            mode={mode}
-            canUseAi={canUseAi}
-            manualForm={<Form busy={busy} onSubmit={addFromForm} />}
-            onMode={(next) => {
-              setMode(next);
-              saveMode(next);
-            }}
-            onExample={(example) => void say(example)}
-          />
-        )}
-
-        {canLoadProtectedData && tab === "calendar" && view && (
-          <Calendar
-            view={view}
-            busy={busy}
-            onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
-            onPin={(itemId) => void act(() => api.act(itemId, "pin"))}
-            onDrop={(itemId) => void act(() => api.act(itemId, "drop"))}
-          />
-        )}
-
-        {canLoadProtectedData && tab === "settings" && hours && view && (
-          <div className="scroll">
-            <h1 className="largetitle">
-              Settings
-              <span className="largetitle__sub">{view.timezone}</span>
-            </h1>
-
-            <section className="group">
-              <div className="group__label">Appearance</div>
-              <div className="inset">
-                <div className="segmented" role="group" aria-label="Appearance">
-                  {APPEARANCES.map(({ id: choice, label }) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      className="segment"
-                      aria-pressed={appearance === choice}
-                      onClick={() => chooseAppearance(choice)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <p className="hint">
-                Light unless you say otherwise. System follows whatever your machine is doing.
-              </p>
-            </section>
-
-            {firebaseConfigured && (
-              <section className="group">
-                <div className="group__label">Account</div>
-                <div className="inset">
-                  <div className="field">
-                    <span className="field__label">Signed in</span>
-                    <span className="tag">{signedInEmail ?? "Google account"}</span>
-                    <button type="button" className="btn btn--quiet" onClick={signOutOfFirebase}>
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              </section>
+        ) : (
+          <>
+            {authState.kind === "config-error" && (
+              <AuthSetupErrorSurface message={authState.message} />
             )}
 
-            <section className="group">
-              <div className="group__label">Working hours</div>
-              <div className="inset">
-                <div className="field">
-                  <span className="field__label">Start</span>
-                  <select
-                    aria-label="Day starts at"
-                    value={hours.start_hour}
-                    onChange={(event) =>
-                      void act(() =>
-                        api.setHours({
-                          ...hours,
-                          start_hour: Number(event.target.value),
-                        }),
-                      )
-                    }
-                  >
-                    {Array.from({ length: 24 }, (_, hour) => (
-                      <option key={hour} value={hour}>
-                        {String(hour).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <span className="field__label">End</span>
-                  <select
-                    aria-label="Day ends at"
-                    value={hours.end_hour}
-                    onChange={(event) =>
-                      void act(() =>
-                        api.setHours({
-                          ...hours,
-                          end_hour: Number(event.target.value),
-                        }),
-                      )
-                    }
-                  >
-                    {Array.from({ length: 24 }, (_, index) => index + 1).map((hour) => (
-                      <option key={hour} value={hour}>
-                        {String(hour).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="daypick">
-                  {DAYS.map((name, index) => (
-                    <button
-                      key={name}
-                      type="button"
-                      className="day"
-                      aria-pressed={hours.weekdays.includes(index)}
-                      onClick={() =>
-                        void act(() =>
-                          api.setHours({
-                            ...hours,
-                            weekdays: hours.weekdays.includes(index)
-                              ? hours.weekdays.filter((day) => day !== index)
-                              : [...hours.weekdays, index].sort((a, b) => a - b),
-                          }),
-                        )
-                      }
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="field">
-                  <span className="field__label">Most blocks a day</span>
-                  <input
-                    type="number"
-                    aria-label="Most blocks a day"
-                    min={1}
-                    max={10}
-                    value={hours.max_per_day}
-                    onChange={(event) =>
-                      void act(() =>
-                        api.setHours({
-                          ...hours,
-                          max_per_day: Number(event.target.value),
-                        }),
-                      )
-                    }
-                  />
-                </div>
-              </div>
-              <p className="hint">Nothing is ever booked outside these hours.</p>
-            </section>
+            {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
 
-            <section className="group">
-              <div className="group__label">Google Calendar</div>
-              <div className="inset">
-                <div className="field">
-                  <span className="field__label">Account</span>
-                  <span className="tag">
+            {workspaceVisible && failure && (
+              <div className="banner" role="alert">
+                <Mascot name="cooper_tired" size="sm" decorative />
+                <div className="banner__body">
+                  <span className="banner__title">Cooper isn&rsquo;t running</span>
+                  <span className="banner__text">
+                    Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
+                  </span>
+                </div>
+                <button type="button" className="btn btn--quiet" onClick={() => void load()}>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {workspaceVisible && tab === "home" && view && (
+              <Home
+                view={view}
+                busy={busy}
+                onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
+                onOpen={setDetail}
+                onSchedule={() => void act(() => api.schedule())}
+                onGoToChat={() => {
+                  setTab("chat");
+                  input.current?.focus();
+                }}
+              />
+            )}
+
+            {workspaceVisible && !loadResolved && !view && loadingTab && (
+              <LoadingSurface tab={loadingTab} />
+            )}
+
+            {workspaceVisible && tab === "chat" && (
+              <Chat
+                turns={turns}
+                thinking={busy}
+                mode={mode}
+                canUseAi={canUseAi}
+                manualForm={<Form busy={busy} onSubmit={addFromForm} />}
+                onMode={(next) => {
+                  setMode(next);
+                  saveMode(next);
+                }}
+                onExample={(example) => void say(example)}
+              />
+            )}
+
+            {workspaceVisible && tab === "calendar" && view && (
+              <Calendar
+                view={view}
+                busy={busy}
+                onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
+                onPin={(itemId) => void act(() => api.act(itemId, "pin"))}
+                onDrop={(itemId) => void act(() => api.act(itemId, "drop"))}
+              />
+            )}
+
+            {workspaceVisible && tab === "settings" && hours && view && (
+              <div className="scroll">
+                <h1 className="largetitle">
+                  Settings
+                  <span className="largetitle__sub">{view.timezone}</span>
+                </h1>
+
+                <section className="group">
+                  <div className="group__label">Appearance</div>
+                  <div className="inset">
+                    <div className="segmented" role="group" aria-label="Appearance">
+                      {APPEARANCES.map(({ id: choice, label }) => (
+                        <button
+                          key={choice}
+                          type="button"
+                          className="segment"
+                          aria-pressed={appearance === choice}
+                          onClick={() => chooseAppearance(choice)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="hint">
+                    Light unless you say otherwise. System follows whatever your machine is doing.
+                  </p>
+                </section>
+
+                {firebaseConfigured && (
+                  <section className="group">
+                    <div className="group__label">Account</div>
+                    <div className="inset">
+                      <div className="field">
+                        <span className="field__label">Signed in</span>
+                        <span className="tag">{signedInEmail ?? "Google account"}</span>
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          onClick={signOutOfFirebase}
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                <section className="group">
+                  <div className="group__label">Working hours</div>
+                  <div className="inset">
+                    <div className="field">
+                      <span className="field__label">Start</span>
+                      <select
+                        aria-label="Day starts at"
+                        value={hours.start_hour}
+                        onChange={(event) =>
+                          void act(() =>
+                            api.setHours({
+                              ...hours,
+                              start_hour: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      >
+                        {Array.from({ length: 24 }, (_, hour) => (
+                          <option key={hour} value={hour}>
+                            {String(hour).padStart(2, "0")}:00
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <span className="field__label">End</span>
+                      <select
+                        aria-label="Day ends at"
+                        value={hours.end_hour}
+                        onChange={(event) =>
+                          void act(() =>
+                            api.setHours({
+                              ...hours,
+                              end_hour: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      >
+                        {Array.from({ length: 24 }, (_, index) => index + 1).map((hour) => (
+                          <option key={hour} value={hour}>
+                            {String(hour).padStart(2, "0")}:00
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="daypick">
+                      {DAYS.map((name, index) => (
+                        <button
+                          key={name}
+                          type="button"
+                          className="day"
+                          aria-pressed={hours.weekdays.includes(index)}
+                          onClick={() =>
+                            void act(() =>
+                              api.setHours({
+                                ...hours,
+                                weekdays: hours.weekdays.includes(index)
+                                  ? hours.weekdays.filter((day) => day !== index)
+                                  : [...hours.weekdays, index].sort((a, b) => a - b),
+                              }),
+                            )
+                          }
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="field">
+                      <span className="field__label">Most blocks a day</span>
+                      <input
+                        type="number"
+                        aria-label="Most blocks a day"
+                        min={1}
+                        max={10}
+                        value={hours.max_per_day}
+                        onChange={(event) =>
+                          void act(() =>
+                            api.setHours({
+                              ...hours,
+                              max_per_day: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                  <p className="hint">Nothing is ever booked outside these hours.</p>
+                </section>
+
+                <section className="group">
+                  <div className="group__label">Google Calendar</div>
+                  <div className="inset">
+                    <div className="field">
+                      <span className="field__label">Account</span>
+                      <span className="tag">
+                        {view.calendar.connected
+                          ? (view.calendar.email ?? "Connected")
+                          : view.calendar.configured
+                            ? "Not connected"
+                            : "Not set up"}
+                      </span>
+                      {view.calendar.connected ? (
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          onClick={() => void act(() => api.disconnect())}
+                        >
+                          Disconnect
+                        </button>
+                      ) : view.calendar.configured ? (
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          disabled={busy}
+                          onClick={() => void connectGoogle()}
+                        >
+                          Connect
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="hint">
                     {view.calendar.connected
-                      ? (view.calendar.email ?? "Connected")
+                      ? "Booked work is written to Google. Your own events block scheduling."
                       : view.calendar.configured
-                        ? "Not connected"
-                        : "Not set up"}
-                  </span>
-                  {view.calendar.connected ? (
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      onClick={() => void act(() => api.disconnect())}
-                    >
-                      Disconnect
-                    </button>
-                  ) : view.calendar.configured ? (
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      disabled={busy}
-                      onClick={() => void connectGoogle()}
-                    >
-                      Connect
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              <p className="hint">
-                {view.calendar.connected
-                  ? "Booked work is written to Google. Your own events block scheduling."
-                  : view.calendar.configured
-                    ? "Not connected. Cooper is using its own calendar, which works on its own."
-                    : "Cooper has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
-              </p>
-            </section>
+                        ? "Not connected. Cooper is using its own calendar, which works on its own."
+                        : "Cooper has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
+                  </p>
+                </section>
 
-            <section className="group">
-              <div className="group__label">Gmail confirmations</div>
-              <div className="inset">
-                <div className="field">
-                  <span className="field__label">Status</span>
-                  <span className="tag">
-                    {view.gmail.connected
-                      ? "Connected"
-                      : view.gmail.configured
-                        ? "Not connected"
-                        : "Not configured"}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn--quiet"
-                    disabled={busy || !view.gmail.connected}
-                    onClick={() => void act(() => api.syncGoogle())}
-                  >
-                    {busy ? "Syncing…" : "Sync now"}
-                  </button>
-                </div>
-                <div className="field">
-                  <span className="field__label">Last checked</span>
-                  <span className="tag">
-                    {view.gmail.last_checked ? formatChecked(view.gmail.last_checked) : "Not yet"}
-                  </span>
-                </div>
-                <div className="field">
-                  <span className="field__label">Recent messages</span>
-                  <span className="tag">
-                    {view.gmail.imported} imported · {view.gmail.skipped} skipped
-                  </span>
-                </div>
-              </div>
-              <p className={`hint ${view.gmail.last_error ? "hint--error" : ""}`}>
-                {view.gmail.last_error
-                  ? view.gmail.last_error
-                  : view.gmail.connected
-                    ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
-                    : view.gmail.configured
-                      ? "Connect Google Calendar above to enable Gmail confirmations."
-                      : "Cooper works without Google. Connect Google to import known Gmail confirmations."}
-              </p>
-            </section>
-
-            <section className="group">
-              <div className="group__label">Parsing</div>
-              <div className="inset">
-                <div className="field">
-                  <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
-                  <span className="tag">
-                    {serverModelAvailable
-                      ? "configured"
-                      : geminiKey.trim()
-                        ? "this browser"
-                        : "no key"}
-                  </span>
-                </div>
-                <div className="field field--stacked">
-                  <label className="field__label" htmlFor="gemini-key">
-                    Gemini API key
-                  </label>
-                  <div className="field__secret">
-                    <input
-                      id="gemini-key"
-                      type="password"
-                      autoComplete="off"
-                      maxLength={256}
-                      spellCheck={false}
-                      value={geminiKey}
-                      aria-describedby="gemini-key-hint"
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setGeminiKey(value);
-                        saveGeminiKey(value);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      disabled={!geminiKey}
-                      onClick={() => {
-                        setGeminiKey("");
-                        saveGeminiKey("");
-                        setLoadResolved(false);
-                        void load();
-                      }}
-                    >
-                      Clear
-                    </button>
+                <section className="group">
+                  <div className="group__label">Gmail confirmations</div>
+                  <div className="inset">
+                    <div className="field">
+                      <span className="field__label">Status</span>
+                      <span className="tag">
+                        {view.gmail.connected
+                          ? "Connected"
+                          : view.gmail.configured
+                            ? "Not connected"
+                            : "Not configured"}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--quiet"
+                        disabled={busy || !view.gmail.connected}
+                        onClick={() => void act(() => api.syncGoogle())}
+                      >
+                        {busy ? "Syncing…" : "Sync now"}
+                      </button>
+                    </div>
+                    <div className="field">
+                      <span className="field__label">Last checked</span>
+                      <span className="tag">
+                        {view.gmail.last_checked
+                          ? formatChecked(view.gmail.last_checked)
+                          : "Not yet"}
+                      </span>
+                    </div>
+                    <div className="field">
+                      <span className="field__label">Recent messages</span>
+                      <span className="tag">
+                        {view.gmail.imported} imported · {view.gmail.skipped} skipped
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <p className="hint" id="gemini-key-hint">
-                {canUseAi
-                  ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
-                  : "Works fine without a key. Add one for messier sentences. Ranking never uses a model."}
-              </p>
-            </section>
+                  <p className={`hint ${view.gmail.last_error ? "hint--error" : ""}`}>
+                    {view.gmail.last_error
+                      ? view.gmail.last_error
+                      : view.gmail.connected
+                        ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
+                        : view.gmail.configured
+                          ? "Connect Google Calendar above to enable Gmail confirmations."
+                          : "Cooper works without Google. Connect Google to import known Gmail confirmations."}
+                  </p>
+                </section>
 
-            <section className="group">
-              <div className="group__label">Notifications</div>
-              <div className="inset">
-                <div className="field">
-                  <span className="field__label">Browser alerts</span>
-                  <span className="tag">
-                    {browserAlerts === "unsupported"
-                      ? "Not available"
-                      : browserAlerts === "granted"
-                        ? "On"
-                        : browserAlerts === "denied"
-                          ? "Blocked"
-                          : "Off"}
-                  </span>
-                  {browserAlerts === "default" && (
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      onClick={() => void enableBrowserAlerts()}
-                    >
-                      Enable
-                    </button>
-                  )}
-                </div>
-              </div>
-              <p className="hint">
-                Cooper shows a small in-app notice for each change. Browser alerts appear only when
-                this app is in the background.
-              </p>
-            </section>
+                <section className="group">
+                  <div className="group__label">Parsing</div>
+                  <div className="inset">
+                    <div className="field">
+                      <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
+                      <span className="tag">
+                        {serverModelAvailable
+                          ? "configured"
+                          : geminiKey.trim()
+                            ? "this browser"
+                            : "no key"}
+                      </span>
+                    </div>
+                    <div className="field field--stacked">
+                      <label className="field__label" htmlFor="gemini-key">
+                        Gemini API key
+                      </label>
+                      <div className="field__secret">
+                        <input
+                          id="gemini-key"
+                          type="password"
+                          autoComplete="off"
+                          maxLength={256}
+                          spellCheck={false}
+                          value={geminiKey}
+                          aria-describedby="gemini-key-hint"
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setGeminiKey(value);
+                            saveGeminiKey(value);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          disabled={!geminiKey}
+                          onClick={() => {
+                            setGeminiKey("");
+                            saveGeminiKey("");
+                            setLoadResolved(false);
+                            void load();
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="hint" id="gemini-key-hint">
+                    {canUseAi
+                      ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
+                      : "Works fine without a key. Add one for messier sentences. Ranking never uses a model."}
+                  </p>
+                </section>
 
-            {turns.length > 0 && (
-              <button type="button" className="btn btn--full" onClick={clearConversation}>
-                Clear conversation
-              </button>
+                <section className="group">
+                  <div className="group__label">Notifications</div>
+                  <div className="inset">
+                    <div className="field">
+                      <span className="field__label">Browser alerts</span>
+                      <span className="tag">
+                        {browserAlerts === "unsupported"
+                          ? "Not available"
+                          : browserAlerts === "granted"
+                            ? "On"
+                            : browserAlerts === "denied"
+                              ? "Blocked"
+                              : "Off"}
+                      </span>
+                      {browserAlerts === "default" && (
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          onClick={() => void enableBrowserAlerts()}
+                        >
+                          Enable
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="hint">
+                    Cooper shows a small in-app notice for each change. Browser alerts appear only
+                    when this app is in the background.
+                  </p>
+                </section>
+
+                {turns.length > 0 && (
+                  <button type="button" className="btn btn--full" onClick={clearConversation}>
+                    Clear conversation
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </main>
 
@@ -931,7 +967,7 @@ export default function App() {
         </div>
       )}
 
-      {canLoadProtectedData && detail && (
+      {workspaceVisible && detail && (
         <TaskFrame
           item={detail}
           today={view?.today ?? ""}
@@ -948,7 +984,7 @@ export default function App() {
         the free-text box would be a second, contradictory way in — hidden there. Everywhere else
         it stays as quick capture, routing through whatever mode is set.
       */}
-      {canLoadProtectedData && !(tab === "chat" && mode === "manual") && (
+      {workspaceVisible && !(tab === "chat" && mode === "manual") && (
         <div className="composer">
           <div className="composer__inner">
             <div className="composer__field">

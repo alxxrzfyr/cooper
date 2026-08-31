@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-08-30T15:54:49.570Z",
         "reason": "Existing Cooper wordmark intentionally uses a brand gradient; preserve the established identity."
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "frontend/src/landing/landing.css"
+        ],
+        "createdAt": "2026-08-31T08:51:57.940Z",
+        "reason": "User explicitly requested the Cooper wordmark gradient and its public pages reuse that brand treatment."
       }
     ]
   }
