@@ -36,7 +36,7 @@ def test_vite_proxy_reads_only_the_backend_local_key() -> None:
     assert "VITE_COOPER_KEY" not in text
 
 
-def test_dockerfile_runs_migrations_before_cloud_run_server() -> None:
+def test_dockerfile_runs_migrations_before_render_server() -> None:
     text = (ROOT / "Dockerfile").read_text()
 
     migration = text.index("uv run --frozen --no-dev --no-sync alembic upgrade head")
@@ -52,30 +52,36 @@ def test_dockerfile_runs_migrations_before_cloud_run_server() -> None:
 
 
 def test_backend_env_example_documents_local_and_hosted_values() -> None:
-    text = (ROOT / ".env.example").read_text()
+    local = (ROOT / ".env.example").read_text()
+    hosted = (ROOT / "render.env.example").read_text()
 
     for expected in (
         "COOPER_AUTH_MODE=local",
         "COOPER_DATABASE_URL=sqlite:///./cooper.db",
+    ):
+        assert expected in local
+    for expected in (
         "COOPER_AUTH_MODE=firebase",
         "COOPER_ALLOWED_EMAILS=",
         "COOPER_OAUTH_STATE_SECRET=",
         "COOPER_SYNC_SECRET=",
         "COOPER_GOOGLE_REDIRECT_URI=",
     ):
-        assert expected in text
-    assert "COOPER_GEMINI_API_KEY" not in text
+        assert expected in hosted
+    assert "COOPER_GEMINI_API_KEY" not in local
+    assert "COOPER_GEMINI_API_KEY" not in hosted
+    assert "render.env.example" in local
 
 
 def test_hosted_docs_recommend_supabase_postgres_without_a_second_writer() -> None:
     readme = (ROOT / "README.md").read_text()
     architecture = (ROOT / "ARCHITECTURE.md").read_text()
-    env_example = (ROOT / ".env.example").read_text()
+    hosted = (ROOT / "render.env.example").read_text()
 
     assert "Supabase Postgres is the recommended beta database" in readme
     assert "Cloud SQL remains the single-provider alternative" in readme
     assert "Supabase pooler" in readme
     assert "Supabase Auth is not used" in architecture
     assert "Supabase Storage is not used" in architecture
-    assert "COOPER_DATABASE_URL=postgresql+psycopg://" in env_example
-    assert "sslmode=require" in env_example
+    assert "COOPER_DATABASE_URL=postgresql+psycopg://" in hosted
+    assert "sslmode=require" in hosted

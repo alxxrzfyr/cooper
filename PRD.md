@@ -177,7 +177,7 @@ Not a schedule. A dependency chain.
    scopes are a deliberate decision. Teams assignments then feed the ranked list rather than the
    calendar.
 6. **Accounts, Postgres and hosting.** Built as one piece: Firebase Auth, owner-scoped rows,
-   PostgreSQL migrations, Cloud Run, and Firebase Hosting.
+   PostgreSQL migrations, Render, and Firebase Hosting.
 
 ## How I will know it works
 

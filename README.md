@@ -38,16 +38,16 @@ approved audience, but it is not a team or project-management tool.
 
 ## Technology stack
 
-| Area                         | Technology                                                  |
-| ---------------------------- | ----------------------------------------------------------- |
-| Backend                      | Python 3.12, FastAPI, Uvicorn                               |
-| Validation and configuration | Pydantic Settings                                           |
-| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                     |
-| Frontend                     | React 19, TypeScript, Vite                                  |
-| Authentication               | Firebase Authentication with Google sign-in                 |
-| Calendar and mail            | Google Calendar API and Gmail API over REST                 |
-| AI assistance                | Gemini, supplied per browser through Settings               |
-| Delivery                     | Firebase Hosting for the frontend and Cloud Run for the API |
+| Area                         | Technology                                               |
+| ---------------------------- | -------------------------------------------------------- |
+| Backend                      | Python 3.12, FastAPI, Uvicorn                            |
+| Validation and configuration | Pydantic Settings                                        |
+| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                  |
+| Frontend                     | React 19, TypeScript, Vite                               |
+| Authentication               | Firebase Authentication with Google sign-in              |
+| Calendar and mail            | Google Calendar API and Gmail API over REST              |
+| AI assistance                | Gemini, supplied per browser through Settings            |
+| Delivery                     | Firebase Hosting for the frontend and Render for the API |
 
 ## Architecture
 
