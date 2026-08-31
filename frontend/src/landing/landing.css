@@ -1829,3 +1829,289 @@
     display: none;
   }
 }
+
+/* Product-first pass: center the composition and keep every visual in its own lane. */
+.landing--keeby {
+  --landing-paper: #f5f6f3;
+  --landing-paper-blue: #eef3f7;
+  --landing-paper-green: #eff4ef;
+  --landing-paper-peach: #f5f1ee;
+}
+
+:root[data-theme="dark"] .landing--keeby {
+  --landing-paper: #171a18;
+  --landing-paper-blue: #171c22;
+  --landing-paper-green: #171d19;
+  --landing-paper-peach: #1e1a18;
+}
+
+.landing--keeby .landing__header {
+  min-height: 72px;
+  padding-inline: clamp(24px, 5vw, 72px);
+  background: color-mix(in srgb, var(--landing-paper) 94%, transparent);
+}
+
+.landing--keeby .landing__header .mascot {
+  width: 36px;
+  height: 36px;
+}
+
+.landing--keeby .landing__header-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(18px, 2.7vw, 42px);
+  margin-inline: auto;
+}
+
+.landing--keeby .landing__header-nav a {
+  padding: 7px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.landing--keeby .landing__header-nav a:hover,
+.landing--keeby .landing__header-nav a:focus-visible {
+  color: var(--text);
+}
+
+.landing--keeby .landing__header-cta {
+  min-height: 40px;
+  padding-inline: 17px;
+}
+
+.landing--keeby .landing__header-note {
+  display: none;
+}
+
+.landing--keeby .landing__panel {
+  grid-template-columns: minmax(300px, 0.8fr) minmax(610px, 1.2fr);
+  gap: clamp(34px, 5vw, 78px);
+  padding: clamp(26px, 4vh, 54px) clamp(24px, 7vw, 108px);
+}
+
+.landing--keeby .landing__panel::after {
+  display: none;
+}
+
+.landing--keeby .landing__panel--hero {
+  grid-template-columns: minmax(280px, 0.64fr) minmax(720px, 1.36fr);
+}
+
+.landing--keeby .landing__copy {
+  width: min(100%, 430px);
+  justify-self: center;
+}
+
+.landing--keeby h1,
+.landing--keeby h2 {
+  max-width: 12ch;
+  letter-spacing: -0.065em;
+  line-height: 0.98;
+}
+
+.landing--keeby h1 {
+  font-size: clamp(46px, 5.2vw, 74px);
+}
+
+.landing--keeby h2 {
+  font-size: clamp(40px, 4.35vw, 64px);
+}
+
+.landing--keeby .landing__lede,
+.landing--keeby .landing__body {
+  max-width: 34ch;
+  margin-top: 20px;
+  font-size: clamp(15px, 1.15vw, 18px);
+  line-height: 1.48;
+}
+
+.landing--keeby .landing__primary {
+  margin-top: 24px;
+}
+
+.landing--keeby .landing__hint {
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.landing--keeby .landing__stage,
+.landing--keeby .landing__stage--chat,
+.landing--keeby .landing__stage--calendar {
+  min-height: 0;
+  width: min(100%, 980px);
+  justify-self: center;
+}
+
+.landing--keeby .landing__product-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  align-items: center;
+  gap: clamp(18px, 2.2vw, 30px);
+  width: 100%;
+}
+
+.landing--keeby .landing__product-window,
+.landing--keeby .landing__product-window--capture,
+.landing--keeby .landing__stage--chat .landing__product-window {
+  width: 100%;
+  transform: none;
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.landing--keeby .landing__product-window--capture {
+  border-radius: 16px;
+}
+
+.landing--keeby .landing__support-rail {
+  display: grid;
+  align-content: center;
+  justify-items: stretch;
+  gap: 16px;
+  min-width: 0;
+}
+
+.landing--keeby .landing__support-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.landing--keeby .landing__integration {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.landing--keeby .landing__integration-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: #ea4335;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.landing--keeby .landing__integration--calendar .landing__integration-mark {
+  background: #4285f4;
+}
+
+.landing--keeby .landing__integration p,
+.landing--keeby .landing__integration strong,
+.landing--keeby .landing__integration span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing--keeby .landing__integration p {
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.landing--keeby .landing__integration strong {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.landing--keeby .landing__integration div > span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.landing--keeby .landing__integration time {
+  grid-column: 2;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.landing--keeby .landing__support-rail > .mascot {
+  position: static;
+  width: 112px;
+  height: 112px;
+  justify-self: center;
+  filter: drop-shadow(0 12px 14px color-mix(in srgb, var(--text) 14%, transparent));
+}
+
+.landing--keeby .landing__proof-line {
+  margin-top: 28px;
+}
+
+@media (max-width: 899px) {
+  .landing--keeby .landing__header {
+    min-height: 64px;
+    padding-inline: 18px;
+  }
+
+  .landing--keeby .landing__header-nav {
+    display: none;
+  }
+
+  .landing--keeby .landing__panel,
+  .landing--keeby .landing__panel--hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 42px 22px 68px;
+  }
+
+  .landing--keeby .landing__copy {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .landing--keeby h1 {
+    max-width: 11ch;
+    font-size: clamp(44px, 14vw, 64px);
+  }
+
+  .landing--keeby h2 {
+    max-width: 12ch;
+    font-size: clamp(38px, 12vw, 56px);
+  }
+
+  .landing--keeby .landing__product-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .landing--keeby .landing__support-rail {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .landing--keeby .landing__support-label {
+    grid-column: 1 / -1;
+  }
+
+  .landing--keeby .landing__support-rail > .mascot {
+    grid-column: 2;
+    grid-row: 2;
+    width: 94px;
+    height: 94px;
+  }
+
+  .landing--keeby .landing__support-rail > .landing__integration {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}

@@ -16,6 +16,8 @@ describe("public landing", () => {
       screen.getByRole("heading", { name: "Say it once. See what matters." }),
     ).toBeInTheDocument();
     expect(screen.getByText("Read-only by default")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Product sections" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Landing sections" })).not.toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: "Cooper Home screen with the day view" }),
     ).toBeInTheDocument();
