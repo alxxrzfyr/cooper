@@ -259,6 +259,202 @@
   }
 }
 
+/* Mobile public routes use a single readable column with room for the full action. */
+@media (max-width: 899px) {
+  .public-page.auth-page,
+  .public-page.legal-page {
+    min-height: 100svh;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .auth-page .public-page__header,
+  .legal-page .public-page__header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 11px 18px;
+    background: color-mix(in srgb, var(--auth-bg) 92%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .auth-page .public-page__brand .mascot,
+  .legal-page .public-page__brand .mascot {
+    width: 32px;
+    height: 32px;
+  }
+
+  .auth-page__main {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 28px;
+    width: min(100% - 32px, 520px);
+    padding: 38px 0 54px;
+  }
+
+  .auth-page__intro {
+    max-width: none;
+  }
+
+  .auth-page__intro h1 {
+    max-width: 12ch;
+    font-size: clamp(44px, 12vw, 58px);
+    line-height: 0.98;
+  }
+
+  .auth-page__intro > p:last-of-type {
+    max-width: 35ch;
+    margin-top: 16px;
+    font-size: 16px;
+  }
+
+  .auth-page__note {
+    margin-top: 20px;
+    padding-top: 14px;
+  }
+
+  .auth-page__note .mascot {
+    width: 84px;
+    height: 84px;
+  }
+
+  .auth-page .landing__auth-card {
+    max-width: none;
+    padding: 24px 20px 22px;
+    border-radius: 18px;
+  }
+
+  .auth-page .landing__auth-card h2 {
+    max-width: 13ch;
+    font-size: clamp(30px, 8vw, 36px);
+    line-height: 1.04;
+  }
+
+  .auth-page .landing__auth-switch {
+    margin-top: 20px;
+  }
+
+  .auth-page .landing__auth-switch a {
+    min-height: 44px;
+  }
+
+  .auth-page .landing__google {
+    min-height: 48px;
+    margin-top: 12px;
+  }
+
+  .auth-page .landing__fineprint {
+    max-width: 32ch;
+    margin-inline: auto;
+  }
+
+  .auth-page .public-page__footer,
+  .legal-page .public-page__footer {
+    gap: 10px;
+    padding: 16px 18px 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-page .public-page__header,
+  .legal-page .public-page__header {
+    padding-inline: 14px;
+  }
+
+  .auth-page__main {
+    width: min(100% - 28px, 520px);
+    padding-top: 32px;
+  }
+
+  .auth-page__intro h1 {
+    max-width: 11ch;
+    font-size: clamp(42px, 13vw, 54px);
+  }
+
+  .auth-page__note span {
+    max-width: 180px;
+    font-size: 16px;
+  }
+
+  .auth-page .landing__auth-card {
+    padding-inline: 18px;
+  }
+
+  .auth-page .landing__auth-card h2 {
+    max-width: 12ch;
+    font-size: clamp(29px, 8vw, 34px);
+  }
+}
+
+@media (max-width: 899px) {
+  .legal-page__main {
+    width: min(100% - 32px, 680px);
+    padding: 38px 0 62px;
+  }
+
+  .legal-page__heading h1 {
+    max-width: 12ch;
+    font-size: clamp(40px, 11vw, 52px);
+    line-height: 1;
+    letter-spacing: -0.045em;
+  }
+
+  .legal-page__updated {
+    margin-top: 10px;
+    font-size: 11px;
+  }
+
+  .legal-page__prose {
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .legal-page__intro {
+    padding: 0;
+    font-size: 14px;
+    line-height: 1.58;
+  }
+
+  .legal-page__card {
+    padding: 20px 18px;
+    border-radius: 14px;
+  }
+
+  .legal-page__card h2,
+  .legal-page__prose .legal-page__card h2:first-child {
+    margin-bottom: 8px;
+    font-size: 15px;
+  }
+
+  .legal-page__card p,
+  .legal-page__prose .legal-page__card li {
+    font-size: 14px;
+    line-height: 1.56;
+  }
+}
+
+@media (max-width: 520px) {
+  .legal-page__main {
+    width: min(100% - 28px, 680px);
+    padding-top: 30px;
+  }
+
+  .legal-page__heading h1 {
+    font-size: clamp(38px, 12vw, 48px);
+  }
+
+  .legal-page__prose {
+    margin-top: 22px;
+  }
+
+  .legal-page__card {
+    padding: 18px 16px;
+  }
+}
+
 /* Legal routes share the auth shell so public navigation feels like one product. */
 .public-page.legal-page {
   --auth-bg: #f2f5f1;
