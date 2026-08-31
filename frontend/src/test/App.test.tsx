@@ -901,6 +901,9 @@ describe("the list", () => {
     render(<App />);
     const user = userEvent.setup();
 
+    await waitFor(() => {
+      expect(screen.queryByRole("status", { name: /Loading Cooper/i })).not.toBeInTheDocument();
+    });
     await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
 
     expect(await screen.findByText("review the budget")).toBeInTheDocument();
@@ -1053,7 +1056,15 @@ describe("the calendar", () => {
 
   async function openCalendar() {
     const user = userEvent.setup();
+    // Wait for /api/today before switching tabs. Under CI load, clicking Calendar while the
+    // skeleton is up leaves an empty calendar pane and flakes the assertions below.
+    await waitFor(() => {
+      expect(screen.queryByRole("status", { name: /Loading Cooper/i })).not.toBeInTheDocument();
+    });
     await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
+    await waitFor(() => {
+      expect(screen.queryByRole("status", { name: /Loading Cooper/i })).not.toBeInTheDocument();
+    });
     return user;
   }
 
