@@ -35,8 +35,25 @@ declare global {
 }
 
 const HOSTING_CONFIG_PATH = "/__/firebase/init.json";
+const DEPLOY_CONFIG_PATH = "/cooper-config.json";
 
 let cachedConfig: RuntimeConfig | undefined;
+
+function onFirebaseHosting(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host.endsWith(".web.app") || host.endsWith(".firebaseapp.com");
+}
+
+async function fetchJsonConfig(path: string): Promise<unknown | null> {
+  try {
+    const response = await fetch(path, { credentials: "same-origin" });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -119,20 +136,34 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   const envConfig = readEnvironmentConfig();
   const initial = resolveRuntimeConfig();
   const explicitMode = requestedAuthMode(windowConfig, envConfig);
+  const host =
+    typeof window !== "undefined" ? window.location.hostname : "";
+  const onFirebaseHost = host.endsWith(".web.app") || host.endsWith(".firebaseapp.com");
+  const allowHostedLookup = explicitMode !== "local" || onFirebaseHost;
 
-  if (!initial.firebase && explicitMode !== "local") {
-    try {
-      const response = await fetch(HOSTING_CONFIG_PATH, { credentials: "same-origin" });
-      if (response.ok) {
+  if (!initial.firebase && allowHostedLookup) {
+    for (const path of [HOSTING_CONFIG_PATH, "/cooper-config.json"] as const) {
+      try {
+        const response = await fetch(path, { credentials: "same-origin" });
+        if (!response.ok) continue;
         const payload: unknown = await response.json();
-        const firebase = readFirebaseConfig(payload);
+        if (!isRecord(payload)) continue;
+        const firebase = readFirebaseConfig(
+          isRecord(payload.firebase) ? payload.firebase : payload,
+        );
+        const apiBase = readString(payload.apiBase) ?? initial.apiBase;
         if (firebase) {
-          cachedConfig = { ...initial, authMode: "firebase", firebase };
+          cachedConfig = {
+            ...initial,
+            authMode: "firebase",
+            apiBase,
+            firebase,
+          };
           return cachedConfig;
         }
+      } catch {
+        // Try the next hosted config source.
       }
-    } catch {
-      // A non-Firebase host or an offline local server simply uses local defaults.
     }
   }
 

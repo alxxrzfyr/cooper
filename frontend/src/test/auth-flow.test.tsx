@@ -288,6 +288,31 @@ describe("public auth flow", () => {
     expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
   });
 
+  // Regression: after Google login, a misconfigured API must not bounce back to the landing.
+  test("a reachable auth session stays in the workspace when the API is misconfigured", async () => {
+    window.history.replaceState({}, "", "/");
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<!doctype html><title>Cooper</title>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+
+    render(<App />);
+    await emitFirebaseUser(firebaseMock.user("firebase-id-token"));
+
+    expect(window.location.pathname).toBe("/app");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Cooper API is not configured/i);
+    expect(firebaseMock.signOutUser).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("navigation", { name: "Sections" })).not.toHaveLength(0);
+  });
+
   test("Firebase mode with incomplete config fails closed", () => {
     firebaseMock.authMode = "firebase";
     firebaseMock.configured = false;

@@ -425,6 +425,8 @@ export default function App() {
     } catch (error) {
       if (requestEpoch !== authEpoch.current) return;
       if (error instanceof ApiError && error.status === 401 && returnToSignIn()) return;
+      // Stay in the workspace for config/network failures (502, CORS, cold start).
+      // Signing out here made successful Google login look like it "did nothing".
       setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     } finally {
       if (requestEpoch === authEpoch.current) setLoadResolved(true);
@@ -620,9 +622,17 @@ export default function App() {
               <div className="banner" role="alert">
                 <Mascot name="cooper_tired" size="sm" decorative />
                 <div className="banner__body">
-                  <span className="banner__title">Cooper isn&rsquo;t running</span>
+                  <span className="banner__title">
+                    {firebaseConfigured ? "Cooper can\u2019t reach the API" : "Cooper isn\u2019t running"}
+                  </span>
                   <span className="banner__text">
-                    Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
+                    {firebaseConfigured ? (
+                      failure
+                    ) : (
+                      <>
+                        Start it with <code>uv run uvicorn cooper.app:app --host 127.0.0.1</code>.
+                      </>
+                    )}
                   </span>
                 </div>
                 <button type="button" className="btn btn--quiet" onClick={() => void load()}>

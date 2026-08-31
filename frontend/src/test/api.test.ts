@@ -37,4 +37,27 @@ describe("API runtime configuration", () => {
     const request = vi.mocked(fetch).mock.calls[0]?.[1];
     expect(new Headers(request?.headers).get("X-Cooper-Key")).toBe("runtime-key");
   });
+
+  // Regression: post-login handoff — Firebase Hosting SPA fallback must not look like success.
+  test("rejects HTML API responses instead of parsing the SPA shell", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<!doctype html><html></html>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+    vi.resetModules();
+    const { api } = await import("../api");
+    const { ApiError } = await import("../types");
+
+    await expect(api.today()).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining("Cooper API is not configured"),
+    });
+    await expect(api.today()).rejects.toBeInstanceOf(ApiError);
+  });
 });

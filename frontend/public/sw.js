@@ -1,6 +1,6 @@
-/* Cache the application shell, but never cache API responses. */
+/* Cache the application shell, but never cache API responses or Firebase reserved URLs. */
 
-const CACHE = "cooper-shell-v1";
+const CACHE = "cooper-shell-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -25,6 +25,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   // Never cache the API. Showing yesterday's tasks as if they were today's would be a lie.
   if (url.pathname.startsWith("/api/") || url.port === "8000") return;
+  // Firebase Hosting reserved URLs (auth config, etc.) must always hit the network.
+  if (url.pathname.startsWith("/__/")) return;
+  // Deployed runtime config may change without a hashed filename.
+  if (url.pathname === "/cooper-config.json") return;
 
   // Navigations: network first so a deploy is picked up, cache as the offline fallback.
   if (request.mode === "navigate") {

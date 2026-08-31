@@ -26,18 +26,35 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (init?.body) headers.set("Content-Type", "application/json");
 
-  const response = await fetch(`${getRuntimeConfig().apiBase}${path}`, { ...init, headers });
+  const base = getRuntimeConfig().apiBase;
+  const response = await fetch(`${base}${path}`, { ...init, headers });
+  const contentType = response.headers.get("content-type") ?? "";
+  const looksLikeJson = contentType.includes("application/json");
+
   if (!response.ok) {
     let detail = `Request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") detail = body.detail;
-    } catch {
-      /* a non-JSON error is still an error; the status carries the meaning */
+    if (looksLikeJson) {
+      try {
+        const body = await response.json();
+        if (typeof body?.detail === "string") detail = body.detail;
+      } catch {
+        /* a non-JSON error is still an error; the status carries the meaning */
+      }
     }
     throw new ApiError(response.status, detail);
   }
-  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+
+  if (response.status === 204) return undefined as T;
+
+  if (!looksLikeJson) {
+    // Firebase Hosting SPA fallback returns HTML 200 for /api/* when apiBase is unset.
+    throw new ApiError(
+      502,
+      "Cooper API is not configured for this site. Set the Render URL in cooper-config.json (apiBase).",
+    );
+  }
+
+  return (await response.json()) as T;
 }
 
 const post = (body?: unknown): RequestInit => ({

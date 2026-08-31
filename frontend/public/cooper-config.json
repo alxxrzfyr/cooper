@@ -1,0 +1,10 @@
+{
+  "authMode": "firebase",
+  "apiBase": "",
+  "firebase": {
+    "apiKey": "AIzaSyBU2YGdJNLT4aQu2qQVXHI6cN--iCuOK3Y",
+    "authDomain": "trythecooper.firebaseapp.com",
+    "projectId": "trythecooper",
+    "appId": "1:294519937413:web:45f2be2c778c2e91804cec"
+  }
+}
