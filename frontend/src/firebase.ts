@@ -8,34 +8,17 @@ import {
   type Unsubscribe,
   type User,
 } from "firebase/auth";
+import { getRuntimeConfig } from "./runtime-config";
 
 export type FirebaseUser = User;
 export type ClientAuthMode = "local" | "firebase";
 
-interface FirebaseConfig {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  appId: string;
-}
-
-function readAuthMode(): ClientAuthMode {
-  return import.meta.env.VITE_COOPER_AUTH_MODE === "firebase" ? "firebase" : "local";
-}
-
-function readConfig(): FirebaseConfig | null {
-  const config = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? "",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "",
-  };
-  return Object.values(config).every((value) => value.trim()) ? config : null;
-}
-
-export const clientAuthMode = readAuthMode();
-const config = clientAuthMode === "firebase" ? readConfig() : null;
-const app: FirebaseApp | null = config ? initializeApp(config) : null;
+const runtimeConfig = getRuntimeConfig();
+export const clientAuthMode: ClientAuthMode = runtimeConfig.authMode;
+const app: FirebaseApp | null =
+  clientAuthMode === "firebase" && runtimeConfig.firebase
+    ? initializeApp(runtimeConfig.firebase)
+    : null;
 
 export const firebaseConfigured = clientAuthMode === "firebase" && app !== null;
 export const firebaseConfigError =

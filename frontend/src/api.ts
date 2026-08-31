@@ -10,8 +10,8 @@ import {
   type View,
 } from "./types";
 import { auth, clientAuthMode } from "./firebase";
+import { getRuntimeConfig } from "./runtime-config";
 
-const BASE = import.meta.env.VITE_COOPER_API ?? "";
 const KEY_HEADER = "X-Cooper-Key";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -21,11 +21,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     if (!token) throw new ApiError(401, "Sign in to continue.");
     headers.set("Authorization", `Bearer ${token}`);
   } else {
-    headers.set(KEY_HEADER, import.meta.env.VITE_COOPER_KEY ?? "");
+    const localKey = getRuntimeConfig().localKey;
+    if (localKey) headers.set(KEY_HEADER, localKey);
   }
   if (init?.body) headers.set("Content-Type", "application/json");
 
-  const response = await fetch(`${BASE}${path}`, { ...init, headers });
+  const response = await fetch(`${getRuntimeConfig().apiBase}${path}`, { ...init, headers });
   if (!response.ok) {
     let detail = `Request failed (${response.status})`;
     try {
