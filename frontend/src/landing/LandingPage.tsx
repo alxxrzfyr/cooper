@@ -23,6 +23,29 @@ function panelId(id: string): string {
 }
 
 function WindowChrome({ label, children }: { label: string; children: ReactNode }) {
+  const capture = {
+    Today: {
+      source: "/assets/landing/cooper-app-home.webp",
+      alt: "Cooper Home screen with the day view",
+    },
+    "Cooper chat": {
+      source: "/assets/landing/cooper-app-ai.webp",
+      alt: "Cooper AI chat screen with suggested questions",
+    },
+    Calendar: {
+      source: "/assets/landing/cooper-app-calendar.webp",
+      alt: "Cooper Calendar screen with the weekly schedule grid",
+    },
+  }[label as "Today" | "Cooper chat" | "Calendar"];
+
+  if (capture) {
+    return (
+      <div className="landing__product-window landing__product-window--capture">
+        <img src={capture.source} alt={capture.alt} loading="eager" decoding="async" />
+      </div>
+    );
+  }
+
   return (
     <div className="landing__product-window">
       <div className="landing__window-bar">

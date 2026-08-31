@@ -1262,6 +1262,34 @@
 .landing--keeby {
   --landing-line: color-mix(in srgb, var(--text) 14%, transparent);
   --landing-soft: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  --landing-paper: #f3f0e8;
+  --landing-paper-blue: #edf2f8;
+  --landing-paper-green: #edf4ed;
+  --landing-paper-peach: #f5eee8;
+  background: var(--landing-paper);
+}
+
+.landing--keeby .landing__panel--untangle {
+  background: var(--landing-paper);
+}
+
+.landing--keeby .landing__panel--prioritize {
+  background: var(--landing-paper-blue);
+}
+
+.landing--keeby .landing__panel--room {
+  background: var(--landing-paper-green);
+}
+
+.landing--keeby .landing__panel--start {
+  background: var(--landing-paper-peach);
+}
+
+:root[data-theme="dark"] .landing--keeby {
+  --landing-paper: #151916;
+  --landing-paper-blue: #14191f;
+  --landing-paper-green: #151c18;
+  --landing-paper-peach: #1b1715;
 }
 
 .landing--keeby .landing__header {
@@ -1346,6 +1374,20 @@
   background: var(--card);
   box-shadow: 0 26px 70px color-mix(in srgb, var(--text) 16%, transparent);
   transform: rotate(-1.4deg);
+}
+
+.landing__product-window--capture {
+  aspect-ratio: 1440 / 680;
+  transform: rotate(-1.4deg);
+}
+
+.landing__product-window--capture > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1440 / 680;
+  object-fit: cover;
+  object-position: left top;
 }
 
 .landing__window-bar {
@@ -1552,6 +1594,10 @@
   transform: rotate(1.2deg);
 }
 
+.landing__stage--chat .landing__product-window--capture {
+  transform: rotate(1.2deg);
+}
+
 .landing__stage--chat > .mascot,
 .landing__stage--calendar > .mascot {
   position: absolute;
@@ -1743,6 +1789,14 @@
 
   .landing__product-window {
     width: 100%;
+  }
+
+  .landing__product-window--capture {
+    aspect-ratio: 4 / 3;
+  }
+
+  .landing__product-window--capture > img {
+    object-position: left top;
   }
 
   .landing__stage--today > .mascot {

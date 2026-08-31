@@ -16,6 +16,15 @@ describe("public landing", () => {
       screen.getByRole("heading", { name: "Say it once. See what matters." }),
     ).toBeInTheDocument();
     expect(screen.getByText("Read-only by default")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Cooper Home screen with the day view" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Cooper AI chat screen with suggested questions" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Cooper Calendar screen with the weekly schedule grid" }),
+    ).toBeInTheDocument();
   });
 
   test("links each account intent to its dedicated public route", () => {
