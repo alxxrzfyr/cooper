@@ -113,6 +113,10 @@ function view(overrides: Partial<View> = {}): View {
   };
 }
 
+function localIsoOnTestDay(hour: number, minute = 0): string {
+  return new Date(2026, 7, 31, hour, minute, 0, 0).toISOString();
+}
+
 function reply(overrides: Partial<Reply> = {}): Reply {
   return {
     kind: "added",
@@ -894,8 +898,8 @@ describe("the list", () => {
       ...ranked(),
       id: "b1",
       title: "review the budget",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(10),
+      end_at: localIsoOnTestDay(11),
     };
     stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
@@ -1045,8 +1049,8 @@ describe("the calendar", () => {
   function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     return {
       title: "Standup with the team",
-      start_at: "2026-08-31T01:00:00+00:00",
-      end_at: "2026-08-31T01:15:00+00:00",
+      start_at: localIsoOnTestDay(10),
+      end_at: localIsoOnTestDay(10, 15),
       category: "personal",
       mine: false,
       source: "google",
@@ -1081,8 +1085,8 @@ describe("the calendar", () => {
     const booked = {
       ...ranked(),
       id: "b1",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     stub({ view: view({ scheduled: [booked], events: [event()] }) });
     render(<App />);
@@ -1099,8 +1103,8 @@ describe("the calendar", () => {
       ...ranked(),
       id: "b1",
       title: "write the report",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     stub({
       view: view({
@@ -1109,8 +1113,8 @@ describe("the calendar", () => {
           event({
             title: "write the report",
             mine: true,
-            start_at: "2026-08-31T02:00:00+00:00",
-            end_at: "2026-08-31T03:00:00+00:00",
+            start_at: localIsoOnTestDay(11),
+            end_at: localIsoOnTestDay(12),
           }),
         ],
       }),
@@ -1130,8 +1134,8 @@ describe("the calendar", () => {
       id: "s1",
       title: "revise for the midterm",
       category: "academics" as const,
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     stub({ view: view({ scheduled: [study], events: [event({ category: "organizations" })] }) });
     render(<App />);
@@ -1150,8 +1154,8 @@ describe("the calendar", () => {
     const booked = {
       ...ranked(),
       id: "b1",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
@@ -1179,8 +1183,8 @@ describe("the calendar", () => {
     const booked = {
       ...ranked(),
       id: "b1",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
@@ -1206,8 +1210,8 @@ describe("the calendar", () => {
         scheduled: [
           {
             ...ranked(),
-            start_at: "2026-08-31T02:00:00+00:00",
-            end_at: "2026-08-31T03:00:00+00:00",
+            start_at: localIsoOnTestDay(11),
+            end_at: localIsoOnTestDay(12),
           },
         ],
       }),
@@ -1249,8 +1253,8 @@ describe("the calendar", () => {
     const booked = {
       ...ranked(),
       id: "b1",
-      start_at: "2026-08-31T02:00:00+00:00",
-      end_at: "2026-08-31T03:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
     };
     const calls = stub({ view: view({ scheduled: [booked] }) });
     render(<App />);
@@ -1324,8 +1328,8 @@ describe("gmail confirmations", () => {
       kind: "event",
       title: "Design conference",
       minutes: null,
-      start_at: "2026-08-31T04:00:00+00:00",
-      end_at: "2026-08-31T05:00:00+00:00",
+      start_at: localIsoOnTestDay(11),
+      end_at: localIsoOnTestDay(12),
       source: "gmail",
       source_ref: "event-1",
       ...overrides,
