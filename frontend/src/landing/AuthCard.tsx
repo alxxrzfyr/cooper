@@ -31,6 +31,7 @@ export function AuthCard({
 }: AuthCardProps) {
   const copy = COPY[intent];
   const disabled = busy || authLoading || !authEnabled;
+  const googleAction = intent === "login" ? "Sign in with Google" : "Register with Google";
 
   return (
     <section className="landing__auth-card" aria-labelledby="auth-card-title">
@@ -77,7 +78,7 @@ export function AuthCard({
           : busy
             ? "Opening Google…"
             : authEnabled
-              ? "Continue with Google"
+              ? googleAction
               : "Hosted sign-in unavailable"}
       </button>
 

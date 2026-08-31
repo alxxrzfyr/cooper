@@ -193,7 +193,23 @@ describe("public auth flow", () => {
 
     await emitFirebaseUser(null);
 
-    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("signed-out Firebase users are sent to login when opening /app", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const fetch = vi.fn(async () => json(view()));
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+    await emitFirebaseUser(null);
+
+    expect(window.location.pathname).toBe("/login");
+    expect(await screen.findByRole("heading", { name: "Log in to Cooper" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -225,14 +241,13 @@ describe("public auth flow", () => {
 
     await userEvent
       .setup()
-      .click(await screen.findByRole("button", { name: "Continue with Google" }));
+      .click(await screen.findByRole("button", { name: "Sign in with Google" }));
 
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Cooper is currently in public beta · The app is still under construction"),
-    ).toBeInTheDocument();
-    expect(document.querySelector(".auth-screen .mascot")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "Your day is still here." })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+    expect(document.querySelector(".auth-page__note .mascot")).toHaveAttribute(
       "src",
       "/assets/mascot/cooper_waving.webp",
     );
@@ -269,7 +284,7 @@ describe("public auth flow", () => {
     render(<App />);
     await emitFirebaseUser(firebaseMock.user("expired-token"));
 
-    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
   });
 
@@ -344,7 +359,7 @@ describe("public auth flow", () => {
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
     await user.click(await screen.findByRole("button", { name: "Connect" }));
 
-    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);
   });
 });

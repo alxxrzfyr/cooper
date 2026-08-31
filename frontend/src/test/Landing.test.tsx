@@ -11,7 +11,7 @@ describe("public landing", () => {
     expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Create account" })).not.toHaveLength(0);
     expect(screen.getAllByRole("link", { name: "Log in" })).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Register with Google" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "One thought in. A clear day out." }),
     ).toBeInTheDocument();
@@ -56,7 +56,7 @@ describe("public landing", () => {
     const onSignIn = vi.fn();
     render(<Landing busy={false} error={null} onSignIn={onSignIn} />);
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "Continue with Google" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Register with Google" }));
 
     expect(onSignIn).toHaveBeenCalledOnce();
   });

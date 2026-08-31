@@ -303,6 +303,9 @@ export default function App() {
       if (user && PUBLIC_AUTH_PATHS.has(currentPath)) {
         navigate("/app");
       }
+      if (!user && currentPath === "/app") {
+        navigate("/login");
+      }
       const nextSubject = user?.uid ?? null;
       if (firebaseSubject.current !== nextSubject) {
         firebaseSubject.current = nextSubject;
@@ -323,8 +326,11 @@ export default function App() {
     setView(null);
     setAuthState({ kind: "signed-out" });
     setLoadResolved(true);
+    if (normalizePathname(pathnameRef.current) === "/app") {
+      navigate("/login");
+    }
     void signOutUser();
-  }, [clearConversation]);
+  }, [clearConversation, navigate]);
 
   const returnToSignIn = useCallback(() => {
     if (!firebaseConfigured) return false;
