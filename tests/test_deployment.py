@@ -19,22 +19,21 @@ def test_firebase_hosting_rewrites_api_to_cloud_run() -> None:
     assert ".firebaserc" not in {path.name for path in ROOT.iterdir()}
 
 
-def test_frontend_env_example_contains_only_public_values() -> None:
+def test_frontend_setup_does_not_require_an_environment_file() -> None:
     text = (ROOT / "frontend" / ".env.example").read_text()
 
-    assert "VITE_COOPER_API=" in text
-    assert "VITE_FIREBASE_API_KEY=" in text
-    assert "VITE_FIREBASE_AUTH_DOMAIN=" in text
-    assert "VITE_FIREBASE_PROJECT_ID=" in text
-    assert "VITE_FIREBASE_APP_ID=" in text
-    for private_name in (
-        "DATABASE_URL",
-        "CLIENT_SECRET",
-        "ENCRYPTION_KEY",
-        "OAUTH_STATE_SECRET",
-        "SYNC_SECRET",
-    ):
-        assert private_name not in text
+    assert "No frontend environment file is required" in text
+    assert "VITE_COOPER_KEY" not in text
+    assert "VITE_FIREBASE_API_KEY" not in text
+
+
+def test_vite_proxy_reads_only_the_backend_local_key() -> None:
+    text = (ROOT / "frontend" / "vite.config.ts").read_text()
+
+    assert "loadEnv" in text
+    assert "COOPER_SHARED_KEY" in text
+    assert '"X-Cooper-Key"' in text
+    assert "VITE_COOPER_KEY" not in text
 
 
 def test_dockerfile_runs_migrations_before_cloud_run_server() -> None:
