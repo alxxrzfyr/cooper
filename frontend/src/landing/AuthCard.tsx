@@ -9,14 +9,12 @@ interface AuthCardProps {
   onSignIn: () => void;
 }
 
-const COPY: Record<AuthIntent, { kicker: string; title: string; description: string }> = {
+const COPY: Record<AuthIntent, { title: string; description: string }> = {
   signup: {
-    kicker: "A calmer day starts here",
     title: "Create your Cooper account",
     description: "Create a private Cooper workspace for your own tasks, events, and errands.",
   },
   login: {
-    kicker: "Welcome back",
     title: "Log in to Cooper",
     description: "Return to your private workspace and the commitments you already made.",
   },
@@ -36,7 +34,6 @@ export function AuthCard({
 
   return (
     <section className="landing__auth-card" aria-labelledby="auth-card-title">
-      <p className="landing__auth-kicker">{copy.kicker}</p>
       <h2 id="auth-card-title">{copy.title}</h2>
       <p>{copy.description}</p>
 
