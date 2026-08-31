@@ -65,3 +65,16 @@ def test_backend_env_example_documents_local_and_hosted_values() -> None:
     ):
         assert expected in text
     assert "COOPER_GEMINI_API_KEY" not in text
+
+
+def test_hosted_docs_recommend_supabase_postgres_without_a_second_writer() -> None:
+    readme = (ROOT / "README.md").read_text()
+    architecture = (ROOT / "ARCHITECTURE.md").read_text()
+    env_example = (ROOT / ".env.example").read_text()
+
+    assert "Supabase Postgres is the recommended beta database" in readme
+    assert "Cloud SQL remains the single-provider alternative" in readme
+    assert "Supabase pooler" in readme
+    assert "Supabase Auth is not used" in architecture
+    assert "Supabase Storage is not used" in architecture
+    assert "COOPER_DATABASE_URL=postgresql+psycopg://" in env_example

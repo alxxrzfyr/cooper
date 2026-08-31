@@ -177,7 +177,10 @@ Settings, and those Calendar/Gmail refresh tokens are encrypted per owner.
 2. Add only the friends/family emails you allow to `COOPER_ALLOWED_EMAILS`.
 3. In Google Cloud, enable Calendar API and Gmail API, then create a Web application OAuth client.
 4. Add this OAuth callback exactly: `https://<firebase-site>.web.app/api/google/callback`.
-5. Use PostgreSQL: Cloud SQL or another compatible `postgresql+psycopg://...` database URL.
+5. Create a Supabase project. Supabase Postgres is the recommended beta database; set the
+   server-only `COOPER_DATABASE_URL` to its `postgresql+psycopg://...` Supabase pooler URL.
+   Cloud SQL remains the single-provider alternative when keeping identity, compute, and data
+   in Google Cloud matters more than the lowest setup cost.
 6. Deploy the Dockerfile to Cloud Run service id `cooper-api` in `asia-southeast1`.
 7. Set Cloud Run secrets/env: `COOPER_AUTH_MODE=firebase`, `COOPER_FIREBASE_PROJECT_ID`,
    `COOPER_ALLOWED_EMAILS`, `COOPER_DATABASE_URL`, `COOPER_ORIGIN`, Google OAuth values,
@@ -190,7 +193,9 @@ Cloud Run runs `alembic upgrade head` before starting Uvicorn. Local Uvicorn sta
 `127.0.0.1`; the Dockerfile's `0.0.0.0` listener is only for Cloud Run's assigned container port.
 
 Firebase's Spark plan is fine for experimenting with Auth and Hosting, but this architecture needs
-Cloud Run and PostgreSQL. Linking billing upgrades the project to Blaze. Set budget alerts before
+Cloud Run and PostgreSQL. Linking billing upgrades the project to Blaze. Supabase's free database
+is a good beta fit, but its inactive projects can pause and it does not include automatic backups;
+export or upgrade before treating it as the only copy of important data. Set budget alerts before
 inviting people. Gmail readonly is a restricted scope: personal/testing use is free, but a
 published app for broad public users can require Google's paid security assessment.
 

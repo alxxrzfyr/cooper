@@ -111,8 +111,15 @@ twenty rows per owner. Not an audit log.
 ### Databases
 
 SQLite remains the local default, via SQLAlchemy. Hosted mode uses PostgreSQL by setting
-`COOPER_DATABASE_URL`. Alembic owns schema upgrades for both; `create_all` only makes a fresh local
-database convenient. Write no database-specific SQL from here on.
+`COOPER_DATABASE_URL`; Supabase Postgres is the recommended beta provider and Cloud SQL remains
+the single-provider Google Cloud alternative. Use a server-only Supabase pooler connection for
+runtime traffic and keep the connection string out of the browser. Alembic owns schema upgrades
+for both; `create_all` only makes a fresh local database convenient. Write no database-specific
+SQL from here on.
+
+Supabase is storage only in this architecture. Supabase Auth is not used: Firebase Auth identifies
+the person and FastAPI verifies the Firebase ID token. Supabase Storage is not used: Cooper stores
+tasks, events, settings, and undo state in PostgreSQL, and has no file-upload requirement.
 
 ## The flow
 
