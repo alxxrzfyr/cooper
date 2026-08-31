@@ -136,8 +136,7 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   const envConfig = readEnvironmentConfig();
   const initial = resolveRuntimeConfig();
   const explicitMode = requestedAuthMode(windowConfig, envConfig);
-  const host =
-    typeof window !== "undefined" ? window.location.hostname : "";
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
   const onFirebaseHost = host.endsWith(".web.app") || host.endsWith(".firebaseapp.com");
   const allowHostedLookup = explicitMode !== "local" || onFirebaseHost;
 

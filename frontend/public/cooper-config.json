@@ -1,6 +1,6 @@
 {
   "authMode": "firebase",
-  "apiBase": "",
+  "apiBase": "https://cooper-fjfx.onrender.com",
   "firebase": {
     "apiKey": "AIzaSyBU2YGdJNLT4aQu2qQVXHI6cN--iCuOK3Y",
     "authDomain": "trythecooper.firebaseapp.com",

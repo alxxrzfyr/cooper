@@ -623,7 +623,9 @@ export default function App() {
                 <Mascot name="cooper_tired" size="sm" decorative />
                 <div className="banner__body">
                   <span className="banner__title">
-                    {firebaseConfigured ? "Cooper can\u2019t reach the API" : "Cooper isn\u2019t running"}
+                    {firebaseConfigured
+                      ? "Cooper can\u2019t reach the API"
+                      : "Cooper isn\u2019t running"}
                   </span>
                   <span className="banner__text">
                     {firebaseConfigured ? (
