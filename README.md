@@ -188,6 +188,11 @@ Settings, and those Calendar/Gmail refresh tokens are encrypted per owner.
    Cloud Run, while the frontend uses same-origin API paths and Firebase's reserved public config.
 9. Add Cloud Scheduler to POST `/api/internal/google/sync` with `X-Cooper-Sync-Secret`.
 
+Copy the Supabase connection string from its **Connect** panel and keep `sslmode=require`. Use
+the session pooler URL for the long-lived Cloud Run runtime; a direct URL is also suitable for
+one-off Alembic or backup commands when the operator's network supports the database's address
+family. The URL is a server secret, so it never belongs in Firebase Hosting or browser config.
+
 Cloud Run runs `alembic upgrade head` before starting Uvicorn. Local Uvicorn stays bound to
 `127.0.0.1`; the Dockerfile's `0.0.0.0` listener is only for Cloud Run's assigned container port.
 

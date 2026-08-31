@@ -81,3 +81,4 @@ def test_hosted_docs_recommend_supabase_postgres_without_a_second_writer() -> No
     assert "Supabase Auth is not used" in architecture
     assert "Supabase Storage is not used" in architecture
     assert "COOPER_DATABASE_URL=postgresql+psycopg://" in env_example
+    assert "sslmode=require" in env_example
