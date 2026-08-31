@@ -6,16 +6,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_firebase_hosting_rewrites_api_to_cloud_run() -> None:
+def test_firebase_hosting_is_spa_only() -> None:
     config = json.loads((ROOT / "firebase.json").read_text())
 
     rewrites = config["hosting"]["rewrites"]
-    api = next(rewrite for rewrite in rewrites if rewrite["source"] == "/api/**")
-    callback = next(rewrite for rewrite in rewrites if rewrite["source"] == "/api/google/callback")
-
     assert config["hosting"]["public"] == "frontend/dist"
-    assert api["run"] == {"serviceId": "cooper-api", "region": "asia-southeast1"}
-    assert callback["run"] == {"serviceId": "cooper-api", "region": "asia-southeast1"}
+    assert rewrites == [{"source": "**", "destination": "/index.html"}]
+    assert not any("run" in rewrite for rewrite in rewrites)
     assert ".firebaserc" not in {path.name for path in ROOT.iterdir()}
 
 
