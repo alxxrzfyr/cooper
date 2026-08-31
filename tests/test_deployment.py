@@ -21,10 +21,13 @@ def test_firebase_hosting_rewrites_api_to_cloud_run() -> None:
 
 def test_frontend_setup_does_not_require_an_environment_file() -> None:
     text = (ROOT / "frontend" / ".env.example").read_text()
+    readme = (ROOT / "README.md").read_text()
 
     assert "No frontend environment file is required" in text
     assert "VITE_COOPER_KEY" not in text
     assert "VITE_FIREBASE_API_KEY" not in text
+    assert "VITE_COOPER_KEY" not in readme
+    assert ".env.local" not in readme
 
 
 def test_vite_proxy_reads_only_the_backend_local_key() -> None:

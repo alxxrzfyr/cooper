@@ -157,7 +157,6 @@ uv run uvicorn cooper.app:app --reload --host 127.0.0.1
 
 # second terminal
 cd frontend && npm install
-printf 'VITE_COOPER_KEY=<same key>\n' > .env.local
 npm run dev
 ```
 
@@ -186,7 +185,7 @@ Settings, and those Calendar/Gmail refresh tokens are encrypted per owner.
    `COOPER_ALLOWED_EMAILS`, `COOPER_DATABASE_URL`, `COOPER_ORIGIN`, Google OAuth values,
    `COOPER_ENCRYPTION_KEY`, `COOPER_OAUTH_STATE_SECRET`, and `COOPER_SYNC_SECRET`.
 8. Deploy Firebase Hosting with `firebase.json`; `/api/**` and the OAuth callback rewrite to
-   Cloud Run, while the frontend keeps `VITE_COOPER_API=` empty.
+   Cloud Run, while the frontend uses same-origin API paths and Firebase's reserved public config.
 9. Add Cloud Scheduler to POST `/api/internal/google/sync` with `X-Cooper-Sync-Secret`.
 
 Cloud Run runs `alembic upgrade head` before starting Uvicorn. Local Uvicorn stays bound to
