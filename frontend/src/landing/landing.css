@@ -2404,3 +2404,9 @@
     flex-direction: column;
   }
 }
+
+
+/* Keep one portrait render; the background is the decorative fallback. */
+.landing__cooper-portrait .mascot {
+  opacity: 0;
+}
