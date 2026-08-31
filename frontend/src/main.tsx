@@ -8,10 +8,10 @@ import { loadRuntimeConfig } from "./runtime-config";
 applyAppearance(readAppearance());
 watchSystem(() => applyAppearance(readAppearance()));
 
-const root = document.getElementById("root");
-if (!root) throw new Error("Missing #root");
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("Missing #root");
 
-async function bootstrap(): Promise<void> {
+async function bootstrap(root: HTMLElement): Promise<void> {
   await loadRuntimeConfig();
   const { default: App } = await import("./App");
 
@@ -30,4 +30,4 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-void bootstrap();
+void bootstrap(rootElement);

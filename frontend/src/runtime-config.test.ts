@@ -57,16 +57,17 @@ describe("runtime configuration", () => {
     window.__COOPER_CONFIG__ = { authMode: "firebase" };
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            apiKey: "public-key",
-            authDomain: "cooper.firebaseapp.com",
-            projectId: "cooper",
-            appId: "app-id",
-          }),
-          { status: 200 },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              apiKey: "public-key",
+              authDomain: "cooper.firebaseapp.com",
+              projectId: "cooper",
+              appId: "app-id",
+            }),
+            { status: 200 },
+          ),
       ),
     );
 
@@ -80,7 +81,10 @@ describe("runtime configuration", () => {
 
   test("keeps explicit local mode when the public endpoint is unavailable", async () => {
     vi.stubEnv("VITE_COOPER_AUTH_MODE", "local");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 404 })),
+    );
 
     const { loadRuntimeConfig } = await loadRuntimeModule();
     const config = await loadRuntimeConfig();

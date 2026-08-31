@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 const bootstrap = vi.hoisted(() => {
   const state = { appRendered: false };
-  let release = () => undefined;
+  let release: (value?: void | PromiseLike<void>) => void = () => undefined;
   const ready = new Promise<void>((resolve) => {
     release = resolve;
   });

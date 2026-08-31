@@ -100,8 +100,7 @@ export function resolveRuntimeConfig(): RuntimeConfig {
   const firebase = windowConfig.firebase ?? envConfig.firebase ?? null;
 
   return {
-    authMode:
-      windowConfig.authMode ?? envConfig.authMode ?? (firebase ? "firebase" : "local"),
+    authMode: windowConfig.authMode ?? envConfig.authMode ?? (firebase ? "firebase" : "local"),
     apiBase: windowConfig.apiBase ?? envConfig.apiBase ?? "",
     localKey: windowConfig.localKey ?? envConfig.localKey ?? "",
     firebase,
