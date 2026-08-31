@@ -41,6 +41,12 @@ const APPEARANCES: Array<{ id: Appearance; label: string }> = [
 
 const GEMINI_KEY = "cooper.gemini_key.v1";
 
+const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
+
+function normalizePathname(pathname: string): string {
+  return pathname.replace(/\/+$/, "") || "/";
+}
+
 function loadGeminiKey(): string {
   try {
     return localStorage.getItem(GEMINI_KEY) ?? "";
@@ -241,17 +247,45 @@ export default function App() {
   const noticeTimer = useRef<number | null>(null);
   const firebaseSubject = useRef<string | null>(null);
   const authEpoch = useRef(0);
+  const [pathname, setPathname] = useState(() =>
+    typeof window === "undefined" ? "/" : window.location.pathname,
+  );
+  const pathnameRef = useRef(pathname);
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
-  const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
   const publicRoute = readPublicRoute(pathname);
-  const isRootPath = (pathname.replace(/\/+$/, "") || "/") === "/";
-  const publicSurface = !isRootPath || (firebaseConfigured && authState.kind !== "signed-in");
+  const normalizedPathname = normalizePathname(pathname);
+  const isWorkspacePath = normalizedPathname === "/app";
+  const publicSurface = !isWorkspacePath || (firebaseConfigured && authState.kind !== "signed-in");
+  const publicLandingSurface = publicSurface && publicRoute === "landing";
   const workspaceVisible = canLoadProtectedData && !publicSurface;
   const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
+
+  const navigate = useCallback((nextPath: string) => {
+    const next = normalizePathname(nextPath);
+    if (typeof window !== "undefined" && window.location.pathname !== next) {
+      window.history.replaceState({}, "", next);
+    }
+    pathnameRef.current = next;
+    setPathname(next);
+  }, []);
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const next = normalizePathname(window.location.pathname);
+      pathnameRef.current = next;
+      setPathname(next);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const clearConversation = useCallback(() => {
     setTurns([]);
@@ -265,6 +299,10 @@ export default function App() {
     }
     if (!firebaseConfigured) return;
     return subscribeToAuth((user) => {
+      const currentPath = normalizePathname(pathnameRef.current);
+      if (user && PUBLIC_AUTH_PATHS.has(currentPath)) {
+        navigate("/app");
+      }
       const nextSubject = user?.uid ?? null;
       if (firebaseSubject.current !== nextSubject) {
         firebaseSubject.current = nextSubject;
@@ -275,7 +313,7 @@ export default function App() {
       setView(null);
       setLoadResolved(user === null);
     });
-  }, [clearConversation]);
+  }, [clearConversation, navigate]);
 
   const signOutOfFirebase = useCallback(() => {
     if (!firebaseConfigured) return;
@@ -537,7 +575,11 @@ export default function App() {
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
 
   return (
-    <div className={`app${publicSurface ? " app--public" : ""}`}>
+    <div
+      className={`app${publicSurface ? " app--public" : ""}${
+        publicLandingSurface ? " app--landing" : ""
+      }`}
+    >
       {!publicSurface && (
         <Nav
           current={tab}

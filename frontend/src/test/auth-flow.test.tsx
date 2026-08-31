@@ -127,6 +127,7 @@ async function emitFirebaseUser(user: Parameters<typeof firebaseMock.emit>[0]): 
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/app");
   firebaseMock.reset();
   vi.stubEnv("VITE_COOPER_KEY", "test-key");
   localStorage.clear();
@@ -194,6 +195,21 @@ describe("public auth flow", () => {
 
     expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("a signed-in visitor from the public root is moved to the workspace", async () => {
+    window.history.replaceState({}, "", "/");
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const fetch = vi.fn(async () => json(view()));
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+    await emitFirebaseUser(firebaseMock.user("firebase-id-token"));
+
+    expect(await screen.findByText("Nothing on today")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/app");
+    expect(screen.getAllByRole("navigation", { name: "Sections" })).not.toHaveLength(0);
   });
 
   test("signed-out Firebase users can start Google sign-in", async () => {

@@ -225,6 +225,7 @@ function stub(routes: Routes) {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/app");
   vi.stubEnv("VITE_COOPER_KEY", "test-key");
   firebaseMock.authMode = "local";
   firebaseMock.configured = false;
@@ -258,6 +259,19 @@ async function emitFirebaseUser(user: TestFirebaseUser | null): Promise<void> {
 }
 
 describe("first impression", () => {
+  test("local root opens the public landing surface", () => {
+    window.history.replaceState({}, "", "/");
+    const calls = stub({});
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: /turn one sentence into time you can trust/i }),
+    ).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
+  });
+
   test("shows a dashboard skeleton while today is loading", async () => {
     let resolveToday!: (response: Response) => void;
     const pendingToday = new Promise<Response>((resolve) => {

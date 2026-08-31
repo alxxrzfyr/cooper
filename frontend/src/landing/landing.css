@@ -17,6 +17,19 @@
   height: 100dvh;
 }
 
+@media (min-width: 900px) {
+  .app.app--landing {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .app.app--landing > .main,
+  .app.app--landing .landing {
+    overflow: hidden;
+  }
+}
+
 .landing {
   --landing-line: color-mix(in srgb, var(--text) 16%, transparent);
   --landing-soft: color-mix(in srgb, var(--accent) 7%, var(--bg));
@@ -738,6 +751,12 @@
 }
 
 @media (max-width: 899px) {
+  .app.app--landing {
+    position: static;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .landing {
     height: auto;
     min-height: 100dvh;

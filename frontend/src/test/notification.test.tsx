@@ -92,6 +92,7 @@ function json(payload: unknown): Response {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/app");
   vi.stubEnv("VITE_COOPER_KEY", "test-key");
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
