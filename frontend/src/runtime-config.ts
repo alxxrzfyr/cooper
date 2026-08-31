@@ -4,7 +4,7 @@ export interface FirebasePublicConfig {
   apiKey: string;
   authDomain: string;
   projectId: string;
-  appId: string;
+  appId?: string;
 }
 
 export interface RuntimeConfig {
@@ -57,9 +57,9 @@ function readFirebaseConfig(value: unknown): FirebasePublicConfig | undefined {
   const authDomain = readString(value.authDomain);
   const projectId = readString(value.projectId);
   const appId = readString(value.appId);
-  if (!apiKey || !authDomain || !projectId || !appId) return undefined;
+  if (!apiKey || !authDomain || !projectId) return undefined;
 
-  return { apiKey, authDomain, projectId, appId };
+  return { apiKey, authDomain, projectId, ...(appId ? { appId } : {}) };
 }
 
 function readWindowConfig(): SourceConfig {

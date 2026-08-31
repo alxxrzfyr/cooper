@@ -64,7 +64,6 @@ describe("runtime configuration", () => {
               apiKey: "public-key",
               authDomain: "cooper.firebaseapp.com",
               projectId: "cooper",
-              appId: "app-id",
             }),
             { status: 200 },
           ),
@@ -75,7 +74,7 @@ describe("runtime configuration", () => {
     const config = await loadRuntimeConfig();
 
     expect(config.authMode).toBe("firebase");
-    expect(config.firebase?.appId).toBe("app-id");
+    expect(config.firebase?.appId).toBeUndefined();
     expect(fetch).toHaveBeenCalledWith("/__/firebase/init.json", { credentials: "same-origin" });
   });
 
