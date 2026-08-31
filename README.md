@@ -1,306 +1,139 @@
-# Cooper
+<p align="center">
+  <img src="frontend/public/assets/mascot/cooper_avatar.webp" alt="Cooper mascot" width="128" />
+</p>
 
-A calendar you talk to. Type what's on your plate, it works out the task and the time, tells
-you what to do first, and puts it in your Google Calendar.
+<h1 align="center">Cooper</h1>
 
-Runs on your machine for one person, or as a small public deployment for approved friends and
-family with Firebase Authentication.
+<p align="center">A conversational planning workspace for tasks, events, and everyday commitments.</p>
 
-```
-you: write the quarterly report, 90m, important, due friday
-     → task, 90 minutes, importance 4, due Friday
+<p align="center">
+  <img src="https://img.shields.io/badge/status-private%20beta-405536?style=flat-square" alt="Private beta" />
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/FastAPI-0.141-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
+  <img src="https://img.shields.io/badge/TypeScript-7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Firebase-Auth-FFCA28?style=flat-square&logo=firebase&logoColor=111827" alt="Firebase Authentication" />
+</p>
 
-you: dentist thursday 3pm
-     → event, Thursday 15:00, in your calendar
+## Overview
 
-you: plan my day
-     → 4 blocks placed inside your working hours
+Cooper is a personal planning workspace that turns plain-language input into organized tasks,
+events, and time-aware plans. It gives each item a priority, explains the ranking, and schedules
+estimated work around the commitments already on the calendar.
 
-you: done quarterly
-     → closed, by partial title
+The product is designed for one person at a time. It supports private hosted accounts for an
+approved audience, but it is not a team or project-management tool.
 
-you: undo
-     → put back
-```
+## Product capabilities
 
-## What it is
+- Capture tasks and events through a structured form or conversational input.
+- Rank work by deadline, importance, age, and estimated effort.
+- Schedule estimated tasks inside configured working hours.
+- Display the day, ranked work, fixed events, and scheduled blocks in one workspace.
+- Undo the latest change, including a complete scheduling run.
+- Connect Google Calendar and Gmail as read-only commitment sources. Cooper writes only the
+  calendar blocks it places.
+- Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
+- Install the frontend as a responsive PWA with light and dark themes.
 
-Four things, and deliberately nothing else:
+## Technology stack
 
-1. **Say it plainly.** One sentence becomes a task or an event.
-2. **Know what's first.** A score ranks your tasks and each row explains itself.
-3. **Get it booked.** The top of that list lands in real time, inside hours you chose.
-4. **Change your mind.** Undo the last thing.
+| Area                         | Technology                                                  |
+| ---------------------------- | ----------------------------------------------------------- |
+| Backend                      | Python 3.12, FastAPI, Uvicorn                               |
+| Validation and configuration | Pydantic Settings                                           |
+| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                     |
+| Frontend                     | React 19, TypeScript, Vite                                  |
+| Authentication               | Firebase Authentication with Google sign-in                 |
+| Calendar and mail            | Google Calendar API and Gmail API over REST                 |
+| AI assistance                | Gemini, supplied per browser through Settings               |
+| Delivery                     | Firebase Hosting for the frontend and Cloud Run for the API |
 
-Four screens: **Home** (your day at a glance, where it opens, and the full ranked list),
-**Chat** (where you talk to it), **Calendar** (a day, week or month of what's booked),
-**Settings**.
+## Architecture
 
-Light by default, because a calendar is a document. Dark and "follow my machine" are both one tap
-away under Settings.
+Cooper keeps the model, application state, and external services separate. The backend has one
+database writer and one scheduling pipeline.
 
-Installs as a PWA and opens offline. Phone gets a bottom tab bar, desktop gets a side rail.
-
-## Tasks and events are different, and that's the whole idea
-
-An **event** already has a time. The dentist chose it, not you. It goes straight on the calendar.
-
-A **task** has no time yet — just a size and a deadline. `write the report, 90m, due friday`
-tells you what and when-by, but not _when_. So tasks wait in a ranked list until you say
-"plan my day", and then Cooper finds real gaps in your working hours and drops them in.
-
-That's why there's a list _and_ a calendar. The list lives on Home, ranked, and the calendar is
-when you pay it. The list is what you owe; the calendar is when you pay it.
-
-An errand is just a task you never sized. `buy milk` gets ranked and shown, and never eats a
-calendar block, because Cooper skips anything with no estimate rather than inventing one.
-
-## Its own calendar, or yours
-
-Cooper has a calendar of its own and needs nothing to work. Connect Google and two things change:
-your real events start blocking the scheduler, and booked work shows up in Google Calendar. The
-Calendar screen shows both — filled entries are ones Cooper placed, outlined ones came from you.
-
-Local is always the source of truth. Google is a mirror.
-
-## Colour means something
-
-Everything lands in one of four categories, worked out from what you typed: **academics**,
-**work**, **organizations**, **personal**. That is the colour you see on the calendar, so a week
-is readable before you read any of it. Fill still says who put it there — solid is Cooper's,
-outlined is yours.
-
-```
-you: revise for the midterm, 2h    → academics
-you: client meeting tuesday 2pm    → work
-you: committee rehearsal wed 6pm   → organizations
-you: dentist thursday 3pm          → personal
+```text
+Form or Ask input
+       |
+       v
+FastAPI route
+       |
+       v
+brain.py  -->  validated Action
+       |
+       v
+app.py    -->  the only database writer
+       |
+       +--> planner.py  -->  ranked items and local time placement
+       |
+       +--> Google Calendar mirror, best effort
 ```
 
-Nothing to configure, and no fifth category to invent. Anything unrecognised is personal, which
-is a better default than a wrong guess.
+### Backend boundaries
 
-Green and red are not on that list on purpose. They mean the same two things everywhere: green is
-done or added, red is deleted. So a reply in the chat is green when something landed, red when
-something went away, blue when Cooper answered a question rather than doing something, and amber
-when it needs you.
+- `brain.py` parses input and returns a validated `Action`. It never accesses the database.
+- `app.py` validates and executes every mutation, including events parsed from email.
+- `planner.py` ranks and places work without network or database I/O.
+- `sources.py` combines Cooper blocks, Google Calendar events, and reconciled Gmail commitments
+  into the busy intervals used by the planner.
+- `google.py` handles Calendar writes, Gmail reads, and per-owner OAuth tokens.
+- `watcher.py` runs the fixed-interval Gmail sync and reports its last check through the app.
 
-## Two ways to talk to it
+### Frontend structure
 
-Chat has a **Form** and an **Ask** switch, and Form is the default.
+The React frontend is organized around the four primary product areas:
 
-Form is structured capture. It runs offline, costs nothing, and never calls a model. Ask hands the
-sentence to Gemini and can also answer questions about your own tasks:
-"what should I focus on this week", "is there room for the gym tomorrow". Answers are text only —
-they can never change your calendar, and Cooper declines anything that is not about your own work.
+- `Home.tsx` presents the next action, today's schedule, attention items, and ranked work.
+- `Form.tsx` captures structured items without parsing or network access.
+- `Chat.tsx` handles conversational input and text-only AI answers.
+- `Calendar.tsx` renders day, week, and month views.
+- `Nav.tsx` provides the responsive desktop rail and mobile navigation.
+- `Mascot.tsx` renders the Cooper mascot states used across the product.
+- `landing/` contains the public landing, authentication, Terms, and Privacy pages.
 
-AI mode also turns one sentence describing several related things — "research, then slides, then
-practice, all due Friday" — into several tasks at once, each booked so it does not start before
-the one before it ends. It is still one undo, the same as adding one task: a batch is additive,
-not a project plan, and there is no dependency this app remembers between the tasks it created.
+### Data model
 
-Form exists because most captures do not need a model. It is the default, runs offline, and spends
-no Gemini quota. Paste your own Gemini key into Settings when you want Ask mode. The key stays in
-that browser and is sent only with Ask messages. The server-side Gemini key path has been removed,
-so a hosted app cannot silently share one person's AI quota with every browser. Without a browser
-key the Ask switch disables itself and everything else still works.
+Cooper uses three owner-scoped tables:
 
-The Gemini provider and account control the actual quota. Cooper keeps usage small with the Manual
-default, a rules fast path for obvious commands, one bounded repair attempt, short output caps,
-and a small answer context. Those limits reduce avoidable calls, but the app cannot guarantee
-1,000 requests per day.
+- `item` stores tasks and events. A fixed time distinguishes an event from a task.
+- `setting` stores working hours, provider state, encrypted tokens, and watcher health.
+- `change` stores the snapshots required to undo the latest mutation.
 
-## What it is not
+SQLite is the local default. Hosted deployments use PostgreSQL through the same SQLAlchemy model.
+Supabase can provide hosted PostgreSQL storage; Firebase remains responsible for identity.
 
-Not a team tool. Accounts are only identity and data isolation; there is no sharing, no projects,
-no boards, no reports, no streaks.
-No audit log, because nobody audits their own calendar. If a feature only makes sense with a
-second user, it does not belong here.
+### Security and privacy
 
-## What's coming
+- Firebase ID tokens identify hosted users, and every query is scoped by the verified owner.
+- Google refresh tokens are encrypted before storage.
+- Manual mode never calls a model or the network.
+- A Gemini key entered in Settings stays in that browser and is sent only with AI requests.
+- Titles are sanitized before they reach a model.
+- Remote failures do not block local capture or scheduling. Local data remains the source of truth.
 
-The local capture form and the Google ecosystem are built. The remaining requirement-7 sources
-are deliberately future work and will plug into the same busy-time pipe:
+## Design principles
 
-**Commitments you made elsewhere.** Meetings and classes and events you RSVP'd to should block
-your time before Cooper schedules anything into it. Four sources, one idea:
+Cooper follows a small set of product rules:
 
-| Source          | What arrives                                              |
-| --------------- | --------------------------------------------------------- |
-| Google Calendar | your events — _works today_                               |
-| Outlook / Teams | your meetings — _future_                                  |
-| Teams classes   | assignments, which join the ranked list — _future_        |
-| Gmail           | Luma, Meetup and Eventbrite confirmations — _works today_ |
+1. The model proposes an action. Application code decides whether it is valid and executes it.
+2. The planner places work only within configured working hours.
+3. Ambiguous references produce a question instead of a guess.
+4. Green indicates a completed or added item. Red indicates a deleted item.
+5. Google integrations are additive. Cooper remains useful without them.
 
-Luma, Meetup and Eventbrite aren't integrated directly — they email you, so Gmail is the bridge
-and one connection covers all three.
+## Project documentation
 
-Everything except assignments arrives as the same thing: time already spoken for. Assignments are
-tasks with due dates, so the existing score handles them with no special case. The Gmail watcher
-is read-only, reconciles moves and cancellations, and exposes its last check in Settings. Bulk
-verbs still need their conversation surface in AI mode.
+- [`PRD.md`](PRD.md) defines the product requirements and non-goals.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation in detail.
+- [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
+- [`docs/DESIGN.md`](docs/DESIGN.md) describes the visual system and interaction rules.
 
-Read-only, all of it. Cooper never RSVPs for you and never creates a meeting.
+## License
 
-Accounts and multi-user tenancy now exist only for a small approved audience. SQLite stays the
-local default; hosted public use needs PostgreSQL because Cloud Run instances are disposable.
+This repository is not currently distributed under an open-source license. All rights reserved.
 
-## Running it
+## Author
 
-You need Python 3.12, [uv](https://docs.astral.sh/uv/), and Node 20+.
-
-```bash
-uv sync
-python -c "import secrets; print(secrets.token_urlsafe(24))"   # your key
-printf 'COOPER_SHARED_KEY=<key>\nCOOPER_TIMEZONE=Asia/Singapore\n' > .env
-uv run uvicorn cooper.app:app --reload --host 127.0.0.1
-
-# second terminal
-cd frontend && npm install
-npm run dev
-```
-
-Open `http://127.0.0.1:5173`.
-
-That's the whole local setup. SQLite is created automatically, and no Gemini key is required unless
-you want Ask mode. If you are testing a migration explicitly, run `uv run alembic upgrade head`.
-
-### Public Firebase deployment
-
-The public path is Firebase Hosting for the Vite app, Firebase Authentication for Google sign-in,
-Cloud Run for FastAPI, and PostgreSQL for durable state. Firebase Auth identifies the person; it
-does not grant Calendar or Gmail access. Each signed-in user connects Google separately from
-Settings, and those Calendar/Gmail refresh tokens are encrypted per owner.
-
-1. In Firebase, create a project, enable Authentication, and enable the Google provider.
-2. Add only the friends/family emails you allow to `COOPER_ALLOWED_EMAILS`.
-3. In Google Cloud, enable Calendar API and Gmail API, then create a Web application OAuth client.
-4. Add this OAuth callback exactly: `https://<firebase-site>.web.app/api/google/callback`.
-5. Create a Supabase project. Supabase Postgres is the recommended beta database; set the
-   server-only `COOPER_DATABASE_URL` to its `postgresql+psycopg://...` Supabase pooler URL.
-   Cloud SQL remains the single-provider alternative when keeping identity, compute, and data
-   in Google Cloud matters more than the lowest setup cost.
-6. Deploy the Dockerfile to Cloud Run service id `cooper-api` in `asia-southeast1`.
-7. Set Cloud Run secrets/env: `COOPER_AUTH_MODE=firebase`, `COOPER_FIREBASE_PROJECT_ID`,
-   `COOPER_ALLOWED_EMAILS`, `COOPER_DATABASE_URL`, `COOPER_ORIGIN`, Google OAuth values,
-   `COOPER_ENCRYPTION_KEY`, `COOPER_OAUTH_STATE_SECRET`, and `COOPER_SYNC_SECRET`.
-8. Deploy Firebase Hosting with `firebase.json`; `/api/**` and the OAuth callback rewrite to
-   Cloud Run, while the frontend uses same-origin API paths and Firebase's reserved public config.
-9. Add Cloud Scheduler to POST `/api/internal/google/sync` with `X-Cooper-Sync-Secret`.
-
-Copy the Supabase connection string from its **Connect** panel and keep `sslmode=require`. Use
-the session pooler URL for the long-lived Cloud Run runtime; a direct URL is also suitable for
-one-off Alembic or backup commands when the operator's network supports the database's address
-family. The URL is a server secret, so it never belongs in Firebase Hosting or browser config.
-
-Cloud Run runs `alembic upgrade head` before starting Uvicorn. Local Uvicorn stays bound to
-`127.0.0.1`; the Dockerfile's `0.0.0.0` listener is only for Cloud Run's assigned container port.
-
-Firebase's Spark plan is fine for experimenting with Auth and Hosting, but this architecture needs
-Cloud Run and PostgreSQL. Linking billing upgrades the project to Blaze. Supabase's free database
-is a good beta fit, but its inactive projects can pause and it does not include automatic backups;
-export or upgrade before treating it as the only copy of important data. Set budget alerts before
-inviting people. Gmail readonly is a restricted scope: personal/testing use is free, but a
-published app for broad public users can require Google's paid security assessment.
-
-### Optional: better parsing
-
-Create a Gemini key in [AI Studio](https://aistudio.google.com/apikey), then paste it into
-Settings in the browser that should use Ask mode. Without one, structured Form capture handles
-common captures, and ranking and scheduling never use a model.
-
-Worth knowing: on the free tier Google may use your prompts to improve their products. Cooper
-sends only your own words and task titles, never event descriptions, locations, or attendees.
-
-### Optional: Google Calendar and Gmail
-
-```
-COOPER_GOOGLE_CLIENT_ID=...
-COOPER_GOOGLE_CLIENT_SECRET=...
-COOPER_GMAIL_LOOKBACK_DAYS=14
-COOPER_GMAIL_POLL_INTERVAL_SECONDS=300
-COOPER_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-Create a Google Cloud project, enable the Calendar API and Gmail API, add an OAuth client of type **Web
-application**, and set the redirect to `http://127.0.0.1:8000/api/google/callback` — use
-`127.0.0.1`, not `localhost`, because Google treats them as different.
-
-Calendar uses its event scope; Gmail uses the restricted, read-only Gmail scope. That is free for
-your own app in Testing mode, but a published app for other people needs Google's security review.
-**The one trap:** a consent screen left in Testing mode expires refresh tokens after seven days.
-Sync will stop and it will look exactly like a bug in the code. It isn't. Publish the app or
-reconnect weekly. Once the Gmail watcher is configured, start one watcher with
-`python -m cooper.watcher`; it checks at the fixed interval above. You can also use the protected
-`POST /api/google/sync` route for one immediate check.
-
-Without these the calendar is simply off and everything else works.
-
-## How it's built
-
-```
-cooper/
-  app.py       every route, and the only thing that writes to the database
-  brain.py     sentence → validated action (Gemini, then regex)
-  planner.py   what to do first, and where it fits
-  db.py        three tables
-  google.py    Calendar writes and Gmail reads, over REST
-  sources.py   local, Google and Gmail commitment intervals
-  watcher.py   fixed-interval Gmail sync entry point
-  auth.py      Firebase identity verification for hosted mode
-  config.py    settings
-frontend/src/
-  App.tsx      one screen
-  Home.tsx     the dashboard: next, today, attention, waiting
-  Chat.tsx     the conversation
-  Calendar.tsx day, week, month
-  Nav.tsx      tab bar, side rail
-  Row.tsx      a task or event
-  Mascot.tsx   Cooper
-  theme.css    shared tokens, light and dark themes
-tools/
-  mascot_cutout.py  raw art in, cut-out square webp out
-```
-
-Three tables: `item` (a task or event — the difference is whether the time is fixed),
-`setting`, and `change` (just enough to undo the last thing).
-
-**The one rule worth knowing:** the model only ever _proposes_ an action. `brain.py` validates
-it, `app.py` executes it. A wrong answer from Gemini gets refused, not applied. And when a
-reference is ambiguous, Cooper asks rather than picking — acting on the wrong task is worse
-than a question.
-
-## Verified
-
-```
-uv run pytest                 279 passed
-uv run ruff check .           clean
-uv run ruff format --check .  clean
-npm test -- --run             100 passed
-npm run format:check          clean
-npm run build                 ok
-```
-
-Also checked: Alembic upgrade against a disposable SQLite database, `/health`, and authenticated
-local `/api/today` on `127.0.0.1`.
-
-Worth knowing if you take screenshots of this: the theme is a choice under Settings, not a
-reading of your machine, so a browser flag will not switch it. Chrome's `--force-dark-mode` in
-particular shows you Blink's auto-inversion rather than the real dark theme.
-
-## Docs
-
-| File              | What's in it                                             |
-| ----------------- | -------------------------------------------------------- |
-| `PRD.md`          | The seven requirements, and what it must never grow into |
-| `ARCHITECTURE.md` | The files, the three tables, the rules                   |
-| `AGENTS.md`       | For anyone, human or otherwise, changing this code       |
-| `CLAUDE.md`       | Points at `AGENTS.md`                                    |
-| `docs/DESIGN.md`  | The look, and why it looks like that                     |
-
-## Security, briefly
-
-Local mode uses a shared key on `127.0.0.1`. Hosted mode uses Firebase ID tokens plus an email
-allowlist, and every row is scoped by the verified Firebase UID. The shared key is not used in
-hosted mode. A Gemini key entered in Settings stays in that browser, while Google refresh tokens
-remain encrypted at rest per owner.
+Created and maintained by **Alex L. Berin**.
