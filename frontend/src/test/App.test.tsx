@@ -265,7 +265,7 @@ describe("first impression", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
   });
@@ -408,7 +408,9 @@ describe("first impression", () => {
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Cooper home" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Cooper is currently in public beta · The app is still under construction"),
+    ).toBeInTheDocument();
     expect(document.querySelector(".auth-screen .mascot")).toHaveAttribute(
       "src",
       "/assets/mascot/cooper_waving.webp",

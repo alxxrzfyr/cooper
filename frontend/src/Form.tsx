@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Mascot } from "./Mascot";
 import type { Category, NewItem } from "./types";
 
-/** Manual capture without parsing or model access. */
+/** Structured capture without parsing or model access. */
 
 const CATEGORIES: Array<{ id: Category; label: string }> = [
   { id: "academics", label: "Academics" },

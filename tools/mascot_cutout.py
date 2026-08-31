@@ -31,6 +31,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+try:
+    import scipy.ndimage as ndi
+except ImportError:
+    ndi = None
+
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "assets-src" / "mascot"
 BUILT = ROOT / "frontend" / "public" / "assets" / "mascot"
@@ -44,11 +49,23 @@ BUILD = {
     "cooper_scheduled": "cooper_scheduled",
     "cooper_thinking": "cooper_thinking",
     "cooper_undo": "cooper_undo",
-    "activity_summary": "cooper_reading",
-    "empty_state_windows": "cooper_painting",
-    "first_run_state": "cooper_waving",
-    "degraded_mode_state": "cooper_tired",
-    "parse_ambiguity_state": "cooper_puzzled",
+    "cooper_waving": "cooper_waving",
+    "cooper_painting": "cooper_painting",
+    "cooper_puzzled": "cooper_puzzled",
+    "cooper_tired": "cooper_tired",
+    "cooper_reading": "cooper_reading",
+    "cooper_idle": "cooper_idle",
+    "cooper_mail": "cooper_mail",
+    "cooper_syncing": "cooper_syncing",
+    "cooper_secure": "cooper_secure",
+    "cooper_calendar": "cooper_calendar",
+    "cooper_chat": "cooper_chat",
+    "cooper_error": "cooper_error",
+    "cooper_landing_hero": "cooper_landing_hero",
+    "cooper_landing_overwhelmed": "cooper_landing_overwhelmed",
+    "cooper_landing_capture": "cooper_landing_capture",
+    "cooper_landing_sort": "cooper_landing_sort",
+    "cooper_landing_ready": "cooper_landing_ready",
 }
 
 # Background threshold for light, low-saturation pixels.
@@ -98,6 +115,16 @@ def reachable(mask: np.ndarray) -> np.ndarray:
     Pillow's own `ImageDraw.floodfill` does nothing at all on an ``L`` image in Pillow
     10.2 — it does not even set the seed pixel — so the fill is done here instead.
     """
+    if ndi is not None:
+        labeled, _ = ndi.label(mask)
+        edge_labels = set(
+            np.unique(
+                np.concatenate([labeled[0, :], labeled[-1, :], labeled[:, 0], labeled[:, -1]])
+            )
+        )
+        edge_labels.discard(0)
+        return np.isin(labeled, list(edge_labels))
+
     reach = np.zeros_like(mask)
     reach[0] |= mask[0]
     reach[-1] |= mask[-1]

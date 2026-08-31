@@ -146,7 +146,7 @@ describe("public auth flow", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
@@ -158,7 +158,7 @@ describe("public auth flow", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -229,7 +229,9 @@ describe("public auth flow", () => {
 
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Cooper home" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Cooper is currently in public beta · The app is still under construction"),
+    ).toBeInTheDocument();
     expect(document.querySelector(".auth-screen .mascot")).toHaveAttribute(
       "src",
       "/assets/mascot/cooper_waving.webp",

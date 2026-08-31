@@ -30,7 +30,7 @@ export interface Ranked extends Item {
   why: { due: number; age: number; quick: number };
 }
 
-/** Fields sent by Manual capture. */
+/** Fields sent by the Form capture surface. */
 export interface NewItem {
   title: string;
   kind?: Kind;

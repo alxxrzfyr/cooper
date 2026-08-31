@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { Mascot, type MascotName } from "./Mascot";
 import type { Item, ReplyKind } from "./types";
 
-/** How a message was sent. Manual is the rules parser, AI is the model. */
+/** How Cooper should handle the next request. Form is structured capture, Ask uses the model. */
 export type Mode = "manual" | "ai";
 
 /** One turn in the conversation. */
@@ -282,7 +282,7 @@ export function Chat({
   );
 }
 
-/** Switch between Manual capture and AI conversation. */
+/** Switch between the capture form and Cooper's AI conversation. */
 function ModeSwitch({
   mode,
   canUseAi,
@@ -303,7 +303,7 @@ function ModeSwitch({
         className="modeswitch"
         data-mode={mode}
         role="group"
-        aria-label="How to read what you type"
+        aria-label="How do you want to work with Cooper"
       >
         <span className="modeswitch__thumb" aria-hidden="true" />
         <button
@@ -312,24 +312,24 @@ function ModeSwitch({
           aria-pressed={mode === "manual"}
           onClick={() => onMode("manual")}
         >
-          Manual
+          Form
         </button>
         <button
           type="button"
           className="modeswitch__opt"
           aria-pressed={mode === "ai"}
           disabled={!canUseAi}
-          title={canUseAi ? undefined : "Add your Gemini API key in Settings to use AI mode"}
+          title={canUseAi ? undefined : "Add your Gemini API key in Settings to use Ask"}
           onClick={() => onMode("ai")}
         >
-          AI
+          Ask
         </button>
       </div>
       <span className="modebar__hint">
         {!canUseAi
-          ? "No model key, so Manual is the only mode. Add your Gemini key in Settings to use AI."
+          ? "No model key, so Form is the only mode. Add your Gemini key in Settings to use Ask."
           : mode === "manual"
-            ? "Offline rules. No quota spent."
+            ? "Offline form. No quota spent."
             : "Ask about your tasks. Uses your daily quota."}
       </span>
     </div>
@@ -376,12 +376,10 @@ function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) =>
   return (
     <div className="opening">
       <Mascot name={mode === "ai" ? "cooper_thinking" : "cooper_waving"} size="lg" decorative />
-      <h2 className="opening__title">
-        {mode === "manual" ? "Just tell me what’s on your plate" : "Ask me about your tasks"}
-      </h2>
+      <h2 className="opening__title">{mode === "manual" ? "Capture something" : "Ask Cooper"}</h2>
       <p className="opening__text">
         {mode === "manual"
-          ? "Write it the way you’d say it out loud. I’ll work out the task, the time, and what deserves doing first."
+          ? "Give me the details and I’ll add it without guessing."
           : "I’m Cooper, your cheerful otter. Ask about your own tasks and time. Anything else and I’ll say so."}
       </p>
       <div className="examples">

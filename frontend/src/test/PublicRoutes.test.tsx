@@ -38,7 +38,7 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Your day, untangled." })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Hi, I’m Cooper." })).not.toBeInTheDocument();
   });
 
   test("lets visitors view the overview if auth checking stalls", async () => {
@@ -46,7 +46,7 @@ describe("public route surface", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "View the overview" }));
 
-    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Checking your account…" })).toBeDisabled();
   });
 
@@ -64,7 +64,7 @@ describe("public route surface", () => {
   test("keeps legal pages available without authentication", () => {
     render(<PublicRoutes route="terms" {...props} authEnabled={false} />);
 
-    expect(screen.getByRole("heading", { name: "Terms of use" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Terms of Use" })).toBeInTheDocument();
     expect(screen.getByText(/invited friends and family/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
   });

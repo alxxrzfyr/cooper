@@ -14,6 +14,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 *.egg-info/
 dist/
 build/
@@ -26,6 +29,7 @@ build/
 # Node
 node_modules/
 frontend/dist/
+frontend/.vite/
 
 # Editors and OS
 .DS_Store
@@ -36,6 +40,10 @@ frontend/dist/
 *.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Local tooling
+.cache/
+*.log
 
 # TypeScript build info
 frontend/.tsbuild/

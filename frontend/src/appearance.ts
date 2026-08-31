@@ -6,7 +6,7 @@ const KEY = "cooper.appearance.v1";
 const DARK = "(prefers-color-scheme: dark)";
 
 /** The colour the browser paints its own chrome, matching `--bar` in each theme. */
-const CHROME = { light: "#f9f9fb", dark: "#18181a" };
+const CHROME = { light: "#edf4ed", dark: "#151815" };
 
 export function readAppearance(): Appearance {
   try {

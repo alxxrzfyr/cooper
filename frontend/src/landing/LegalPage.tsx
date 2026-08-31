@@ -26,7 +26,9 @@ export function LegalPage({ title, updated, tone, children }: LegalPageProps) {
         <PublicBrand />
         <a className="public-page__back" href="/" aria-label="Back to Cooper home">
           <span aria-hidden="true">←</span>
-          <span>Back to Cooper</span>
+          <span>
+            Back to <span className="public-brand-name">Cooper</span>
+          </span>
         </a>
       </header>
 
@@ -39,7 +41,9 @@ export function LegalPage({ title, updated, tone, children }: LegalPageProps) {
       </section>
 
       <footer className="public-page__footer">
-        <span>Cooper © 2026 · public beta</span>
+        <span>
+          <span className="public-brand-name">Cooper</span> © 2026 · public beta
+        </span>
         <nav aria-label="Legal">
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>

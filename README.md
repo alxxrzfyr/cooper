@@ -102,7 +102,9 @@ Cooper uses three owner-scoped tables:
 - `change` stores the snapshots required to undo the latest mutation.
 
 SQLite is the local default. Hosted deployments use PostgreSQL through the same SQLAlchemy model.
-Supabase can provide hosted PostgreSQL storage; Firebase remains responsible for identity.
+Supabase Postgres is the recommended beta database; Cloud SQL remains the single-provider alternative.
+Use a server-only Supabase pooler connection for runtime traffic. Firebase remains
+responsible for identity, and Supabase Auth and Supabase Storage are not used.
 
 ### Security and privacy
 

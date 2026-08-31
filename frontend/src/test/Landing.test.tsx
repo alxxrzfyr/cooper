@@ -8,24 +8,29 @@ describe("public landing", () => {
   test("shows the value proposition and both account intents", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "Your day, untangled." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Create account" })).not.toHaveLength(0);
     expect(screen.getAllByRole("link", { name: "Log in" })).not.toHaveLength(0);
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Say it once. See what matters." }),
+      screen.getByRole("heading", { name: "One thought in. A clear day out." }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Read-only by default")).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Product sections" })).toBeInTheDocument();
+    expect(screen.getByText("Private by design")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent?.replace(/\s+/g, " ").trim() === "Cooper © 2026",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Legal" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Cooper is currently in public beta · The app is still under construction"),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Landing sections" })).not.toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Cooper Home screen with the day view" }),
-    ).toBeInTheDocument();
+      document.querySelector("#landing-meet .landing__cooper-portrait .mascot"),
+    ).toHaveAttribute("src", "/assets/mascot/cooper_avatar.webp");
     expect(
-      screen.getByRole("img", { name: "Cooper AI chat screen with suggested questions" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Cooper Calendar screen with the weekly schedule grid" }),
+      screen.getByRole("img", { name: "Cooper calendar showing protected working hours" }),
     ).toBeInTheDocument();
   });
 

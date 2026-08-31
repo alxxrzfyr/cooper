@@ -12,10 +12,10 @@ interface LandingProps {
 }
 
 const PANELS = [
-  { id: "untangle", label: "Untangle" },
-  { id: "prioritize", label: "Prioritize" },
-  { id: "room", label: "Make room" },
-  { id: "start", label: "Start" },
+  { id: "meet", label: "Meet Cooper" },
+  { id: "features", label: "Features" },
+  { id: "uses", label: "Uses" },
+  { id: "start", label: "Try it" },
 ] as const;
 
 function panelId(id: string): string {
@@ -30,30 +30,78 @@ function ProductCapture({ source, alt }: { source: string; alt: string }) {
   );
 }
 
-function TodayMock() {
-  return (
-    <ProductCapture
-      source="/assets/landing/cooper-app-home.webp"
-      alt="Cooper Home screen with the day view"
-    />
-  );
-}
-
-function ChatMock() {
-  return (
-    <ProductCapture
-      source="/assets/landing/cooper-app-ai.webp"
-      alt="Cooper AI chat screen with suggested questions"
-    />
-  );
-}
-
 function CalendarMock() {
   return (
     <ProductCapture
       source="/assets/landing/cooper-app-calendar.webp"
-      alt="Cooper Calendar screen with the weekly schedule grid"
+      alt="Cooper calendar showing protected working hours"
     />
+  );
+}
+
+type Service = "calendar" | "gmail" | "luma" | "meetup" | "teams" | "classroom";
+
+const SERVICE_LABEL: Record<Service, string> = {
+  calendar: "Google Calendar",
+  gmail: "Gmail",
+  luma: "Luma",
+  meetup: "Meetup",
+  teams: "Microsoft Teams",
+  classroom: "Google Classroom",
+};
+
+function ServiceIcon({ service }: { service: Service }) {
+  if (service === "gmail" || service === "calendar") {
+    return (
+      <img
+        className="landing__service-icon"
+        src={`/assets/brand/${service === "gmail" ? "gmail-2026" : "google-calendar-2026"}.svg`}
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (service === "luma") {
+    return (
+      <img
+        className="landing__service-icon landing__service-icon--luma"
+        src="/assets/brand/luma-2026.png"
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (service === "teams" || service === "classroom") {
+    return (
+      <img
+        className={`landing__service-icon landing__service-icon--${service}`}
+        src={`/assets/brand/${service === "teams" ? "microsoft-teams" : "google-classroom"}.svg`}
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`landing__service-icon landing__service-icon--mask landing__service-icon--${service}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function HandArrow({ flip = false }: { flip?: boolean }) {
+  return (
+    <svg
+      className={`landing__hand-arrow${flip ? " landing__hand-arrow--flip" : ""}`}
+      viewBox="0 0 90 42"
+      aria-hidden="true"
+    >
+      <path d="M4 10c19-8 46-5 68 16" />
+      <path d="m62 25 12 3-2-12" />
+    </svg>
   );
 }
 
@@ -61,24 +109,34 @@ function IntegrationCard({
   service,
   title,
   detail,
-  time,
 }: {
-  service: "calendar" | "gmail";
+  service: Service;
   title: string;
   detail: string;
-  time: string;
 }) {
   return (
     <article className={`landing__integration landing__integration--${service}`}>
-      <span className="landing__integration-mark" aria-hidden="true">
-        {service === "gmail" ? "M" : "31"}
-      </span>
+      <ServiceIcon service={service} />
       <div>
-        <p>{service === "gmail" ? "Gmail" : "Google Calendar"}</p>
+        <p>{SERVICE_LABEL[service]}</p>
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
-      <time>{time}</time>
+    </article>
+  );
+}
+
+function ServiceChip({ service, note }: { service: Service; note: string }) {
+  return (
+    <article
+      className={`landing__integration landing__service-chip landing__service-chip--${service}`}
+    >
+      <ServiceIcon service={service} />
+      <div>
+        <p>{SERVICE_LABEL[service]}</p>
+        <strong>{note === "planned" ? "Planned source" : "Event invitations"}</strong>
+        <span>{note === "planned" ? "Coming next" : "Arrives through Gmail"}</span>
+      </div>
     </article>
   );
 }
@@ -135,23 +193,9 @@ export function LandingPage({
   return (
     <div className="landing landing--keeby">
       <header className="landing__header">
-        <a className="landing__brand" href="/" aria-label="Cooper home">
-          <Mascot name="cooper_avatar" size="sm" decorative loading="eager" />
-          <span className="landing__wordmark">Cooper</span>
-        </a>
-        <nav className="landing__header-nav" aria-label="Product sections">
-          <a href="#landing-untangle">Today</a>
-          <a href="#landing-prioritize">Ask Cooper</a>
-          <a href="#landing-room">Connected time</a>
-        </nav>
-        <div className="landing__actions">
-          <a className="landing__quiet" href="/login">
-            Log in
-          </a>
-          <a className="landing__header-cta" href="/signup">
-            Create account
-          </a>
-        </div>
+        <p className="landing__beta-status">
+          Cooper is currently in public beta · The app is still under construction
+        </p>
       </header>
 
       <div
@@ -165,101 +209,177 @@ export function LandingPage({
         onScroll={trackScroll}
       >
         <section
-          className="landing__panel landing__panel--hero landing__panel--untangle"
-          id={panelId("untangle")}
+          className="landing__panel landing__panel--hero landing__panel--meet"
+          id={panelId("meet")}
         >
           <div className="landing__copy">
-            <h1>Your day, untangled.</h1>
+            <svg className="landing__paper-doodles" viewBox="0 0 680 430" aria-hidden="true">
+              <path d="m24 82 3 15 15 3-15 3-3 15-3-15-15-3 15-3Z" />
+              <path d="m648 286 2.5 12 12 2.5-12 2.5-2.5 12-2.5-12-12-2.5 12-2.5Z" />
+              <path d="m625 72 1.5 8 8 1.5-8 1.5-1.5 8-1.5-8-8-1.5 8-1.5Z" />
+              <path className="landing__paper-squiggle" d="M14 340c16-13 30 13 46 0s30 13 46 0" />
+            </svg>
+            <p className="landing__eyebrow">Meet your calm little timekeeper</p>
+            <h1>
+              Hi, I&rsquo;m <span>Cooper.</span>
+            </h1>
             <p className="landing__lede">
-              Say what needs doing. Cooper gives it a place, a reason, and a next step you can see.
+              The one place for everything taking your time. Tell me what&rsquo;s on your mind and
+              I&rsquo;ll help turn it into a day you can actually do.
             </p>
-            <a className="landing__primary" href="/signup">
-              Create your account
-            </a>
-            <p className="landing__hint">Google sign-in creates your account the first time.</p>
+            <div className="landing__cta-row">
+              <a className="landing__primary" href="#landing-features">
+                See how Cooper helps
+              </a>
+              <a className="landing__secondary" href="/signup">
+                Try the beta
+              </a>
+            </div>
           </div>
           <div className="landing__stage landing__stage--today">
-            <div className="landing__product-layout">
-              <TodayMock />
-              <div className="landing__support-rail">
-                <p className="landing__support-label">Your day, in one place</p>
-                <IntegrationCard
-                  service="calendar"
-                  title="CS101 lecture"
-                  detail="Tomorrow · 9:00 AM"
-                  time="09:00"
+            <div className="landing__cooper-hello">
+              <svg className="landing__avatar-doodles" viewBox="0 0 590 570" aria-hidden="true">
+                <path className="landing__doodle-orbit" d="M72 210C82 98 184 34 298 38" />
+                <path className="landing__doodle-orbit" d="M506 346c-28 106-128 170-239 166" />
+                <path
+                  className="landing__doodle-spark"
+                  d="m103 119 3 15 15 3-15 3-3 15-3-15-15-3 15-3Z"
                 />
-                <Mascot name="cooper_landing_hero" size="md" decorative loading="eager" />
+                <path
+                  className="landing__doodle-spark"
+                  d="m491 392 2 11 11 2-11 2-2 11-2-11-11-2 11-2Z"
+                />
+                <path className="landing__doodle-wave" d="M88 391c18-14 35 14 53 0s35 14 53 0" />
+              </svg>
+              <div className="landing__cooper-portrait">
+                <Mascot name="cooper_avatar" size="lg" decorative loading="eager" />
+              </div>
+              <div className="landing__hello-note">
+                <HandArrow flip />
+                <span>Hi! Give me the messy version. We&rsquo;ll sort it out together.</span>
+              </div>
+              <div className="landing__intro-slips" aria-hidden="true">
+                <span>tasks</span>
+                <span>events</span>
+                <span>errands</span>
               </div>
             </div>
           </div>
         </section>
 
-        <section
-          className="landing__panel landing__panel--how landing__panel--prioritize"
-          id={panelId("prioritize")}
-        >
-          <div className="landing__stage landing__stage--chat">
-            <div className="landing__product-layout">
-              <ChatMock />
-              <div className="landing__support-rail">
-                <p className="landing__support-label">From thought to next step</p>
-                <IntegrationCard
-                  service="gmail"
-                  title="Presentation details"
-                  detail="Inbox · University"
-                  time="2m"
-                />
-                <Mascot name="cooper_landing_sort" size="sm" decorative />
-              </div>
+        <section className="landing__panel landing__panel--features" id={panelId("features")}>
+          <div className="landing__copy landing__copy--narrow">
+            <p className="landing__eyebrow">What Cooper actually does</p>
+            <h2>One thought in. A clear day out.</h2>
+            <p className="landing__body">
+              No boards to groom or system to maintain. Cooper turns ordinary words into a useful
+              next step.
+            </p>
+            <div className="landing__hand-note landing__hand-note--features">
+              <HandArrow flip />
+              the boring planning bits, handled
             </div>
           </div>
-          <div className="landing__copy landing__copy--narrow">
-            <h2>Say it once. See what matters.</h2>
-            <p className="landing__body">
-              Cooper keeps the useful parts of a thought, then shows why one thing belongs before
-              the next.
-            </p>
-            <div className="landing__proof-line">
-              <strong>Capture → reason → next</strong>
-              <span>No dashboards to maintain. No new system to learn.</span>
-            </div>
+          <div className="landing__feature-grid" aria-label="Cooper features">
+            <article className="landing__feature-card landing__feature-card--capture">
+              <span className="landing__feature-number">01</span>
+              <Mascot name="cooper_landing_capture" size="sm" decorative />
+              <h3>Catch it</h3>
+              <p>Type the thought once, naturally. Cooper keeps the task, deadline, and detail.</p>
+              <span className="landing__scribble">before it slips away</span>
+            </article>
+            <article className="landing__feature-card landing__feature-card--sort">
+              <span className="landing__feature-number">02</span>
+              <Mascot name="cooper_landing_sort" size="sm" decorative />
+              <h3>Know what&rsquo;s next</h3>
+              <p>See what matters first and the plain-English reason it earned that spot.</p>
+              <span className="landing__scribble">no mystery score ✓</span>
+            </article>
+            <article className="landing__feature-card landing__feature-card--room">
+              <span className="landing__feature-number">03</span>
+              <Mascot name="cooper_calendar" size="sm" decorative />
+              <h3>Give it real time</h3>
+              <p>Fit work inside your hours and around commitments already on the calendar.</p>
+              <span className="landing__scribble">never outside your hours</span>
+            </article>
           </div>
         </section>
 
-        <section
-          className="landing__panel landing__panel--connected landing__panel--room"
-          id={panelId("room")}
-        >
-          <div className="landing__copy landing__copy--narrow">
-            <h2>Make room around what is already booked.</h2>
-            <p className="landing__body">
-              Calendar events and Gmail confirmations block time without becoming another list to
-              maintain.
-            </p>
-            <div className="landing__boundary">
-              <div>
-                <strong>Read-only by default</strong>
-                <span>Cooper reads commitments and writes only the blocks it schedules.</span>
-              </div>
-              <div>
-                <strong>Works without Google</strong>
-                <span>Local capture, ranking, and scheduling stay useful on their own.</span>
-              </div>
-            </div>
-          </div>
-          <div className="landing__stage landing__stage--calendar">
-            <div className="landing__product-layout">
+        <section className="landing__panel landing__panel--uses" id={panelId("uses")}>
+          <div className="landing__uses-board">
+            <div className="landing__uses-window">
               <CalendarMock />
-              <div className="landing__support-rail">
-                <p className="landing__support-label">Only the time Cooper places</p>
-                <IntegrationCard
-                  service="gmail"
-                  title="Room booked"
-                  detail="Confirmation · Gmail"
-                  time="now"
-                />
-                <Mascot name="cooper_landing_ready" size="sm" decorative />
+            </div>
+            <div className="landing__service-stack" aria-label="Connected and planned services">
+              <IntegrationCard
+                service="gmail"
+                title="Event confirmation"
+                detail="Read-only · known senders"
+              />
+              <IntegrationCard
+                service="calendar"
+                title="Your existing schedule"
+                detail="Busy time stays protected"
+              />
+            </div>
+            <div className="landing__service-chip-grid" aria-label="More event sources">
+              <svg
+                className="landing__service-connectors"
+                viewBox="0 0 760 430"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker
+                    id="service-arrow"
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                <path d="M 132 188 C 126 183, 121 174, 116 166" markerEnd="url(#service-arrow)" />
+                <path d="M 245 78 C 245 69, 245 62, 245 55" markerEnd="url(#service-arrow)" />
+                <path d="M 176 274 C 176 290, 168 305, 158 316" markerEnd="url(#service-arrow)" />
+                <path d="M 362 274 C 366 290, 370 305, 370 316" markerEnd="url(#service-arrow)" />
+              </svg>
+              <ServiceChip service="luma" note="via Gmail" />
+              <ServiceChip service="meetup" note="via Gmail" />
+              <ServiceChip service="teams" note="planned" />
+              <ServiceChip service="classroom" note="planned" />
+            </div>
+            <div className="landing__hand-note landing__hand-note--connected">
+              <HandArrow />
+              these block time automatically
+            </div>
+            <Mascot name="cooper_syncing" size="md" decorative />
+          </div>
+          <div className="landing__copy landing__copy--narrow">
+            <p className="landing__eyebrow">Where it fits into real life</p>
+            <h2>For the week that changes by Tuesday.</h2>
+            <div className="landing__use-list">
+              <article>
+                <strong>Classes &amp; deadlines</strong>
+                <span>Keep assignments visible without booking over lectures.</span>
+              </article>
+              <article>
+                <strong>Work &amp; errands</strong>
+                <span>Give focused work a block; leave quick errands on the list.</span>
+              </article>
+              <article>
+                <strong>Events from your inbox</strong>
+                <span>Luma, Meetup, and Eventbrite confirmations can reserve their time.</span>
+              </article>
+            </div>
+            <div className="landing__privacy-note">
+              <Mascot name="cooper_secure" size="xs" decorative />
+              <div>
+                <strong>Private by design</strong>
+                <span>Gmail is read-only. Cooper writes only blocks it scheduled.</span>
               </div>
             </div>
           </div>
@@ -270,20 +390,47 @@ export function LandingPage({
           id={panelId("start")}
         >
           <div className="landing__copy landing__copy--narrow">
-            <h2>Start with a calmer next step.</h2>
+            <p className="landing__eyebrow">Ready when you are</p>
+            <h2>
+              Give <span className="public-brand-name">Cooper</span> one thing to remember.
+            </h2>
             <p className="landing__body">
-              Your tasks stay yours. Your schedule gets a little easier to see.
+              Start small. Add one task, see why it matters, and let{" "}
+              <span className="public-brand-name">Cooper</span> find it a sensible place.
             </p>
-            <Mascot name="cooper_waving" size="md" decorative />
+            <ul className="landing__start-checks" aria-label="What you get">
+              <li>Private workspace</li>
+              <li>Works before you connect Google</li>
+              <li>No password to remember</li>
+            </ul>
+            <div className="landing__start-art">
+              <Mascot name="cooper_waving" size="md" decorative />
+              <span className="landing__scribble">I&rsquo;ll take it from here →</span>
+            </div>
           </div>
-          <AuthCard
-            intent="signup"
-            busy={busy}
-            error={error}
-            authEnabled={authEnabled}
-            authLoading={authLoading}
-            onSignIn={onSignIn}
-          />
+          <div className="landing__start-column">
+            <AuthCard
+              intent="signup"
+              busy={busy}
+              error={error}
+              authEnabled={authEnabled}
+              authLoading={authLoading}
+              onSignIn={onSignIn}
+            />
+            <div className="landing__setup-note">
+              <HandArrow />
+              about two minutes to get settled
+            </div>
+            <footer className="landing__footer">
+              <span>
+                <span className="public-brand-name">Cooper</span> © 2026
+              </span>
+              <nav aria-label="Legal">
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+              </nav>
+            </footer>
+          </div>
         </section>
       </div>
     </div>
