@@ -29,6 +29,7 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("heading", { name: "Your day is still here." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Back to Cooper home" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
   });
 

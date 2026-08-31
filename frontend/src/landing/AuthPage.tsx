@@ -1,3 +1,5 @@
+import "./auth.css";
+
 import { Mascot } from "../Mascot";
 import { AuthCard, type AuthIntent } from "./AuthCard";
 
@@ -41,21 +43,33 @@ export function AuthPage({
   const copy = PAGE_COPY[intent];
 
   return (
-    <div className="public-page auth-page">
+    <div className={`public-page auth-page auth-page--${intent}`}>
       <header className="public-page__header">
         <PublicBrand />
-        <a className="public-page__back" href="/">
-          See how Cooper works
+        <a className="public-page__back" href="/" aria-label="Back to Cooper home">
+          <span aria-hidden="true">←</span>
+          <span>Back to Cooper</span>
         </a>
       </header>
 
       <section className="auth-page__main" aria-labelledby="auth-page-title">
         <div className="auth-page__intro">
-          <p className="landing__eyebrow">
-            {intent === "signup" ? "Get started" : "Your workspace"}
+          <p className="auth-page__kicker">
+            {intent === "signup" ? "Get started" : "Welcome back"}
           </p>
           <h1 id="auth-page-title">{copy.title}</h1>
           <p>{copy.description}</p>
+          <div className="auth-page__note">
+            <Mascot
+              name={intent === "signup" ? "cooper_landing_ready" : "cooper_waving"}
+              size="md"
+              decorative
+              loading="eager"
+            />
+            <span>
+              {intent === "signup" ? "One task is enough to begin." : "Good to see you again."}
+            </span>
+          </div>
         </div>
         <AuthCard
           intent={intent}
@@ -68,7 +82,7 @@ export function AuthPage({
       </section>
 
       <footer className="public-page__footer">
-        <span>Cooper is for your own words and your own time.</span>
+        <span>Cooper © 2026 · for your own words and your own time.</span>
         <nav aria-label="Legal">
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>
