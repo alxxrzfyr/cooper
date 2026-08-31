@@ -2115,3 +2115,19 @@
     grid-row: 2;
   }
 }
+
+/* Keep the closing signup invitation distinct from the editorial story headings. */
+.landing--keeby .landing__panel--start .landing__auth-card h2 {
+  max-width: 18ch;
+  font-size: clamp(28px, 2.35vw, 36px);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+
+@media (max-width: 899px) {
+  .landing--keeby .landing__panel--start .landing__auth-card h2 {
+    max-width: 16ch;
+    font-size: clamp(28px, 7vw, 34px);
+  }
+}
