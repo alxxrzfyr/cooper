@@ -1402,6 +1402,19 @@ describe("gmail confirmations", () => {
     expect(screen.getByText(/2 imported/)).toBeInTheDocument();
   });
 
+  test("planned sources are listed as coming soon under settings", async () => {
+    stub({});
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+
+    for (const label of ["Luma", "Meetup", "Microsoft Teams", "Google Classroom"]) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("Coming soon")).toHaveLength(4);
+  });
+
   test("Gmail commitments are outlined and read-only on the dashboard", async () => {
     const item = gmailItem();
     stub({

@@ -39,6 +39,15 @@ const APPEARANCES: Array<{ id: Appearance; label: string }> = [
   { id: "system", label: "System" },
 ];
 
+/** Event sources planned but not yet wired up. Shown so people know what's coming, not to imply
+ *  they can connect one today. */
+const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
+  { id: "luma", label: "Luma" },
+  { id: "meetup", label: "Meetup" },
+  { id: "teams", label: "Microsoft Teams" },
+  { id: "classroom", label: "Google Classroom" },
+];
+
 const GEMINI_KEY = "cooper.gemini_key.v1";
 
 const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
@@ -909,6 +918,19 @@ export default function App() {
                           ? "Connect Google Calendar above to enable Gmail confirmations."
                           : "Cooper works without Google. Connect Google to import known Gmail confirmations."}
                   </p>
+                </section>
+
+                <section className="group">
+                  <div className="group__label">More sources</div>
+                  <div className="inset">
+                    {COMING_SOON_SOURCES.map((source) => (
+                      <div className="field" key={source.id}>
+                        <span className="field__label">{source.label}</span>
+                        <span className="tag">Coming soon</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="hint">Planned event sources. None of these connect yet.</p>
                 </section>
 
                 <section className="group">
