@@ -466,7 +466,7 @@ describe("first impression", () => {
     expect(screen.getByText(/Works fine without a key/)).toBeInTheDocument();
   });
 
-  test("stores a Gemini key in this browser and reports AI as available", async () => {
+  test("saves a Gemini key in this browser and reports AI as available", async () => {
     const calls = stub({ view: view({ using_model: false }) });
     render(<App />);
     const user = userEvent.setup();
@@ -476,10 +476,25 @@ describe("first impression", () => {
     const key = await screen.findByLabelText("Gemini API key");
     await user.type(key, "AIza-browser-key");
 
+    expect(localStorage.getItem("cooper.gemini_key.v1")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save" }));
     expect(localStorage.getItem("cooper.gemini_key.v1")).toBe("AIza-browser-key");
+    expect(screen.getByRole("status")).toHaveTextContent("Ask is ready to use");
     await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
     expect(await screen.findByRole("button", { name: "Ask" })).not.toBeDisabled();
     expect(calls.every((call) => !call.body?.gemini_api_key)).toBe(true);
+  });
+
+  test("does not save an empty Gemini key", async () => {
+    stub({});
+    const user = await userEvent.setup();
+    render(<App />);
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(localStorage.getItem("cooper.gemini_key.v1")).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a Gemini API key");
   });
 });
 

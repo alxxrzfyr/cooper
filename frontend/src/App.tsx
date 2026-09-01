@@ -49,6 +49,7 @@ const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
 ];
 
 const GEMINI_KEY = "cooper.gemini_key.v1";
+type GeminiKeyStatus = "saved" | "empty" | "cleared" | null;
 
 const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
 
@@ -250,6 +251,8 @@ export default function App() {
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
   const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
+  const [geminiKeyDraft, setGeminiKeyDraft] = useState(loadGeminiKey);
+  const [geminiKeyStatus, setGeminiKeyStatus] = useState<GeminiKeyStatus>(null);
   const [mode, setMode] = useState<Mode>(loadMode);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
@@ -264,6 +267,17 @@ export default function App() {
   const [detail, setDetail] = useState<Item | Ranked | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
+  const saveGeminiKeyFromSettings = useCallback(() => {
+    const key = geminiKeyDraft.trim();
+    if (!key) {
+      setGeminiKeyStatus("empty");
+      return;
+    }
+    saveGeminiKey(key);
+    setGeminiKey(key);
+    setGeminiKeyDraft(key);
+    setGeminiKeyStatus("saved");
+  }, [geminiKeyDraft]);
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
   const publicRoute = readPublicRoute(pathname);
   const normalizedPathname = normalizePathname(pathname);
@@ -958,21 +972,30 @@ export default function App() {
                           autoComplete="off"
                           maxLength={256}
                           spellCheck={false}
-                          value={geminiKey}
+                          value={geminiKeyDraft}
                           aria-describedby="gemini-key-hint"
                           onChange={(event) => {
                             const value = event.target.value;
-                            setGeminiKey(value);
-                            saveGeminiKey(value);
+                            setGeminiKeyDraft(value);
+                            setGeminiKeyStatus(null);
                           }}
                         />
                         <button
                           type="button"
                           className="btn btn--quiet"
-                          disabled={!geminiKey}
+                          onClick={saveGeminiKeyFromSettings}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          disabled={!geminiKeyDraft}
                           onClick={() => {
                             setGeminiKey("");
+                            setGeminiKeyDraft("");
                             saveGeminiKey("");
+                            setGeminiKeyStatus("cleared");
                             setLoadResolved(false);
                             void load();
                           }}
@@ -982,6 +1005,21 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  {geminiKeyStatus === "saved" && (
+                    <p className="hint" role="status">
+                      Saved. Ask is ready to use.
+                    </p>
+                  )}
+                  {geminiKeyStatus === "empty" && (
+                    <p className="hint hint--error" role="alert">
+                      Enter a Gemini API key before saving.
+                    </p>
+                  )}
+                  {geminiKeyStatus === "cleared" && (
+                    <p className="hint" role="status">
+                      Key cleared. Ask is disabled until you save another key.
+                    </p>
+                  )}
                   <p className="hint" id="gemini-key-hint">
                     {canUseAi
                       ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
