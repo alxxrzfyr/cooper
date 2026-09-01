@@ -141,28 +141,36 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   const allowHostedLookup = explicitMode !== "local" || onFirebaseHost;
 
   if (!initial.firebase && allowHostedLookup) {
-    for (const path of [HOSTING_CONFIG_PATH, "/cooper-config.json"] as const) {
+    // cooper-config.json is Cooper's own config and the only source that can carry apiBase.
+    // /__/firebase/init.json is Firebase Hosting's reserved endpoint: it always resolves on a
+    // real Firebase deployment but never has apiBase. Returning as soon as either source
+    // produced a valid firebase object used to make apiBase unreachable, because init.json alone
+    // satisfies that check — so both sources are tried, and the first apiBase found wins.
+    let firebase: FirebasePublicConfig | undefined;
+    let apiBase = initial.apiBase;
+
+    for (const path of ["/cooper-config.json", HOSTING_CONFIG_PATH] as const) {
       try {
         const response = await fetch(path, { credentials: "same-origin" });
         if (!response.ok) continue;
         const payload: unknown = await response.json();
         if (!isRecord(payload)) continue;
-        const firebase = readFirebaseConfig(
-          isRecord(payload.firebase) ? payload.firebase : payload,
-        );
-        const apiBase = readString(payload.apiBase) ?? initial.apiBase;
-        if (firebase) {
-          cachedConfig = {
-            ...initial,
-            authMode: "firebase",
-            apiBase,
-            firebase,
-          };
-          return cachedConfig;
-        }
+        firebase ??= readFirebaseConfig(isRecord(payload.firebase) ? payload.firebase : payload);
+        if (!apiBase) apiBase = readString(payload.apiBase) ?? "";
+        if (firebase && apiBase) break;
       } catch {
         // Try the next hosted config source.
       }
+    }
+
+    if (firebase) {
+      cachedConfig = {
+        ...initial,
+        authMode: "firebase",
+        apiBase,
+        firebase,
+      };
+      return cachedConfig;
     }
   }
 

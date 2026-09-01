@@ -78,6 +78,44 @@ describe("runtime configuration", () => {
     expect(fetch).toHaveBeenCalledWith("/__/firebase/init.json", { credentials: "same-origin" });
   });
 
+  test("reads apiBase from cooper-config.json even though init.json resolves first", async () => {
+    // /__/firebase/init.json is Firebase Hosting's reserved endpoint and always resolves on a
+    // real deployment, but it never carries apiBase. Only cooper-config.json does, so the lookup
+    // must not stop at the first source that produces a valid firebase object.
+    window.__COOPER_CONFIG__ = { authMode: "firebase" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/cooper-config.json") {
+          return new Response(
+            JSON.stringify({
+              apiBase: "https://cooper-fjfx.onrender.com",
+              firebase: {
+                apiKey: "public-key",
+                authDomain: "cooper.firebaseapp.com",
+                projectId: "cooper",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            apiKey: "public-key",
+            authDomain: "cooper.firebaseapp.com",
+            projectId: "cooper",
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const { loadRuntimeConfig } = await loadRuntimeModule();
+    const config = await loadRuntimeConfig();
+
+    expect(config.apiBase).toBe("https://cooper-fjfx.onrender.com");
+  });
+
   test("keeps explicit local mode when the public endpoint is unavailable", async () => {
     vi.stubEnv("VITE_COOPER_AUTH_MODE", "local");
     vi.stubGlobal(
