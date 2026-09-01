@@ -1,10 +1,9 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
-  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
   type Unsubscribe,
   type User,
@@ -28,21 +27,14 @@ export const firebaseConfigError =
     : null;
 export const auth = app ? getAuth(app) : null;
 
-/** Finish a Google redirect before the first auth-state decision. */
-let redirectReady: Promise<void> | null = null;
-
-export function completeRedirectSignIn(): Promise<void> {
-  if (!auth) return Promise.resolve();
-  redirectReady ??= getRedirectResult(auth).then(
-    () => undefined,
-    () => undefined,
-  );
-  return redirectReady;
-}
-
+// A popup keeps sign-in on the app's own origin. A redirect instead sends the browser to
+// authDomain (a different origin from a .web.app or custom-domain deployment) and back, which
+// depends on cross-origin storage access that Chrome, Firefox, and Safari now block by default —
+// the user returns signed out with no error. See:
+// https://firebase.google.com/docs/auth/web/redirect-best-practices
 export function signInWithGoogle(): Promise<void> {
   if (!auth) return Promise.reject(new Error("Firebase is not configured."));
-  return signInWithRedirect(auth, new GoogleAuthProvider());
+  return signInWithPopup(auth, new GoogleAuthProvider()).then(() => undefined);
 }
 
 export function signOutUser(): Promise<void> {
@@ -54,14 +46,5 @@ export function subscribeToAuth(callback: (user: FirebaseUser | null) => void): 
     callback(null);
     return () => undefined;
   }
-  let active = true;
-  let unsub: Unsubscribe = () => undefined;
-  void completeRedirectSignIn().then(() => {
-    if (!active) return;
-    unsub = onAuthStateChanged(auth, callback);
-  });
-  return () => {
-    active = false;
-    unsub();
-  };
+  return onAuthStateChanged(auth, callback);
 }

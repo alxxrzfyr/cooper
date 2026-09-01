@@ -6,9 +6,8 @@ const sdk = vi.hoisted(() => ({
   providerScopes: [] as string[],
   initializeApp: vi.fn((config: unknown) => ({ name: "cooper-test", config })),
   getAuth: vi.fn(() => ({ name: "auth-test" })),
-  getRedirectResult: vi.fn(async () => null),
   onAuthStateChanged: vi.fn(() => () => undefined),
-  signInWithRedirect: vi.fn(async () => undefined),
+  signInWithPopup: vi.fn(async () => ({ user: { uid: "test" } })),
   signOut: vi.fn(async () => undefined),
 }));
 
@@ -18,7 +17,6 @@ vi.mock("firebase/app", () => ({
 
 vi.mock("firebase/auth", () => ({
   getAuth: sdk.getAuth,
-  getRedirectResult: sdk.getRedirectResult,
   GoogleAuthProvider: class GoogleAuthProvider {
     addScope(scope: string): this {
       sdk.providerScopes.push(scope);
@@ -26,7 +24,7 @@ vi.mock("firebase/auth", () => ({
     }
   },
   onAuthStateChanged: sdk.onAuthStateChanged,
-  signInWithRedirect: sdk.signInWithRedirect,
+  signInWithPopup: sdk.signInWithPopup,
   signOut: sdk.signOut,
 }));
 
@@ -39,9 +37,8 @@ beforeEach(() => {
   sdk.providerScopes = [];
   sdk.initializeApp.mockClear();
   sdk.getAuth.mockClear();
-  sdk.getRedirectResult.mockClear();
   sdk.onAuthStateChanged.mockClear();
-  sdk.signInWithRedirect.mockClear();
+  sdk.signInWithPopup.mockClear();
   sdk.signOut.mockClear();
 });
 
@@ -98,34 +95,21 @@ describe("Firebase client auth", () => {
       projectId: "cooper",
       appId: "app-id",
     });
-    expect(sdk.signInWithRedirect).toHaveBeenCalledTimes(1);
+    expect(sdk.signInWithPopup).toHaveBeenCalledTimes(1);
     expect(sdk.providerScopes).toEqual([]);
   });
 
-  test("auth subscription waits for redirect completion before listening", async () => {
+  test("auth subscription listens immediately, without waiting on a redirect", async () => {
     vi.stubEnv("VITE_COOPER_AUTH_MODE", "firebase");
     vi.stubEnv("VITE_FIREBASE_API_KEY", "api-key");
     vi.stubEnv("VITE_FIREBASE_AUTH_DOMAIN", "cooper.firebaseapp.com");
     vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "cooper");
     vi.stubEnv("VITE_FIREBASE_APP_ID", "app-id");
 
-    let finishRedirect: (() => void) | undefined;
-    sdk.getRedirectResult.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishRedirect = () => resolve(null);
-        }),
-    );
-
     const firebase = await loadFirebase();
     const callback = vi.fn();
     firebase.subscribeToAuth(callback);
 
-    expect(sdk.getRedirectResult).toHaveBeenCalledTimes(1);
-    expect(sdk.onAuthStateChanged).not.toHaveBeenCalled();
-
-    finishRedirect?.();
-    await vi.waitFor(() => expect(sdk.onAuthStateChanged).toHaveBeenCalledTimes(1));
-    expect(callback).not.toHaveBeenCalled();
+    expect(sdk.onAuthStateChanged).toHaveBeenCalledTimes(1);
   });
 });
