@@ -1644,12 +1644,16 @@ class TestManualForm:
         assert body["item"]["category"] == "academics"
 
     def test_a_form_event_ending_before_it_starts_is_refused(self, client: TestClient) -> None:
+        # A fixed past-tense date would let the "already passed" check (checked before this one)
+        # return 422 for the wrong reason, silently no longer testing end-before-start at all.
+        start = dt.datetime.now(ZoneInfo("Asia/Singapore")) + dt.timedelta(days=1)
+        end = start - dt.timedelta(hours=1)
         response = client.post(
             "/api/items",
             json={
                 "title": "bad meeting",
-                "start": "2026-09-01T15:00:00+08:00",
-                "end": "2026-09-01T14:00:00+08:00",
+                "start": start.isoformat(),
+                "end": end.isoformat(),
             },
             headers=HEADERS,
         )
@@ -1664,15 +1668,23 @@ class TestManualForm:
         assert body["kind"] == "undone"
 
     def test_a_form_time_is_local_not_utc(self, client: TestClient) -> None:
-        body = self.form(client, title="dentist", start="2026-09-01T15:00:00")
+        # A fixed future date would eventually become today's past, exactly as
+        # "2026-09-01T15:00:00" did once real time caught up to it. Anchor to "now" instead so
+        # the assertion (naive string -> localized wall clock) never depends on when this runs.
+        zone = ZoneInfo("Asia/Singapore")
+        start = dt.datetime.now(zone).replace(microsecond=0) + dt.timedelta(days=1)
+        naive = start.replace(tzinfo=None).isoformat()
 
-        assert body["item"]["start_at"] == "2026-09-01T15:00:00+08:00"
-        assert body["item"]["end_at"] == "2026-09-01T16:00:00+08:00"
+        body = self.form(client, title="dentist", start=naive)
+
+        assert body["item"]["start_at"] == start.isoformat()
+        assert body["item"]["end_at"] == (start + dt.timedelta(hours=1)).isoformat()
 
     def test_a_form_time_with_an_offset_is_trusted(self, client: TestClient) -> None:
-        body = self.form(client, title="call", start="2026-09-01T15:00:00+00:00")
+        start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
+        body = self.form(client, title="call", start=start.isoformat())
 
-        assert body["item"]["start_at"] == "2026-09-01T15:00:00+00:00"
+        assert body["item"]["start_at"] == start.isoformat()
 
     def test_a_past_deadline_is_refused(self, client: TestClient) -> None:
         response = client.post(
