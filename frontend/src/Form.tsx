@@ -92,7 +92,7 @@ export function Form({
   }
 
   return (
-    <div className="scroll">
+    <div className="scroll scroll--form">
       <div className="opening opening--form">
         <Mascot name="cooper_reading" size="lg" decorative />
         <h2 className="opening__title">Add something</h2>

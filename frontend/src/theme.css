@@ -2595,6 +2595,36 @@ button.slot:active {
   z-index: 1;
 }
 
+.scroll--form {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.scroll--form .opening--form {
+  margin: 0 auto;
+  padding-top: 0;
+}
+
+.scroll--form .taskform {
+  gap: 12px;
+}
+
+.scroll--form .segmented {
+  margin: 8px 10px;
+}
+
+.scroll--form .taskform > section:nth-child(3) .segmented {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.scroll--form .segment {
+  min-width: 0;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+
 @media (min-width: 900px) {
   .opening--form {
     margin: 0 auto;
@@ -2657,6 +2687,72 @@ button.slot:active {
   .taskform > section:nth-child(2),
   .taskform > section:nth-child(3) {
     min-width: 0;
+  }
+}
+
+@media (max-width: 899px) {
+  .scroll--form {
+    gap: 10px;
+    padding-top: 14px;
+    padding-bottom: 18px;
+  }
+
+  .scroll--form .opening--form {
+    gap: 3px;
+    padding-bottom: 0;
+  }
+
+  .scroll--form .opening--form > .mascot--lg {
+    width: 76px;
+    height: 76px;
+  }
+
+  .scroll--form .opening--form .opening__title {
+    font-size: 20px;
+  }
+
+  .scroll--form .opening--form .opening__text {
+    font-size: 12.5px;
+  }
+
+  .scroll--form .taskform {
+    gap: 10px;
+  }
+
+  .scroll--form .taskform > section:first-child .inset {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scroll--form .taskform > section:first-child .field:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .scroll--form .taskform > section:first-child .field:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .scroll--form .taskform .field {
+    min-width: 0;
+    padding: 7px 9px;
+  }
+
+  .scroll--form .taskform .field__input {
+    min-width: 0;
+    padding: 8px 9px;
+    font-size: 15px;
+  }
+
+  .scroll--form .taskform .hint {
+    font-size: 11px;
+  }
+
+  .scroll--form .taskform > section:nth-child(3) .segmented {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scroll--form .taskform > .btn--full {
+    min-height: 44px;
   }
 }
 

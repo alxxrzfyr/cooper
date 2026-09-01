@@ -1692,6 +1692,8 @@ describe("manual mode as a form", () => {
     expect(await screen.findByLabelText("What")).toBeInTheDocument();
     expect(screen.getByLabelText("How long")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add it" })).toBeInTheDocument();
+    expect(document.querySelector("form.taskform")).toBeInTheDocument();
+    expect(screen.getByText("Category").closest(".scroll--form")).not.toBeNull();
   });
 
   test("the form posts typed fields, never a parsed sentence", async () => {
