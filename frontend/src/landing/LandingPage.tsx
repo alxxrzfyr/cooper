@@ -324,7 +324,7 @@ export function LandingPage({
               next step.
             </p>
             <div className="landing__hand-note landing__hand-note--features">
-              <HandArrow flip />
+              <HandArrow />
               the boring planning bits, handled
             </div>
           </div>
