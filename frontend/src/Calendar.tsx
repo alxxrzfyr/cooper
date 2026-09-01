@@ -41,44 +41,116 @@ interface Entry {
   item?: Item;
 }
 
-function startOfDay(at: Date): Date {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate());
+/** Field getters below all read a `Date` as wall-clock time in a named zone, not the browser's
+ *  local zone. The backend places `start_at` from `COOPER_TIMEZONE`; a browser in any other zone
+ *  must not shift which day or hour a booked block appears to land on. */
+type ZonedFields = { year: number; month: number; day: number; hour: number; weekday: number };
+
+const zonedFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = zonedFormatterCache.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+      weekday: "short",
+    });
+    zonedFormatterCache.set(timeZone, formatter);
+  }
+  return formatter;
 }
 
-function addDays(at: Date, days: number): Date {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate() + days);
+const WEEKDAY_INDEX: Record<string, number> = {
+  Mon: 0,
+  Tue: 1,
+  Wed: 2,
+  Thu: 3,
+  Fri: 4,
+  Sat: 5,
+  Sun: 6,
+};
+
+/** The wall-clock date and hour a UTC instant reads as inside `timeZone`. */
+function zonedFields(at: Date, timeZone: string): ZonedFields {
+  const parts = zonedFormatter(timeZone).formatToParts(at);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  // Midnight renders as "24" under hour12: false in some engines; normalize it to 0.
+  const hour = Number(get("hour")) % 24;
+  return {
+    year: Number(get("year")),
+    month: Number(get("month")) - 1,
+    day: Number(get("day")),
+    hour,
+    weekday: WEEKDAY_INDEX[get("weekday")] ?? 0,
+  };
+}
+
+/** A sortable key for the wall-clock day a UTC instant falls on inside `timeZone`. */
+function zonedDayKey(at: Date, timeZone: string): number {
+  const { year, month, day } = zonedFields(at, timeZone);
+  return year * 10000 + month * 100 + day;
+}
+
+/** Midnight, in `timeZone`, on the wall-clock day `at` falls on there — kept as a UTC Date so
+ *  arithmetic (`getTime()`, `addDays`) still works; only ever read back through `zonedFields`. */
+function startOfDay(at: Date, timeZone: string): Date {
+  const { year, month, day } = zonedFields(at, timeZone);
+  return new Date(Date.UTC(year, month, day));
+}
+
+function addDays(at: Date, days: number, timeZone: string): Date {
+  const { year, month, day } = zonedFields(at, timeZone);
+  return new Date(Date.UTC(year, month, day + days));
 }
 
 /** Return the Monday that contains a date. */
-function startOfWeek(at: Date): Date {
-  return addDays(at, -((at.getDay() + 6) % 7));
+function startOfWeek(at: Date, timeZone: string): Date {
+  return addDays(at, -((zonedFields(at, timeZone).weekday + 6) % 7), timeZone);
 }
 
-function startOfMonth(at: Date): Date {
-  return new Date(at.getFullYear(), at.getMonth(), 1);
+function startOfMonth(at: Date, timeZone: string): Date {
+  const { year, month } = zonedFields(at, timeZone);
+  return new Date(Date.UTC(year, month, 1));
 }
 
-function sameDay(a: Date, b: Date): boolean {
-  return startOfDay(a).getTime() === startOfDay(b).getTime();
+function sameDay(a: Date, b: Date, timeZone: string): boolean {
+  return zonedDayKey(a, timeZone) === zonedDayKey(b, timeZone);
 }
 
-function clock(at: Date): string {
+function clock(at: Date, timeZone: string): string {
   return at.toLocaleTimeString(undefined, {
+    timeZone,
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-function dayName(at: Date): string {
-  return at.toLocaleDateString(undefined, { weekday: "short" });
+function dayName(at: Date, timeZone: string): string {
+  return at.toLocaleDateString(undefined, { timeZone, weekday: "short" });
 }
 
-function dayLabel(at: Date, today: Date): string {
-  const days = Math.round((startOfDay(at).getTime() - startOfDay(today).getTime()) / 86_400_000);
+function dayNumber(at: Date, timeZone: string): number {
+  return zonedFields(at, timeZone).day;
+}
+
+function monthOf(at: Date, timeZone: string): number {
+  return zonedFields(at, timeZone).month;
+}
+
+function dayLabel(at: Date, today: Date, timeZone: string): string {
+  const days = Math.round(
+    (startOfDay(at, timeZone).getTime() - startOfDay(today, timeZone).getTime()) / 86_400_000,
+  );
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
   return at.toLocaleDateString(undefined, {
+    timeZone,
     weekday: "long",
     day: "numeric",
     month: "short",
@@ -86,34 +158,36 @@ function dayLabel(at: Date, today: Date): string {
 }
 
 /** What the arrows are currently pointing at. */
-function rangeLabel(mode: Mode, anchor: Date, today: Date): string {
-  if (mode === "day") return dayLabel(anchor, today);
+function rangeLabel(mode: Mode, anchor: Date, today: Date, timeZone: string): string {
+  if (mode === "day") return dayLabel(anchor, today, timeZone);
   if (mode === "month") {
     return anchor.toLocaleDateString(undefined, {
+      timeZone,
       month: "long",
       year: "numeric",
     });
   }
-  const start = startOfWeek(anchor);
-  const full = { day: "numeric", month: "short" } as const;
-  return `${start.toLocaleDateString(undefined, full)} – ${addDays(start, 6).toLocaleDateString(undefined, full)}`;
+  const start = startOfWeek(anchor, timeZone);
+  const full = { timeZone, day: "numeric", month: "short" } as const;
+  return `${start.toLocaleDateString(undefined, full)} – ${addDays(start, 6, timeZone).toLocaleDateString(undefined, full)}`;
 }
 
-function step(mode: Mode, anchor: Date, delta: number): Date {
-  if (mode === "day") return addDays(anchor, delta);
-  if (mode === "week") return addDays(anchor, delta * 7);
-  return new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
+function step(mode: Mode, anchor: Date, delta: number, timeZone: string): Date {
+  if (mode === "day") return addDays(anchor, delta, timeZone);
+  if (mode === "week") return addDays(anchor, delta * 7, timeZone);
+  const { year, month } = zonedFields(anchor, timeZone);
+  return new Date(Date.UTC(year, month + delta, 1));
 }
 
 /** The days a mode puts on screen. A month always shows six weeks so it never changes height. */
-function daysShown(mode: Mode, anchor: Date): Date[] {
-  if (mode === "day") return [startOfDay(anchor)];
+function daysShown(mode: Mode, anchor: Date, timeZone: string): Date[] {
+  if (mode === "day") return [startOfDay(anchor, timeZone)];
   if (mode === "week") {
-    const start = startOfWeek(anchor);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+    const start = startOfWeek(anchor, timeZone);
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index, timeZone));
   }
-  const start = startOfWeek(startOfMonth(anchor));
-  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index));
+  const start = startOfWeek(startOfMonth(anchor, timeZone), timeZone);
+  return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index, timeZone));
 }
 
 /** Merge local and external entries without duplicating local blocks. */
@@ -181,13 +255,14 @@ export function Calendar({
   onDrop: (id: string) => void;
 }) {
   const today = new Date(view.now);
+  const zone = view.timezone;
   const [mode, setMode] = useState<Mode>(loadMode);
-  const [anchor, setAnchor] = useState<Date>(() => startOfDay(today));
+  const [anchor, setAnchor] = useState<Date>(() => startOfDay(today, zone));
   const [picked, setPicked] = useState<Date | null>(null);
   const [chosen, setChosen] = useState<Item | null>(null);
 
   const entries = agenda(view.scheduled, view.events);
-  const days = daysShown(mode, anchor);
+  const days = daysShown(mode, anchor, zone);
 
   /** Which day a switch to day view should land on: the one whose frame you last opened. */
   const dayOf = picked ?? anchor;
@@ -208,14 +283,15 @@ export function Calendar({
     return (
       hour >= view.hours.start_hour &&
       hour < view.hours.end_hour &&
-      view.hours.weekdays.includes((day.getDay() + 6) % 7)
+      view.hours.weekdays.includes(zonedFields(day, zone).weekday)
     );
   }
 
   function on(day: Date, hour?: number): Entry[] {
     return entries.filter(
       (entry) =>
-        sameDay(entry.start, day) && (hour === undefined || entry.start.getHours() === hour),
+        sameDay(entry.start, day, zone) &&
+        (hour === undefined || zonedFields(entry.start, zone).hour === hour),
     );
   }
 
@@ -250,21 +326,25 @@ export function Calendar({
             type="button"
             className="iconbtn"
             aria-label={`Previous ${mode}`}
-            onClick={() => setAnchor(step(mode, anchor, -1))}
+            onClick={() => setAnchor(step(mode, anchor, -1, zone))}
           >
             ‹
           </button>
-          <span className="calnav__label">{rangeLabel(mode, anchor, today)}</span>
+          <span className="calnav__label">{rangeLabel(mode, anchor, today, zone)}</span>
           <button
             type="button"
             className="iconbtn"
             aria-label={`Next ${mode}`}
-            onClick={() => setAnchor(step(mode, anchor, 1))}
+            onClick={() => setAnchor(step(mode, anchor, 1, zone))}
           >
             ›
           </button>
-          {days.some((day) => sameDay(day, today)) ? null : (
-            <button type="button" className="ghostbtn" onClick={() => setAnchor(startOfDay(today))}>
+          {days.some((day) => sameDay(day, today, zone)) ? null : (
+            <button
+              type="button"
+              className="ghostbtn"
+              onClick={() => setAnchor(startOfDay(today, zone))}
+            >
               Today
             </button>
           )}
@@ -302,7 +382,7 @@ export function Calendar({
 
   /** Render one entry in the timed grid. */
   function block(entry: Entry, compact: boolean) {
-    const label = `${entry.title} · ${clock(entry.start)}–${clock(entry.end)} · ${
+    const label = `${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)} · ${
       CATEGORY_LABEL[entry.category]
     }`;
 
@@ -313,7 +393,7 @@ export function Calendar({
           key={entry.key}
           title={label}
         >
-          <span className="slot__time">{clock(entry.start)}</span>
+          <span className="slot__time">{clock(entry.start, zone)}</span>
           <span className="slot__title">{entry.title}</span>
           {compact ? null : (
             <span className="slot__from">{entry.source === "gmail" ? "Gmail" : "Google"}</span>
@@ -331,7 +411,7 @@ export function Calendar({
         aria-label={label}
         onClick={() => setChosen(entry.item ?? null)}
       >
-        <span className="slot__time">{clock(entry.start)}</span>
+        <span className="slot__time">{clock(entry.start, zone)}</span>
         <span className="slot__title">{entry.title}</span>
       </button>
     );
@@ -370,11 +450,11 @@ export function Calendar({
                 <button
                   type="button"
                   key={day.toDateString()}
-                  className={`weekgrid__head ${sameDay(day, today) ? "is-today" : ""}`}
+                  className={`weekgrid__head ${sameDay(day, today, zone) ? "is-today" : ""}`}
                   onClick={() => openDay(day)}
                 >
-                  <span className="weekgrid__name">{dayName(day)}</span>
-                  <span className="weekgrid__num">{day.getDate()}</span>
+                  <span className="weekgrid__name">{dayName(day, zone)}</span>
+                  <span className="weekgrid__num">{dayNumber(day, zone)}</span>
                 </button>
               ))}
             </div>
@@ -406,22 +486,23 @@ export function Calendar({
             ))}
             {days.map((day) => {
               const mine = on(day);
-              const outside = day.getMonth() !== anchor.getMonth();
+              const outside = monthOf(day, zone) !== monthOf(anchor, zone);
               return (
                 <button
                   type="button"
                   key={day.toDateString()}
                   className={`monthcell ${outside ? "is-outside" : ""} ${
-                    sameDay(day, today) ? "is-today" : ""
+                    sameDay(day, today, zone) ? "is-today" : ""
                   }`}
                   aria-label={`${day.toLocaleDateString(undefined, {
+                    timeZone: zone,
                     weekday: "long",
                     day: "numeric",
                     month: "long",
                   })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
                   onClick={() => setPicked(day)}
                 >
-                  <span className="monthcell__num">{day.getDate()}</span>
+                  <span className="monthcell__num">{dayNumber(day, zone)}</span>
                   {mine.slice(0, 3).map((entry) => (
                     <span
                       className={`pill pill--${entry.source} cat--${entry.category}`}
@@ -450,7 +531,7 @@ export function Calendar({
 
       {picked && !chosen && (
         <Frame
-          title={dayLabel(picked, today)}
+          title={dayLabel(picked, today, zone)}
           subtitle={`${on(picked).length} ${on(picked).length === 1 ? "thing" : "things"}`}
           onClose={() => setPicked(null)}
           footer={

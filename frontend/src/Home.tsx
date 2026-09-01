@@ -4,20 +4,28 @@ import type { CalendarEvent, Item, Ranked, View } from "./types";
 
 /** Dashboard backed by the single `/api/today` payload. */
 
-function clock(at: Date): string {
-  return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function clock(at: Date, timeZone: string): string {
+  return at.toLocaleTimeString(undefined, { timeZone, hour: "numeric", minute: "2-digit" });
 }
 
-/** The local calendar day, in the same shape as `view.today`, so the two can be compared. */
-function localDay(at: Date): string {
-  const year = at.getFullYear();
-  const month = String(at.getMonth() + 1).padStart(2, "0");
-  const day = String(at.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/** The calendar day a UTC instant falls on inside `timeZone`, in the same shape as `view.today`,
+ *  so the two can be compared. The backend places `start_at` from `COOPER_TIMEZONE`; reading it
+ *  back with the browser's own local zone can shift which day a booked block appears on. */
+function zonedDay(at: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-function greeting(at: Date): string {
-  const hour = at.getHours();
+function greeting(at: Date, timeZone: string): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", hour12: false }).format(at),
+  );
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
@@ -44,13 +52,18 @@ interface Entry {
 }
 
 /** Merge local and external entries without duplicating Cooper-owned blocks. */
-function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): Entry[] {
+function todayStrip(
+  scheduled: Item[],
+  events: CalendarEvent[],
+  today: string,
+  timeZone: string,
+): Entry[] {
   const entries: Entry[] = [];
 
   for (const item of scheduled) {
     if (!item.start_at) continue;
     const start = new Date(item.start_at);
-    if (localDay(start) !== today) continue;
+    if (zonedDay(start, timeZone) !== today) continue;
     const source = item.source === "gmail" ? "gmail" : "cooper";
     entries.push({
       key: `c-${item.id}`,
@@ -66,7 +79,7 @@ function todayStrip(scheduled: Item[], events: CalendarEvent[], today: string): 
   for (const event of events) {
     if (event.mine) continue;
     const start = new Date(event.start_at);
-    if (localDay(start) !== today) continue;
+    if (zonedDay(start, timeZone) !== today) continue;
     entries.push({
       key: `${event.source}-${event.start_at}-${event.title}`,
       title: event.title,
@@ -97,10 +110,11 @@ export function Home({
 }) {
   const today = view.today;
   const now = new Date(view.now);
+  const zone = view.timezone;
   const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
   const next = shortlist[0];
 
-  const strip = todayStrip(view.scheduled, view.events, today);
+  const strip = todayStrip(view.scheduled, view.events, today, zone);
   /** Still to come today, so the strip can lead with what has not happened yet. */
   const ahead = strip.filter((entry) => entry.end.getTime() >= now.getTime());
 
@@ -115,9 +129,10 @@ export function Home({
   return (
     <div className="scroll">
       <h1 className="largetitle">
-        {greeting(now)}
+        {greeting(now, zone)}
         <span className="largetitle__sub">
           {now.toLocaleDateString(undefined, {
+            timeZone: zone,
             weekday: "long",
             day: "numeric",
             month: "long",
@@ -147,7 +162,7 @@ export function Home({
             <h2 className="hero__title">{next.title}</h2>
             <span className="hero__meta">
               {[
-                next.start_at ? clock(new Date(next.start_at)) : null,
+                next.start_at ? clock(new Date(next.start_at), zone) : null,
                 next.minutes ? `${next.minutes} min` : null,
                 why(next, today),
               ]
@@ -181,19 +196,19 @@ export function Home({
                   type="button"
                   key={entry.key}
                   className={`slot slot--${entry.source} cat--${entry.category}`}
-                  aria-label={`${entry.title} · ${clock(entry.start)}–${clock(entry.end)}`}
+                  aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                   onClick={() => onOpen(entry.item as Item)}
                 >
-                  <span className="slot__time">{clock(entry.start)}</span>
+                  <span className="slot__time">{clock(entry.start, zone)}</span>
                   <span className="slot__title">{entry.title}</span>
                 </button>
               ) : (
                 <div
                   key={entry.key}
                   className={`slot slot--${entry.source} cat--${entry.category}`}
-                  title={`${entry.title} · ${clock(entry.start)}–${clock(entry.end)}`}
+                  title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                 >
-                  <span className="slot__time">{clock(entry.start)}</span>
+                  <span className="slot__time">{clock(entry.start, zone)}</span>
                   <span className="slot__title">{entry.title}</span>
                   <span className="slot__from">
                     {entry.source === "gmail" ? "Gmail" : "Google"}
