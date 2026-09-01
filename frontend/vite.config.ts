@@ -32,6 +32,13 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: "./src/test/setup.ts",
+      // Calendar and Home read timestamps with the browser's local timezone (see Calendar.tsx),
+      // matching the single-user deployment where the browser and COOPER_TIMEZONE agree. Fixtures
+      // encode times against Asia/Singapore; without this, the same suite passes on a machine in
+      // that offset and fails on a CI runner in UTC, which is what actually happened.
+      env: {
+        TZ: "Asia/Singapore",
+      },
     },
   };
 });
