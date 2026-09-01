@@ -697,6 +697,20 @@ describe("appearance", () => {
     expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "false");
   });
+
+  test.each(["/", "/login", "/signup", "/terms", "/privacy"])(
+    "%s stays light even with dark saved",
+    async (path) => {
+      localStorage.setItem("cooper.appearance.v1", "dark");
+      window.history.replaceState({}, "", path);
+      stub({});
+
+      render(<App />);
+      await waitFor(() => {
+        expect(document.documentElement.dataset.theme).toBe("light");
+      });
+    },
+  );
 });
 
 describe("the conversation", () => {

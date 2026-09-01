@@ -5,8 +5,13 @@ import { applyAppearance, readAppearance, watchSystem } from "./appearance";
 import { loadRuntimeConfig } from "./runtime-config";
 
 // Before the first paint, so a dark-mode user never sees a white flash.
-applyAppearance(readAppearance());
-watchSystem(() => applyAppearance(readAppearance()));
+applyAppearance(readAppearance(), window.location.pathname);
+watchSystem(() => applyAppearance(readAppearance(), window.location.pathname));
+// A back/forward navigation between the workspace and a public page (e.g. signing out) doesn't
+// reload the page, so the theme has to be re-decided whenever the path changes underneath it.
+window.addEventListener("popstate", () => {
+  applyAppearance(readAppearance(), window.location.pathname);
+});
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing #root");

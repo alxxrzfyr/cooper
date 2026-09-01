@@ -403,8 +403,9 @@ export default function App() {
     };
   }, []);
 
-  /** Applied from state, so the page and the picker can never disagree. */
-  useEffect(() => applyAppearance(appearance), [appearance]);
+  /** Applied from state, so the page and the picker can never disagree. Re-applied on navigation
+   *  too: replaceState doesn't reload the page, so leaving /app has to re-decide the theme. */
+  useEffect(() => applyAppearance(appearance, pathname), [appearance, pathname]);
 
   function chooseAppearance(choice: Appearance): void {
     setAppearance(choice);

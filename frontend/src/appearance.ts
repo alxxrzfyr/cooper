@@ -35,8 +35,15 @@ export function resolve(choice: Appearance): "light" | "dark" {
   return choice;
 }
 
-export function applyAppearance(choice: Appearance): void {
-  const scheme = resolve(choice);
+/** Only the signed-in workspace at /app has a theme choice. The landing page, login, signup,
+ *  terms, and privacy are public marketing/legal surfaces and always render light, regardless of
+ *  the visitor's saved appearance or OS preference. */
+export function isThemedPath(pathname: string): boolean {
+  return pathname.replace(/\/+$/, "") === "/app";
+}
+
+export function applyAppearance(choice: Appearance, pathname: string): void {
+  const scheme = isThemedPath(pathname) ? resolve(choice) : "light";
   document.documentElement.dataset.theme = scheme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", CHROME[scheme]);
 }
