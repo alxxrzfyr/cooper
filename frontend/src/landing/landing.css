@@ -192,6 +192,27 @@
   transform: translateY(1px) scale(0.98);
 }
 
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
+
 .landing__track {
   display: flex;
   flex: 1;
@@ -199,7 +220,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: none;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }

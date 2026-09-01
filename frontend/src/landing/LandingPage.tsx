@@ -1,4 +1,5 @@
-import { useRef, useState, type KeyboardEvent, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import Lenis from "lenis";
 
 import { Mascot } from "../Mascot";
 import { AuthCard } from "./AuthCard";
@@ -17,6 +18,8 @@ const PANELS = [
   { id: "uses", label: "Uses" },
   { id: "start", label: "Try it" },
 ] as const;
+
+const LANDING_EASING = (value: number): number => 1 - Math.pow(1 - value, 3);
 
 function panelId(id: string): string {
   return `landing-${id}`;
@@ -149,28 +152,82 @@ export function LandingPage({
   onSignIn,
 }: LandingProps) {
   const track = useRef<HTMLDivElement>(null);
+  const lenis = useRef<Lenis | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const matchMedia = window.matchMedia?.bind(window);
+    if (!matchMedia) return;
+    const media = matchMedia("(min-width: 900px)");
+    let frame = 0;
+    let unsubscribe = (): void => {};
+
+    const setupScroll = (): void => {
+      unsubscribe();
+      lenis.current?.destroy();
+
+      const horizontal = media.matches;
+      const wrapper = horizontal ? track.current : window;
+      if (!wrapper) return;
+
+      const instance = new Lenis({
+        wrapper,
+        content: horizontal ? (track.current ?? undefined) : document.documentElement,
+        eventsTarget: horizontal ? (track.current ?? undefined) : window,
+        orientation: horizontal ? "horizontal" : "vertical",
+        gestureOrientation: horizontal ? "both" : "vertical",
+        smoothWheel: true,
+        syncTouch: true,
+        lerp: 0.1,
+        duration: 0.85,
+        easing: LANDING_EASING,
+        anchors: true,
+        autoRaf: false,
+        respectReducedMotion: true,
+      });
+
+      lenis.current = instance;
+      unsubscribe = instance.on("scroll", ({ scroll }) => {
+        const element = track.current;
+        if (!horizontal || !element || element.clientWidth <= 0) return;
+        const nextIndex = Math.round(scroll / element.clientWidth);
+        setActiveIndex(Math.min(Math.max(nextIndex, 0), PANELS.length - 1));
+      });
+    };
+
+    const animate = (time: number): void => {
+      lenis.current?.raf(time);
+      frame = requestAnimationFrame(animate);
+    };
+
+    setupScroll();
+    frame = requestAnimationFrame(animate);
+    media.addEventListener("change", setupScroll);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      media.removeEventListener("change", setupScroll);
+      unsubscribe();
+      lenis.current?.destroy();
+      lenis.current = null;
+    };
+  }, []);
 
   function moveTo(id: string): void {
     const nextIndex = PANELS.findIndex((panel) => panel.id === id);
     if (nextIndex >= 0) setActiveIndex(nextIndex);
     const target = document.getElementById(panelId(id));
-    if (!target || typeof target.scrollIntoView !== "function") return;
-    target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    if (!target) return;
+    if (lenis.current) {
+      lenis.current.scrollTo(target, { immediate: lenis.current.prefersReducedMotion });
+      return;
+    }
+    target.scrollIntoView({ behavior: "auto", block: "nearest", inline: "start" });
   }
 
   function moveBy(delta: number): void {
     const nextIndex = Math.min(Math.max(activeIndex + delta, 0), PANELS.length - 1);
     moveTo(PANELS[nextIndex].id);
-  }
-
-  function horizontalWheel(event: WheelEvent<HTMLDivElement>): void {
-    const element = track.current;
-    if (!element || typeof window === "undefined") return;
-    const wide = window.matchMedia?.("(min-width: 900px)").matches ?? false;
-    if (!wide || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-    event.preventDefault();
-    element.scrollBy({ left: event.deltaY, behavior: "auto" });
   }
 
   function trackKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
@@ -181,13 +238,6 @@ export function LandingPage({
       event.preventDefault();
       moveBy(-1);
     }
-  }
-
-  function trackScroll(): void {
-    const element = track.current;
-    if (!element || element.clientWidth <= 0) return;
-    const nextIndex = Math.round(element.scrollLeft / element.clientWidth);
-    setActiveIndex(Math.min(Math.max(nextIndex, 0), PANELS.length - 1));
   }
 
   return (
@@ -204,9 +254,7 @@ export function LandingPage({
         role="region"
         aria-label="Cooper overview"
         tabIndex={0}
-        onWheel={horizontalWheel}
         onKeyDown={trackKeyDown}
-        onScroll={trackScroll}
       >
         <section
           className="landing__panel landing__panel--hero landing__panel--meet"
