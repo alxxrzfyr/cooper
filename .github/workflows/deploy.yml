@@ -102,15 +102,15 @@ jobs:
     name: Trigger Render API deploy (optional)
     needs: verify
     runs-on: ubuntu-latest
+    env:
+      # A step's own `env:` block is invisible to that step's `if:` condition, so the secret has
+      # to be lifted to job scope for both steps below to be able to branch on it.
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
     steps:
       - name: Trigger Render deploy hook when configured
         if: ${{ env.RENDER_DEPLOY_HOOK != '' }}
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: curl --fail --silent --show-error --request POST "$RENDER_DEPLOY_HOOK"
 
       - name: Use Render Git auto-deploy when no hook is configured
         if: ${{ env.RENDER_DEPLOY_HOOK == '' }}
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: echo "Render deploy hook is not configured; enable Auto-Deploy in the Render service."
