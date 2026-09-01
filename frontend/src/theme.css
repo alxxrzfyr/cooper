@@ -3013,6 +3013,13 @@ button.slot:active {
   background: var(--card);
 }
 
+.app:not(.app--public) .segment[class*="cat--"][aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--cat-line);
+  color: #fff;
+  box-shadow: none;
+}
+
 .app:not(.app--public) .modebar {
   padding: 14px 18px 10px;
   border: 0;

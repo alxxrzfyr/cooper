@@ -1,5 +1,3 @@
-// defineConfig comes from vitest/config rather than vite: it accepts the `test` key, so one
-// config file serves both the dev server and the test runner without a type error.
 import { resolve } from "node:path";
 
 import react from "@vitejs/plugin-react";
@@ -7,8 +5,6 @@ import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => {
-  // The browser talks to same-origin /api paths. Only this local development proxy reads the
-  // backend key, so it never becomes part of the Vite client environment or production bundle.
   const rootEnv = loadEnv(mode, resolve(process.cwd(), ".."), "");
   const localKey = rootEnv.COOPER_SHARED_KEY?.trim();
   const proxyHeaders = localKey ? { "X-Cooper-Key": localKey } : {};
@@ -32,10 +28,6 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: "./src/test/setup.ts",
-      // Calendar and Home read timestamps with the browser's local timezone (see Calendar.tsx),
-      // matching the single-user deployment where the browser and COOPER_TIMEZONE agree. Fixtures
-      // encode times against Asia/Singapore; without this, the same suite passes on a machine in
-      // that offset and fails on a CI runner in UTC, which is what actually happened.
       env: {
         TZ: "Asia/Singapore",
       },
