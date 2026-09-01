@@ -60,4 +60,21 @@ describe("API runtime configuration", () => {
     });
     await expect(api.today()).rejects.toBeInstanceOf(ApiError);
   });
+
+  test("turns a network outage into a retryable API error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    vi.resetModules();
+    const { api } = await import("../api");
+
+    await expect(api.today()).rejects.toMatchObject({
+      status: 503,
+      message: "Cooper can’t reach the API right now. Check the connection and try again.",
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });

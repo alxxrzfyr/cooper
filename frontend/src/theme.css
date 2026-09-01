@@ -2541,6 +2541,7 @@ button.slot:active {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
 }
 
 .taskform .field {
@@ -2580,11 +2581,18 @@ button.slot:active {
 }
 
 .segmented--wrap {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .segmented--wrap .segment {
-  flex: 1 1 30%;
+  min-width: 0;
+}
+
+.taskform > .btn--full {
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 900px) {
@@ -2613,6 +2621,10 @@ button.slot:active {
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 12px 16px;
+  }
+
+  .taskform .segmented--wrap {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .taskform > section:first-child,
@@ -2715,6 +2727,7 @@ button.slot:active {
 
 .app:not(.app--public) .main {
   background: transparent;
+  min-width: 0;
 }
 
 .app:not(.app--public) .who__name {
@@ -2727,6 +2740,7 @@ button.slot:active {
   gap: 22px;
   padding-top: 28px;
   padding-bottom: 40px;
+  min-width: 0;
 }
 
 .app:not(.app--public) .largetitle {

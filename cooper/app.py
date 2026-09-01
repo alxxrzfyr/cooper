@@ -1368,7 +1368,10 @@ def callback(code: str | None = None, state: str | None = None, error: str | Non
         )
     except CalendarError as failure:
         return _page("Could not connect", str(failure))
-    return _page("Calendar connected", f"Cooper can now use {email or 'your calendar'}.")
+    return _page(
+        "Calendar connected · Gmail connected",
+        f"Cooper can now use {email or 'your Google Calendar and Gmail'}.",
+    )
 
 
 @app.post("/api/google/disconnect")

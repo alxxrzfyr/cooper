@@ -834,7 +834,7 @@ export default function App() {
                 </section>
 
                 <section className="group">
-                  <div className="group__label">Google Calendar</div>
+                  <div className="group__label">Google Calendar + Gmail</div>
                   <div className="inset">
                     <div className="field">
                       <span className="field__label">Account</span>
@@ -870,7 +870,7 @@ export default function App() {
                       ? "Booked work is written to Google. Your own events block scheduling."
                       : view.calendar.configured
                         ? "Not connected. Cooper is using its own calendar, which works on its own."
-                        : "Cooper has its own calendar and needs nothing to work. Add a Google client id and secret to .env if you also want it in Google Calendar."}
+                        : "Cooper has its own calendar and needs nothing to work. Connect Google Calendar + Gmail when you want both services included."}
                   </p>
                 </section>
 
@@ -916,8 +916,8 @@ export default function App() {
                       : view.gmail.connected
                         ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
                         : view.gmail.configured
-                          ? "Connect Google Calendar above to enable Gmail confirmations."
-                          : "Cooper works without Google. Connect Google to import known Gmail confirmations."}
+                          ? "Connect Google Calendar + Gmail above to enable Gmail confirmations."
+                          : "Cooper works without Google. Connect both Google services to import known Gmail confirmations."}
                   </p>
                 </section>
 

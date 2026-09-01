@@ -43,8 +43,8 @@
   --landing-soft: color-mix(in srgb, var(--accent) 7%, var(--bg));
   --landing-shadow: 0 18px 56px color-mix(in srgb, var(--text) 14%, transparent);
   --public-accent-text: #0057c2;
-  --public-action: #0057c2;
-  --public-action-hover: #00439a;
+  --public-action: #405f38;
+  --public-action-hover: #30492b;
 
   position: relative;
   display: flex;
@@ -198,7 +198,7 @@
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-snap-type: x mandatory;
+  scroll-snap-type: none;
   scroll-behavior: smooth;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -219,7 +219,6 @@
   min-height: 100%;
   padding: clamp(42px, 7vh, 92px) clamp(24px, 8vw, 128px);
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 .landing__panel::after {
@@ -1751,8 +1750,8 @@
   --public-line: color-mix(in srgb, var(--text) 14%, transparent);
   --public-soft: color-mix(in srgb, var(--accent) 6%, var(--bg));
   --public-accent-text: #0057c2;
-  --public-action: #0057c2;
-  --public-action-hover: #00439a;
+  --public-action: #405f38;
+  --public-action-hover: #30492b;
 
   display: flex;
   flex-direction: column;
@@ -1947,8 +1946,8 @@
 :root[data-theme="dark"] .landing,
 :root[data-theme="dark"] .public-page {
   --public-accent-text: #66b7ff;
-  --public-action: #0057c2;
-  --public-action-hover: #006bd6;
+  --public-action: #6d9561;
+  --public-action-hover: #86aa79;
 }
 
 .legal-page__main {

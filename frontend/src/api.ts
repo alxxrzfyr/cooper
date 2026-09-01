@@ -27,7 +27,27 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body) headers.set("Content-Type", "application/json");
 
   const base = getRuntimeConfig().apiBase;
-  const response = await fetch(`${base}${path}`, { ...init, headers });
+  let response: Response | undefined;
+  let networkError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await fetch(`${base}${path}`, { ...init, headers });
+      break;
+    } catch (error: unknown) {
+      networkError = error;
+      if (attempt === 0) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 750));
+      }
+    }
+  }
+  if (!response) {
+    throw new ApiError(
+      503,
+      networkError instanceof TypeError
+        ? "Cooper can’t reach the API right now. Check the connection and try again."
+        : "Cooper couldn’t reach the API. Try again.",
+    );
+  }
   const contentType = response.headers.get("content-type") ?? "";
   const looksLikeJson = contentType.includes("application/json");
 
