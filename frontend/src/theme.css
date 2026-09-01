@@ -3235,6 +3235,32 @@ button.slot:active {
   .app:not(.app--public) .hero {
     padding: 18px;
   }
+
+  .app:not(.app--public) .btn,
+  .app:not(.app--public) .segment,
+  .app:not(.app--public) .modeswitch__opt,
+  .app:not(.app--public) .tab,
+  .app:not(.app--public) .day,
+  .app:not(.app--public) .ghostbtn {
+    min-height: 44px;
+  }
+
+  .app:not(.app--public) .composer__input {
+    min-height: 44px;
+  }
+
+  .app:not(.app--public) .taskform .field__input {
+    min-height: 44px;
+  }
+
+  .app:not(.app--public) .composer__send,
+  .app:not(.app--public) .iconbtn,
+  .app:not(.app--public) .tick,
+  .app:not(.app--public) .frame__close,
+  .app:not(.app--public) .notice__close {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 @media (max-width: 520px) {
