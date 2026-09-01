@@ -3604,8 +3604,8 @@
 .landing--keeby .landing__panel--meet .landing__copy h1 {
   width: 100%;
   max-width: none;
-  transform: translateX(-8px);
-  font-size: clamp(56px, 4.3rem, 74px);
+  transform: translateX(-12px);
+  font-size: calc(clamp(56px, 4.3rem, 74px) - 1px);
   line-height: 0.94;
 }
 
@@ -3977,7 +3977,7 @@
   }
 
   .landing--keeby .landing__panel--meet .landing__copy h1 {
-    font-size: clamp(48px, 12rem, 68px);
+    font-size: calc(clamp(48px, 12rem, 68px) - 1px);
   }
 
   .landing__cooper-hello {
@@ -4003,7 +4003,7 @@
   }
 
   .landing--keeby .landing__panel--meet .landing__copy h1 {
-    font-size: clamp(45px, 13rem, 58px);
+    font-size: calc(clamp(45px, 13rem, 58px) - 1px);
   }
 
   .landing__cooper-hello {
@@ -4135,7 +4135,7 @@
 
   .landing--keeby .landing__panel--meet .landing__copy h1 {
     max-width: 11ch;
-    font-size: clamp(46px, 13rem, 62px);
+    font-size: calc(clamp(46px, 13rem, 62px) - 1px);
     line-height: 0.96;
   }
 
