@@ -88,16 +88,22 @@ def test_allowlist_is_case_insensitive() -> None:
     check_allowed_email(identity, frozenset({"friend@example.com"}))
 
 
-def test_firebase_mode_requires_an_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("COOPER_SHARED_KEY", "test-key-that-is-long-enough-x")
-    monkeypatch.setenv("COOPER_AUTH_MODE", "firebase")
-    monkeypatch.setenv("COOPER_FIREBASE_PROJECT_ID", "project")
-    monkeypatch.setenv("COOPER_OAUTH_STATE_SECRET", "oauth-state-secret-long-enough")
-    monkeypatch.setenv("COOPER_SYNC_SECRET", "sync-secret-that-is-long-enough")
-    monkeypatch.setenv("COOPER_ALLOWED_EMAILS", "")
+def test_firebase_mode_allows_an_empty_allowlist() -> None:
+    settings = Settings(
+        _env_file=None,
+        shared_key=None,
+        auth_mode="firebase",
+        firebase_project_id="project",
+        allowed_emails=(),
+        oauth_state_secret="oauth-state-secret-long-enough",
+        sync_secret="sync-secret-that-is-long-enough",
+    )
 
-    with pytest.raises(ValidationError):
-        Settings()
+    assert settings.allowed_emails == ()
+
+
+def test_empty_allowlist_allows_any_verified_identity() -> None:
+    check_allowed_email(AuthIdentity(uid="u1", email="anyone@example.com"), frozenset())
 
 
 def test_firebase_mode_does_not_require_a_shared_key() -> None:

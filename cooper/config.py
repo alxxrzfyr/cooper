@@ -123,10 +123,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "COOPER_FIREBASE_PROJECT_ID is required when COOPER_AUTH_MODE=firebase"
                 )
-            if not self.allowed_emails:
-                raise ValueError(
-                    "COOPER_ALLOWED_EMAILS must not be empty when COOPER_AUTH_MODE=firebase"
-                )
             if not self.oauth_secret() or len(self.oauth_secret() or "") < KEY_MIN:
                 raise ValueError(
                     f"COOPER_OAUTH_STATE_SECRET must be at least {KEY_MIN} characters when "
