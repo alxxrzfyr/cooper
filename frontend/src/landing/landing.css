@@ -3604,6 +3604,7 @@
 .landing--keeby .landing__panel--meet .landing__copy h1 {
   width: 100%;
   max-width: none;
+  transform: translateX(-8px);
   font-size: clamp(56px, 4.3rem, 74px);
   line-height: 0.94;
 }
