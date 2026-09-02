@@ -100,7 +100,7 @@ function addDays(at: Date, days: number, timeZone: string): Date {
 
 /** Return the Monday that contains a date. */
 function startOfWeek(at: Date, timeZone: string): Date {
-  return addDays(at, -((zonedFields(at, timeZone).weekday + 6) % 7), timeZone);
+  return addDays(at, -zonedFields(at, timeZone).weekday, timeZone);
 }
 
 function startOfMonth(at: Date, timeZone: string): Date {
