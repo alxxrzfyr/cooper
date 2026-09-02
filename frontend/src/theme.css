@@ -2407,6 +2407,37 @@ button.slot:active {
   color: var(--accent);
 }
 
+.event-link {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.event-link small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.frame__description {
+  line-height: 1.55;
+}
+
+.frame__description p,
+.frame__description div {
+  margin: 0 0 10px;
+}
+
+.frame__description p:last-child,
+.frame__description div:last-child {
+  margin-bottom: 0;
+}
+
+.frame__description ul,
+.frame__description ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
 .frame__empty {
   margin: 0;
   color: var(--muted);

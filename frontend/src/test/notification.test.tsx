@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -143,6 +143,61 @@ describe("browser notifications", () => {
           },
         },
       ]);
+    });
+  });
+
+  test("announces a newly observed Google Calendar event", async () => {
+    const notifications: string[] = [];
+    class TestNotification {
+      static permission: NotificationPermission = "granted";
+
+      constructor(title: string) {
+        notifications.push(title);
+      }
+    }
+    vi.stubGlobal("Notification", TestNotification);
+
+    let poll: (() => void) | undefined;
+    vi.spyOn(window, "setInterval").mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+    ) => {
+      if (timeout === 60_000) poll = handler as () => void;
+      return 1;
+    }) as typeof window.setInterval);
+
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        return json(
+          calls === 1
+            ? view({ calendar: { configured: true, connected: true, email: "me@example.com" } })
+            : view({
+                calendar: { configured: true, connected: true, email: "me@example.com" },
+                events: [
+                  {
+                    event_id: "google-1",
+                    title: "Design review",
+                    start_at: "2026-08-31T10:00:00+00:00",
+                    end_at: "2026-08-31T11:00:00+00:00",
+                    category: "work",
+                    mine: false,
+                    source: "google",
+                  },
+                ],
+              }),
+        );
+      }),
+    );
+
+    render(<App />);
+    await waitFor(() => expect(poll).toBeDefined());
+
+    poll!();
+    await waitFor(() => {
+      expect(notifications).toEqual(["Google Calendar: Design review · Aug 31, 2026, 6:00 PM"]);
     });
   });
 });

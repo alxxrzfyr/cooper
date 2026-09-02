@@ -1588,9 +1588,10 @@ describe("the dashboard", () => {
             source: "google",
             meeting_url: "https://meet.example.com/dentist",
             location: "Dental clinic",
-            description: "Bring the insurance card.",
+            description:
+              '<strong>Bring the insurance card.</strong><br>Join Zoom Meeting<br><a href="https://meet.example.com/dentist">https://meet.example.com/dentist</a><script>do not show this</script>',
             organizer_name: "Dr. Cooper",
-            response_status: "accepted",
+            response_status: "needsAction",
           },
         ],
       }),
@@ -1604,8 +1605,15 @@ describe("the dashboard", () => {
 
     await user.click(dentist.closest("button")!);
     expect(await screen.findByText("Dental clinic")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "meet.example.com" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Join meeting" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "https://meet.example.com/dentist" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Bring the insurance card.")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting your response")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("<br>");
+    expect(document.body.textContent).not.toContain("href=");
+    expect(document.body.textContent).not.toContain("do not show this");
   });
 
   test("an event Cooper placed is not listed twice", async () => {

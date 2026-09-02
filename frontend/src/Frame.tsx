@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { createElement, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import type { CalendarEvent, Item, Ranked } from "./types";
@@ -49,7 +49,18 @@ function eventWhen(event: CalendarEvent, timeZone: string): string {
 }
 
 function responseLabel(status: string): string {
-  return status.replaceAll("_", " ");
+  switch (status) {
+    case "needsAction":
+      return "Awaiting your response";
+    case "accepted":
+      return "Accepted";
+    case "declined":
+      return "Declined";
+    case "tentative":
+      return "Maybe";
+    default:
+      return status.replaceAll("_", " ");
+  }
 }
 
 function meetingLabel(url: string): string {
@@ -58,6 +69,81 @@ function meetingLabel(url: string): string {
   } catch {
     return "Open meeting link";
   }
+}
+
+interface ParsedDescription {
+  nodes: ReactNode[];
+  links: string[];
+  text: string;
+}
+
+const DESCRIPTION_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "P", "DIV", "UL", "OL", "LI"]);
+const BLOCKED_DESCRIPTION_TAGS = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG"]);
+
+function safeUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseDescription(html: string): ParsedDescription {
+  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = parsed.body.firstElementChild;
+  const links: string[] = [];
+
+  function renderChildren(parent: Node, path: string): ReactNode[] {
+    return Array.from(parent.childNodes).flatMap((node, index) =>
+      renderNode(node, `${path}-${index}`),
+    );
+  }
+
+  function renderNode(node: Node, key: string): ReactNode[] {
+    if (node.nodeType === Node.TEXT_NODE) return [node.textContent ?? ""];
+    if (node.nodeType !== Node.ELEMENT_NODE) return [];
+    const element = node as Element;
+    if (BLOCKED_DESCRIPTION_TAGS.has(element.tagName)) return [];
+    if (element.tagName === "BR") return [<br key={key} />];
+    if (element.tagName === "A") {
+      const href = safeUrl(element.getAttribute("href") ?? "");
+      if (!href) return renderChildren(element, key);
+      links.push(href);
+      return [
+        <a key={key} href={href} target="_blank" rel="noreferrer">
+          {renderChildren(element, key)}
+        </a>,
+      ];
+    }
+    const children = renderChildren(element, key);
+    if (!DESCRIPTION_TAGS.has(element.tagName)) return children;
+    return [createElement(element.tagName.toLowerCase(), { key }, children)];
+  }
+
+  return {
+    nodes: root ? renderChildren(root, "description") : [],
+    links,
+    text: root?.textContent?.replace(/\s+/g, " ").trim() ?? html.replace(/<[^>]*>/g, " ").trim(),
+  };
+}
+
+function meetingFromDescription(description: ParsedDescription): {
+  url: string | null;
+  phone: string | null;
+  meetingId: string | null;
+  passcode: string | null;
+} {
+  const url =
+    description.links.find((link) =>
+      /zoom|meet\.google|teams\.microsoft|join|conference/i.test(link),
+    ) ?? null;
+  const phone = description.text.match(/\+\d[\d\s().-]{8,}\d/)?.[0]?.replace(/\s+/g, " ") ?? null;
+  const meetingId =
+    description.text.match(/meeting\s+id\s*[:#-]?\s*([\d ]{4,})/i)?.[1]?.trim() ?? null;
+  const passcode =
+    description.text.match(/(?:passcode|password)\s*[:#-]?\s*([\w-]+)/i)?.[1] ?? null;
+  return { url, phone, meetingId, passcode };
 }
 
 /** Detail frame rendered in a portal, as a sheet on narrow screens and a card on wide screens. */
@@ -228,16 +314,30 @@ export function CalendarEventFrame({
   onClose: () => void;
 }) {
   const organizer = event.organizer_name;
+  const description = event.description ? parseDescription(event.description) : null;
+  const meeting = meetingFromDescription(description ?? { nodes: [], links: [], text: "" });
+  const meetingUrl = event.meeting_url ?? meeting.url;
   const facts: Array<[string, ReactNode]> = [["When", eventWhen(event, timeZone)]];
 
-  if (event.meeting_url) {
+  if (meetingUrl) {
     facts.push([
       "Meeting",
-      <a href={event.meeting_url} target="_blank" rel="noreferrer">
-        {meetingLabel(event.meeting_url)}
-      </a>,
+      <span className="event-link">
+        <a href={meetingUrl} target="_blank" rel="noreferrer">
+          Join meeting
+        </a>
+        <small>{meetingLabel(meetingUrl)}</small>
+      </span>,
     ]);
   }
+  if (meeting.phone) {
+    facts.push([
+      "Phone",
+      <a href={`tel:${meeting.phone.replace(/[^\d+]/g, "")}`}>{meeting.phone}</a>,
+    ]);
+  }
+  if (meeting.meetingId) facts.push(["Meeting ID", meeting.meetingId]);
+  if (meeting.passcode) facts.push(["Passcode", meeting.passcode]);
   if (event.location) facts.push(["Location", event.location]);
   if (organizer) facts.push(["Organizer", organizer]);
   if (event.response_status) facts.push(["RSVP", responseLabel(event.response_status)]);
@@ -253,7 +353,9 @@ export function CalendarEventFrame({
         ))}
       </dl>
 
-      {event.description && <p className="frame__notes">{event.description}</p>}
+      {description && description.nodes.length > 0 && (
+        <div className="frame__notes frame__description">{description.nodes}</div>
+      )}
     </Frame>
   );
 }

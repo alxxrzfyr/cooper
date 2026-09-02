@@ -86,6 +86,21 @@ function progressFor(sentence: string): string {
   return "Thinking…";
 }
 
+function googleEventKey(event: CalendarEvent): string {
+  return `${event.event_id ?? `${event.start_at}-${event.end_at}`}|${event.title}`;
+}
+
+function googleEventMessage(event: CalendarEvent, timeZone: string): string {
+  const when = event.all_day
+    ? "all day"
+    : new Date(event.start_at).toLocaleString(undefined, {
+        timeZone: event.time_zone ?? timeZone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+  return `Google Calendar: ${event.title} · ${when}`;
+}
+
 function formatChecked(value: string): string {
   const checked = new Date(value);
   if (Number.isNaN(checked.getTime())) return value;
@@ -269,6 +284,7 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
   const noticeTimer = useRef<number | null>(null);
+  const observedGoogleEvents = useRef<Set<string> | null>(null);
   const firebaseSubject = useRef<string | null>(null);
   const authEpoch = useRef(0);
   const [pathname, setPathname] = useState(() =>
@@ -408,6 +424,21 @@ export default function App() {
     [browserAlerts, tab],
   );
 
+  const announceNewGoogleEvents = useCallback(
+    (nextView: View) => {
+      const current = nextView.events.filter((event) => !event.mine).map(googleEventKey);
+      const observed = observedGoogleEvents.current;
+      observedGoogleEvents.current = new Set(current);
+      if (!observed) return;
+
+      nextView.events
+        .filter((event) => !event.mine && !observed.has(googleEventKey(event)))
+        .slice(0, 3)
+        .forEach((event) => announce("shown", googleEventMessage(event, nextView.timezone)));
+    },
+    [announce],
+  );
+
   const enableBrowserAlerts = useCallback(async () => {
     if (!("Notification" in window)) {
       announce("note", "This browser does not support notifications.");
@@ -455,6 +486,7 @@ export default function App() {
     try {
       const nextView = await api.today();
       if (requestEpoch !== authEpoch.current) return;
+      announceNewGoogleEvents(nextView);
       setView(nextView);
       setServerModelAvailable(nextView.using_model);
       setFailure(null);
@@ -467,11 +499,29 @@ export default function App() {
     } finally {
       if (requestEpoch === authEpoch.current) setLoadResolved(true);
     }
-  }, [returnToSignIn, workspaceVisible]);
+  }, [announceNewGoogleEvents, returnToSignIn, workspaceVisible]);
 
   useEffect(() => {
     if (workspaceVisible) void load();
   }, [load, workspaceVisible]);
+
+  useEffect(() => {
+    if (!workspaceVisible) return;
+    const refresh = async () => {
+      const requestEpoch = authEpoch.current;
+      try {
+        const nextView = await api.today();
+        if (requestEpoch !== authEpoch.current) return;
+        announceNewGoogleEvents(nextView);
+        setView(nextView);
+        setServerModelAvailable(nextView.using_model);
+      } catch {
+        // The normal workspace load owns visible connection errors; polling stays quiet.
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [announceNewGoogleEvents, workspaceVisible]);
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
