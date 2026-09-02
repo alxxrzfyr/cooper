@@ -1761,6 +1761,11 @@ button.slot:active {
   background: color-mix(in srgb, var(--accent) 8%, var(--card));
 }
 
+.slot--google:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+}
+
 .slot--gmail {
   border-style: dashed;
   background: color-mix(in srgb, var(--cat-line, var(--accent)) 8%, transparent);
@@ -1807,6 +1812,20 @@ button.slot:active {
   border-radius: var(--pill);
   background: var(--accent-wash);
   color: var(--accent);
+}
+
+.slot--home-event {
+  flex-wrap: wrap;
+}
+
+.slot__detail {
+  flex-basis: 100%;
+  margin-left: 72px;
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slot--all-day .slot__time {
@@ -2928,6 +2947,10 @@ button.slot:active {
   min-width: 0;
 }
 
+.app:not(.app--public) .scroll > * {
+  width: min(1280px, 100%);
+}
+
 .app:not(.app--public) .largetitle {
   color: var(--text);
   font-size: clamp(32px, 4.2vw, 46px);
@@ -3174,6 +3197,10 @@ button.slot:active {
 }
 
 @media (min-width: 900px) {
+  .app:not(.app--public) .scroll {
+    padding-inline: clamp(28px, 4vw, 64px);
+  }
+
   .app:not(.app--public) {
     grid-template-columns: 252px minmax(0, 1fr);
   }
@@ -3293,6 +3320,7 @@ button.slot:active {
 
   .app:not(.app--public) .scroll {
     padding-top: 20px;
+    padding-inline: clamp(14px, 4vw, 24px);
   }
 
   .app:not(.app--public) .hero {

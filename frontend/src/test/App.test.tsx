@@ -1604,7 +1604,7 @@ describe("the dashboard", () => {
     expect(dentist.closest(".slot")).toHaveClass("slot--google");
 
     await user.click(dentist.closest("button")!);
-    expect(await screen.findByText("Dental clinic")).toBeInTheDocument();
+    expect((await screen.findAllByText("Dental clinic"))[1]).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join meeting" })).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "https://meet.example.com/dentist" }),

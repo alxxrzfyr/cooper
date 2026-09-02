@@ -141,7 +141,7 @@ export function Home({
                 <button
                   type="button"
                   key={entry.key}
-                  className={`slot slot--${entry.source} cat--${entry.category} ${entry.event.all_day ? "slot--all-day" : ""}`}
+                  className={`slot slot--${entry.source} cat--${entry.category} slot--home-event ${entry.event.all_day ? "slot--all-day" : ""}`}
                   title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                   aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                   onClick={() => onOpen(entry.event!)}
@@ -151,6 +151,10 @@ export function Home({
                   </span>
                   <span className="slot__title">{entry.title}</span>
                   <span className="slot__from">Google</span>
+                  <span className="slot__detail">
+                    {entry.event.location ??
+                      (entry.event.meeting_url ? "Online meeting" : "Google Calendar")}
+                  </span>
                 </button>
               ) : (
                 <div
