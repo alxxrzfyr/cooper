@@ -223,7 +223,16 @@ class Calendar:
             page_token = next_token
         return out
 
-    def add_block(self, *, item_id: str, title: str, start: dt.datetime, end: dt.datetime) -> str:
+    def add_block(
+        self,
+        *,
+        item_id: str,
+        title: str,
+        start: dt.datetime,
+        end: dt.datetime,
+        description: str | None = None,
+        location: str | None = None,
+    ) -> str:
         """Create an event Cooper owns. The id is derived so a retry updates, not duplicates."""
         event_id = f"{TAG}{item_id}"
         body = {
@@ -234,6 +243,10 @@ class Calendar:
             "extendedProperties": {"private": {TAG: item_id}},
             "reminders": {"useDefault": False},
         }
+        if description:
+            body["description"] = description
+        if location:
+            body["location"] = location
         try:
             self._call("POST", f"/calendars/{self._encoded}/events", body)
         except CalendarError as error:

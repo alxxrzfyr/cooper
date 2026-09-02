@@ -17,6 +17,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -25,7 +26,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 from sqlalchemy import select
 
 from cooper import sources
@@ -191,6 +192,9 @@ class NewItem(BaseModel):
     due: dt.date | None = None
     start: dt.datetime | None = None
     end: dt.datetime | None = None
+    meeting_url: AnyHttpUrl | None = None
+    location: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=5000)
 
 
 class BulkIn(BaseModel):
@@ -323,6 +327,26 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]
+
+
+def item_details(*, notes: str | None, location: str | None, meeting_url: str | None) -> str | None:
+    """Store optional form details in the existing item notes field."""
+    parts = []
+    if location:
+        parts.append(f"Location: {location.strip()}")
+    if meeting_url:
+        parts.append(f"Meeting link: {meeting_url}")
+    if notes and notes.strip():
+        parts.append(f"Notes:\n{notes.strip()}")
+    return "\n\n".join(parts) or None
+
+
+def item_location(notes: str | None) -> str | None:
+    """Recover the optional location when a task is later booked into an event."""
+    if not notes:
+        return None
+    match = re.search(r"^Location:\s*(.+)$", notes, re.MULTILINE)
+    return match.group(1).strip() if match else None
 
 
 def busy_windows(owner_id: str, *, days: int = 14) -> list[tuple[dt.datetime, dt.datetime]]:
@@ -563,7 +587,9 @@ def say(body: Say, request: Request) -> dict[str, Any]:
     action = request_brain.read(body.text, recent, use_model=ai)
 
     # Questions are answered as text and never reach the mutation path.
-    if ai and (action.verb == "show" or looks_like_a_question(body.text)):
+    if ai and (
+        action.verb == "show" or (action.verb == "ask" and looks_like_a_question(body.text))
+    ):
         answered = request_brain.answer(body.text, summaries, _busy_time_context(owner_id))
         if answered:
             return {
@@ -658,6 +684,9 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
             source="me",
             kind=action.kind,
             title=action.title or "Untitled",
+            notes=item_details(
+                notes=action.notes, location=action.location, meeting_url=action.meeting_url
+            ),
             minutes=action.minutes,
             importance=action.importance or 3,
             category=action.category or "personal",
@@ -685,11 +714,14 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
                 title=payload["title"],
                 start=action.start,
                 end=action.end,
+                description=payload["notes"],
+                location=action.location,
             )
             with store.session() as session:
                 stored = store.get_item(session, owner_id, payload["id"])
                 if stored:
                     stored.google_event_id = event_id
+                    payload = stored.to_dict()
         except CalendarError as error:
             return {
                 "kind": "added",
@@ -767,6 +799,8 @@ def place_one(
                 title=slot.title,
                 start=slot.start,
                 end=slot.end,
+                description=payload["notes"],
+                location=item_location(payload["notes"]),
             )
             with store.session() as session:
                 stored = store.get_item(session, owner_id, item_id)
@@ -1078,6 +1112,9 @@ def create(body: NewItem, request: Request) -> dict[str, Any]:
         # Form times are wall-clock values in the configured zone unless an offset is supplied.
         start=_local(body.start),
         end=_local(body.end),
+        notes=body.notes,
+        location=body.location.strip() if body.location else None,
+        meeting_url=str(body.meeting_url) if body.meeting_url else None,
         source="form",
     )
     # Reject past dates here even when a client omits the input constraint.

@@ -857,6 +857,12 @@ class TestAQuestionIsNotATask:
     def test_polite_questions_never_create_anything(self, sentence: str) -> None:
         assert brain.parse_with_rules(sentence, tz="Asia/Singapore").verb == "show"
 
+    def test_polite_creation_requests_still_create_tasks(self) -> None:
+        action = brain.parse_with_rules("Could you add a planning session", tz="Asia/Singapore")
+
+        assert action.verb == "add"
+        assert action.title == "a planning session"
+
     def test_a_trailing_question_mark_is_enough(self) -> None:
         assert brain.looks_like_a_question("gym tomorrow?")
         assert not brain.looks_like_a_question("gym tomorrow")

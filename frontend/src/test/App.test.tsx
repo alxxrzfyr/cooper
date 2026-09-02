@@ -1751,6 +1751,26 @@ describe("manual mode as a form", () => {
     expect(calls.some((call) => call.url.includes("/api/say"))).toBe(false);
   });
 
+  test("the form sends optional event details when provided", async () => {
+    const calls = stub({});
+    render(<App />);
+    const user = await openChat();
+
+    await user.type(await screen.findByLabelText("What"), "planning session");
+    await user.type(screen.getByLabelText("Location"), "Studio 3");
+    await user.type(screen.getByLabelText("Meeting link"), "https://meet.google.com/example-room");
+    await user.type(screen.getByLabelText("Notes"), "Bring the draft.");
+    await user.click(screen.getByRole("button", { name: "Add it" }));
+
+    await waitFor(() => {
+      const created = calls.find((call) => call.url.endsWith("/api/items"));
+      expect(created).toBeDefined();
+      expect(created?.body.location).toBe("Studio 3");
+      expect(created?.body.meeting_url).toBe("https://meet.google.com/example-room");
+      expect(created?.body.notes).toBe("Bring the draft.");
+    });
+  });
+
   test("Add it is disabled until there is a title", async () => {
     stub({});
     render(<App />);

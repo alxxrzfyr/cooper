@@ -203,6 +203,9 @@ class Action:
     end: dt.datetime | None = None
     kind: str = "task"
     category: str | None = None
+    notes: str | None = None
+    location: str | None = None
+    meeting_url: str | None = None
     question: str | None = None
     # Batch steps use the same validated shape as standalone adds.
     steps: tuple[Action, ...] | None = None
@@ -627,6 +630,10 @@ _QUESTION = re.compile(
     r"^(?:what|when|where|which|who|why|how"
     r"|am i|are there|can i|could you|did i|do i|does|is there|should i|will i|would you)\b"
 )
+_CREATE_REQUEST = re.compile(
+    r"^(?:can|could|would)\s+you\s+(?:please\s+)?(?:add|create|schedule|put|make)\b",
+    re.IGNORECASE,
+)
 
 
 def looks_like_a_question(text: str) -> bool:
@@ -638,6 +645,8 @@ def looks_like_a_question(text: str) -> bool:
     """
     lowered = " ".join(text.lower().split())
     if not lowered:
+        return False
+    if _CREATE_REQUEST.match(lowered):
         return False
     return lowered.endswith("?") or bool(_QUESTION.match(lowered))
 
@@ -750,6 +759,7 @@ def _phrase_to_date(phrase: str, today: dt.date) -> dt.date | None:
 def _strip_metadata(text: str) -> str | None:
     """The title is the sentence minus the bits we already turned into fields."""
     head = text.split(",")[0]
+    head = _CREATE_REQUEST.sub("", head, count=1).strip()
     head = _MINUTES.sub("", head)
     head = _CLOCK.sub("", head)
     lowered = head.lower()

@@ -146,6 +146,25 @@ function meetingFromDescription(description: ParsedDescription): {
   return { url, phone, meetingId, passcode };
 }
 
+interface LocalDetails {
+  location: string | null;
+  meetingUrl: string | null;
+  notes: string | null;
+}
+
+function localDetails(value: string): LocalDetails {
+  const location = value.match(/^Location:\s*(.+)$/m)?.[1]?.trim() || null;
+  const rawMeetingUrl = value.match(/^Meeting link:\s*(https?:\/\/\S+)$/m)?.[1] ?? null;
+  const meetingUrl = rawMeetingUrl ? safeUrl(rawMeetingUrl) : null;
+  const notes = value
+    .split("\n")
+    .filter((line) => !/^(?:Location|Meeting link):\s*/i.test(line))
+    .filter((line, index, lines) => !(line.trim() === "Notes:" && index === 0 && lines.length > 1))
+    .join("\n")
+    .trim();
+  return { location, meetingUrl, notes: notes || null };
+}
+
 /** Detail frame rendered in a portal, as a sheet on narrow screens and a card on wide screens. */
 export function Frame({
   title,
@@ -230,6 +249,7 @@ export function TaskFrame({
   onDrop: () => void;
 }) {
   const late = item.due !== null && item.due.slice(0, 10) < today;
+  const details = item.notes ? localDetails(item.notes) : null;
 
   const facts: Array<[string, ReactNode]> = [
     [item.kind === "event" ? "Event" : "Task", CATEGORY_LABEL[item.category] ?? item.category],
@@ -249,6 +269,15 @@ export function TaskFrame({
   if (item.pinned) facts.push(["Pinned", "Kept at the top of today"]);
   if (item.google_event_id) facts.push(["Calendar", "In Google Calendar"]);
   if (item.status !== "open") facts.push(["Status", item.status === "done" ? "Done" : "Dropped"]);
+  if (details?.location) facts.push(["Location", details.location]);
+  if (details?.meetingUrl) {
+    facts.push([
+      "Meeting",
+      <a href={details.meetingUrl} target="_blank" rel="noreferrer">
+        Join meeting
+      </a>,
+    ]);
+  }
 
   return (
     <Frame
@@ -301,7 +330,7 @@ export function TaskFrame({
         ))}
       </dl>
 
-      {item.notes && <p className="frame__notes">{item.notes}</p>}
+      {details?.notes && <p className="frame__notes">{details.notes}</p>}
     </Frame>
   );
 }

@@ -3030,6 +3030,11 @@ button.slot:active {
   color: var(--text);
 }
 
+.taskform .field__textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
 .taskform .field__input:disabled {
   opacity: 0.5;
 }
@@ -3083,7 +3088,7 @@ button.slot:active {
   margin: 8px 10px;
 }
 
-.scroll--form .taskform > section:nth-child(3) .segmented {
+.scroll--form .taskform__importance .segmented {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
@@ -3127,18 +3132,28 @@ button.slot:active {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
-  .taskform > section:first-child,
+  .taskform > .taskform__basics,
+  .taskform > .taskform__details,
   .taskform > .btn {
     grid-column: 1 / -1;
   }
 
-  .taskform > section:first-child .inset {
+  .taskform > .taskform__basics .inset {
     display: grid;
     grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
   }
 
-  .taskform > section:first-child .field + .field {
+  .taskform > .taskform__basics .field + .field {
     box-shadow: inset 0.5px 0 0 var(--hair);
+  }
+
+  .taskform > .taskform__details .inset {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .taskform > .taskform__details .field:last-child {
+    grid-column: 1 / -1;
   }
 
   .taskform .field {
@@ -3154,8 +3169,8 @@ button.slot:active {
     font-size: 12px;
   }
 
-  .taskform > section:nth-child(2),
-  .taskform > section:nth-child(3) {
+  .taskform > .taskform__category,
+  .taskform > .taskform__importance {
     min-width: 0;
   }
 }
@@ -3189,16 +3204,25 @@ button.slot:active {
     gap: 10px;
   }
 
-  .scroll--form .taskform > section:first-child .inset {
+  .scroll--form .taskform__basics .inset {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .scroll--form .taskform > section:first-child .field:first-child {
+  .scroll--form .taskform__basics .field:first-child {
     grid-column: 1 / -1;
   }
 
-  .scroll--form .taskform > section:first-child .field:last-child {
+  .scroll--form .taskform__basics .field:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .scroll--form .taskform__details .inset {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scroll--form .taskform__details .field:last-child {
     grid-column: 1 / -1;
   }
 
@@ -3217,7 +3241,7 @@ button.slot:active {
     font-size: 11px;
   }
 
-  .scroll--form .taskform > section:nth-child(3) .segmented {
+  .scroll--form .taskform__importance .segmented {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -3233,18 +3257,27 @@ button.slot:active {
     gap: 12px;
   }
 
-  .scroll--form .taskform > section:first-child,
+  .scroll--form .taskform > .taskform__basics,
+  .scroll--form .taskform > .taskform__details,
   .scroll--form .taskform > .btn--full {
     grid-column: 1 / -1;
   }
 
-  .scroll--form .taskform > section:first-child .inset {
+  .scroll--form .taskform__basics .inset {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .scroll--form .taskform > section:first-child .field:first-child,
-  .scroll--form .taskform > section:first-child .field:last-child {
+  .scroll--form .taskform__basics .field:first-child,
+  .scroll--form .taskform__basics .field:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .scroll--form .taskform__details .inset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scroll--form .taskform__details .field:last-child {
     grid-column: 1 / -1;
   }
 }

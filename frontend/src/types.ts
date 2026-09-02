@@ -40,6 +40,9 @@ export interface NewItem {
   due?: string | null;
   start?: string | null;
   end?: string | null;
+  meeting_url?: string | null;
+  location?: string | null;
+  notes?: string | null;
 }
 
 export interface Hours {

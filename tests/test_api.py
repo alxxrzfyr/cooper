@@ -305,6 +305,40 @@ class TestTheTwoModes:
         assert "user-secret" not in response.text
         assert module.brain.using_model is False
 
+    def test_ai_add_persists_and_returns_the_new_event_in_the_view(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        mark_calendar_connected(module)
+        start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
+        end = start + dt.timedelta(hours=1)
+        monkeypatch.setattr(
+            module.Brain,
+            "_generate",
+            lambda _brain, _prompt, **_kwargs: (
+                '{"verb":"add","title":"AI planning session","kind":"event",'
+                f'"start":"{start.isoformat()}","end":"{end.isoformat()}"}}'
+            ),
+        )
+
+        response = client.post(
+            "/api/say",
+            json={
+                "text": "Could you add an AI planning session?",
+                "mode": "ai",
+                "gemini_api_key": "user-secret",
+            },
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["kind"] == "added"
+        assert body["item"]["title"] == "AI planning session"
+        assert body["item"]["google_event_id"] is not None
+        assert [item["title"] for item in body["view"]["scheduled"]] == ["AI planning session"]
+
     def test_manual_request_ignores_a_browser_gemini_key(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1626,6 +1660,40 @@ class TestManualForm:
         assert body["item"]["owner_id"] == "local"
         assert body["item"]["source"] == "me"
         assert body["item"]["source_ref"] is None
+        assert body["item"]["notes"] is None
+
+    def test_optional_details_are_stored_and_sent_to_google_for_an_event(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        mark_calendar_connected(module)
+        calls: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            module.calendar,
+            "add_block",
+            lambda **kwargs: (calls.append(kwargs), "google-event")[1],
+        )
+        start = (dt.datetime.now(ZoneInfo("Asia/Singapore")) + dt.timedelta(days=1)).replace(
+            microsecond=0
+        )
+
+        body = self.form(
+            client,
+            title="planning session",
+            start=start.isoformat(),
+            meeting_url="https://meet.google.com/example-room",
+            location="Studio 3",
+            notes="Bring the draft.",
+        )
+
+        assert body["item"]["notes"] == (
+            "Location: Studio 3\n\nMeeting link: https://meet.google.com/example-room\n\n"
+            "Notes:\nBring the draft."
+        )
+        assert body["item"]["google_event_id"] == "google-event"
+        assert calls[0]["location"] == "Studio 3"
+        assert "Bring the draft." in str(calls[0]["description"])
 
     def test_a_sized_task_is_booked_into_hours_like_a_parsed_one(self, client: TestClient) -> None:
         body = self.form(client, title="revise notes", minutes=45)

@@ -62,6 +62,9 @@ export function Form({
   const [category, setCategory] = useState<Category | "auto">("auto");
   const [due, setDue] = useState("");
   const [time, setTime] = useState("");
+  const [meetingUrl, setMeetingUrl] = useState("");
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
 
   const canSubmit = title.trim().length > 0 && !busy;
 
@@ -79,6 +82,9 @@ export function Form({
       category: category === "auto" ? null : category,
       due: due && !time ? due : null,
       start,
+      meeting_url: meetingUrl.trim() || null,
+      location: location.trim() || null,
+      notes: notes.trim() || null,
     };
 
     await onSubmit(item);
@@ -89,6 +95,9 @@ export function Form({
     setCategory("auto");
     setDue("");
     setTime("");
+    setMeetingUrl("");
+    setLocation("");
+    setNotes("");
   }
 
   return (
@@ -106,7 +115,7 @@ export function Form({
           void submit();
         }}
       >
-        <section className="group">
+        <section className="group taskform__basics">
           <div className="inset">
             <div className="field">
               <label className="field__label" htmlFor="f-title">
@@ -184,7 +193,55 @@ export function Form({
           </p>
         </section>
 
-        <section className="group">
+        <section className="group taskform__details">
+          <div className="group__label">Optional details</div>
+          <div className="inset">
+            <div className="field">
+              <label className="field__label" htmlFor="f-location">
+                Location
+              </label>
+              <input
+                id="f-location"
+                className="field__input"
+                value={location}
+                maxLength={500}
+                placeholder="Room, address, or place"
+                onChange={(event) => setLocation(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="f-meeting-url">
+                Meeting link
+              </label>
+              <input
+                id="f-meeting-url"
+                className="field__input"
+                type="url"
+                value={meetingUrl}
+                maxLength={2000}
+                placeholder="https://meet.google.com/..."
+                onChange={(event) => setMeetingUrl(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="f-notes">
+                Notes
+              </label>
+              <textarea
+                id="f-notes"
+                className="field__input field__textarea"
+                value={notes}
+                maxLength={5000}
+                placeholder="Anything useful to remember"
+                rows={3}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </div>
+          </div>
+          <p className="hint">Optional. Leave these blank for a basic task or event.</p>
+        </section>
+
+        <section className="group taskform__category">
           <div className="group__label">Category</div>
           <div className="inset">
             <div className="segmented segmented--wrap" role="group" aria-label="Category">
@@ -212,7 +269,7 @@ export function Form({
           <p className="hint">Auto works it out from the title, the way typing would.</p>
         </section>
 
-        <section className="group">
+        <section className="group taskform__importance">
           <div className="group__label">Importance</div>
           <div className="inset">
             <div className="segmented" role="group" aria-label="Importance">
