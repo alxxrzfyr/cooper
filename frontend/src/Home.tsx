@@ -141,12 +141,14 @@ export function Home({
                 <button
                   type="button"
                   key={entry.key}
-                  className={`slot slot--${entry.source} cat--${entry.category}`}
+                  className={`slot slot--${entry.source} cat--${entry.category} ${entry.event.all_day ? "slot--all-day" : ""}`}
                   title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                   aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
                   onClick={() => onOpen(entry.event!)}
                 >
-                  <span className="slot__time">{clock(entry.start, zone)}</span>
+                  <span className="slot__time">
+                    {entry.event.all_day ? "All day" : clock(entry.start, zone)}
+                  </span>
                   <span className="slot__title">{entry.title}</span>
                   <span className="slot__from">Google</span>
                 </button>

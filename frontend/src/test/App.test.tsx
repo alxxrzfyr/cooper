@@ -1590,11 +1590,7 @@ describe("the dashboard", () => {
             location: "Dental clinic",
             description: "Bring the insurance card.",
             organizer_name: "Dr. Cooper",
-            organizer_email: "doctor@example.com",
             response_status: "accepted",
-            attendees: [
-              { name: "Dr. Cooper", email: "doctor@example.com", response_status: "accepted" },
-            ],
           },
         ],
       }),
@@ -1608,9 +1604,7 @@ describe("the dashboard", () => {
 
     await user.click(dentist.closest("button")!);
     expect(await screen.findByText("Dental clinic")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "https://meet.example.com/dentist" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "meet.example.com" })).toBeInTheDocument();
     expect(screen.getByText("Bring the insurance card.")).toBeInTheDocument();
   });
 

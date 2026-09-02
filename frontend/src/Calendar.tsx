@@ -371,7 +371,7 @@ export function Calendar({
     return (
       <button
         type="button"
-        className={`slot slot--${entry.source} cat--${entry.category}`}
+        className={`slot slot--${entry.source} cat--${entry.category} ${entry.event?.all_day ? "slot--all-day" : ""}`}
         key={entry.key}
         title={label}
         aria-label={label}
@@ -380,7 +380,9 @@ export function Calendar({
           else if (entry.event) setChosenEvent(entry.event);
         }}
       >
-        <span className="slot__time">{clock(entry.start, zone)}</span>
+        <span className="slot__time">
+          {entry.event?.all_day ? "All day" : clock(entry.start, zone)}
+        </span>
         <span className="slot__title">{entry.title}</span>
         {entry.event && <span className="slot__from">Google</span>}
       </button>

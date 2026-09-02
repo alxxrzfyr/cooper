@@ -311,10 +311,8 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
             "meeting_url": getattr(entry, "meeting_url", None),
             "location": getattr(entry, "location", None),
             "description": getattr(entry, "description", None),
-            "organizer_email": getattr(entry, "organizer_email", None),
             "organizer_name": getattr(entry, "organizer_name", None),
             "response_status": getattr(entry, "response_status", None),
-            "attendees": list(getattr(entry, "attendees", ())),
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]

@@ -1755,6 +1755,12 @@ button.slot:active {
   color: var(--text);
 }
 
+.slot--google {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--hair));
+  border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+}
+
 .slot--gmail {
   border-style: dashed;
   background: color-mix(in srgb, var(--cat-line, var(--accent)) 8%, transparent);
@@ -1794,6 +1800,21 @@ button.slot:active {
 .slot--google .slot__from,
 .slot--gmail .slot__from {
   color: var(--cat-line);
+}
+
+.slot--google .slot__from {
+  padding: 3px 6px;
+  border-radius: var(--pill);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.slot--all-day .slot__time {
+  min-width: 43px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .slot--cooper .iconbtn {
@@ -2379,42 +2400,6 @@ button.slot:active {
   font-size: 14.5px;
   color: var(--muted);
   white-space: pre-wrap;
-}
-
-.frame__section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.frame__section h3 {
-  margin: 0;
-  font-size: 12.5px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.frame__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.frame__list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  font-size: 14px;
-}
-
-.frame__list small {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .facts a {

@@ -64,14 +64,8 @@ export interface CalendarEvent {
   meeting_url?: string | null;
   location?: string | null;
   description?: string | null;
-  organizer_email?: string | null;
   organizer_name?: string | null;
   response_status?: string | null;
-  attendees?: Array<{
-    email: string;
-    name: string | null;
-    response_status: string | null;
-  }>;
 }
 
 export interface GmailHealth {

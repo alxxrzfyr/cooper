@@ -52,6 +52,14 @@ function responseLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
 
+function meetingLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Open meeting link";
+  }
+}
+
 /** Detail frame rendered in a portal, as a sheet on narrow screens and a card on wide screens. */
 export function Frame({
   title,
@@ -219,14 +227,14 @@ export function CalendarEventFrame({
   timeZone: string;
   onClose: () => void;
 }) {
-  const organizer = [event.organizer_name, event.organizer_email].filter(Boolean).join(" · ");
+  const organizer = event.organizer_name;
   const facts: Array<[string, ReactNode]> = [["When", eventWhen(event, timeZone)]];
 
   if (event.meeting_url) {
     facts.push([
       "Meeting",
       <a href={event.meeting_url} target="_blank" rel="noreferrer">
-        {event.meeting_url}
+        {meetingLabel(event.meeting_url)}
       </a>,
     ]);
   }
@@ -244,23 +252,6 @@ export function CalendarEventFrame({
           </div>
         ))}
       </dl>
-
-      {event.attendees && event.attendees.length > 0 && (
-        <section className="frame__section">
-          <h3>Guests</h3>
-          <ul className="frame__list">
-            {event.attendees.map((attendee) => (
-              <li key={attendee.email}>
-                <span>{attendee.name || attendee.email}</span>
-                {attendee.name && <small>{attendee.email}</small>}
-                {attendee.response_status && (
-                  <small>{responseLabel(attendee.response_status)}</small>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {event.description && <p className="frame__notes">{event.description}</p>}
     </Frame>
