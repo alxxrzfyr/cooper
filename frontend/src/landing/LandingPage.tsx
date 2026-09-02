@@ -19,8 +19,6 @@ const PANELS = [
   { id: "start", label: "Try it" },
 ] as const;
 
-const LANDING_EASING = (value: number): number => 1 - Math.pow(1 - value, 3);
-
 function panelId(id: string): string {
   return `landing-${id}`;
 }
@@ -178,9 +176,8 @@ export function LandingPage({
         gestureOrientation: horizontal ? "both" : "vertical",
         smoothWheel: true,
         syncTouch: true,
-        lerp: 0.1,
-        duration: 0.85,
-        easing: LANDING_EASING,
+        lerp: 0.075,
+        syncTouchLerp: 0.06,
         anchors: true,
         autoRaf: false,
         respectReducedMotion: true,
