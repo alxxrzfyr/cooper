@@ -187,15 +187,17 @@ class Calendar:
         """Events between now and the horizon, reduced to scheduling facts."""
         return [
             Busy(start=event.start, end=event.end, title=event.title, mine=event.mine)
-            for event in self.events(days=days)
+            for event in self.events(days=days, lookback_hours=6)
         ]
 
-    def events(self, *, days: int = 14, lookback_days: int = 0) -> list[CalendarEvent]:
+    def events(
+        self, *, days: int = 14, lookback_days: int = 0, lookback_hours: int = 0
+    ) -> list[CalendarEvent]:
         """Events in the requested window, including fields needed by the detail view."""
         if not self.connected:
             return []
         now = dt.datetime.now(tz=dt.UTC)
-        start = now - dt.timedelta(days=lookback_days, hours=6)
+        start = now - dt.timedelta(days=lookback_days, hours=lookback_hours)
         end = now + dt.timedelta(days=days)
         out: list[CalendarEvent] = []
         page_token: str | None = None
