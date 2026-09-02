@@ -1756,14 +1756,13 @@ button.slot:active {
 }
 
 .slot--google {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--hair));
-  border-left: 4px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  border-color: var(--hair);
+  background: var(--card);
 }
 
 .slot--google:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  border-color: var(--muted);
+  background: var(--fill);
 }
 
 .slot--gmail {
@@ -1810,8 +1809,8 @@ button.slot:active {
 .slot--google .slot__from {
   padding: 3px 6px;
   border-radius: var(--pill);
-  background: var(--accent-wash);
-  color: var(--accent);
+  background: var(--sunken);
+  color: var(--muted);
 }
 
 .slot--home-event {
@@ -2033,6 +2032,10 @@ button.slot:active {
   display: none;
 }
 
+.weekgrid .slot__detail {
+  display: none;
+}
+
 .monthgrid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -2112,11 +2115,17 @@ button.slot:active {
   color: #fff;
 }
 
-.pill--google,
+.pill--google {
+  background: var(--sunken);
+  color: var(--text);
+  border: 1px solid var(--hair);
+  box-shadow: none;
+}
+
 .pill--gmail {
   background: color-mix(in srgb, var(--cat-line) 14%, transparent);
   color: var(--text);
-  box-shadow: inset 2px 0 0 var(--cat-line);
+  box-shadow: none;
 }
 
 .pill--gmail {

@@ -11,6 +11,19 @@ export interface CalendarEntry {
   event?: CalendarEvent;
 }
 
+/** The one-line context shown beneath an imported event in compact views. */
+export function calendarEventContext(event: CalendarEvent): string {
+  if (event.location) return event.location;
+  if (event.meeting_url) {
+    try {
+      return `Online · ${new URL(event.meeting_url).hostname.replace(/^www\./, "")}`;
+    } catch {
+      return "Online meeting";
+    }
+  }
+  return event.source === "gmail" ? "Gmail" : "Google Calendar";
+}
+
 function zonedDay(at: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

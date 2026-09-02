@@ -1,6 +1,6 @@
 import { Mascot } from "./Mascot";
 import { Row } from "./Row";
-import { calendarEntries } from "./calendar-data";
+import { calendarEntries, calendarEventContext } from "./calendar-data";
 import type { CalendarEvent, Item, Ranked, View } from "./types";
 
 /** Dashboard backed by the single `/api/today` payload. */
@@ -150,11 +150,10 @@ export function Home({
                     {entry.event.all_day ? "All day" : clock(entry.start, zone)}
                   </span>
                   <span className="slot__title">{entry.title}</span>
-                  <span className="slot__from">Google</span>
-                  <span className="slot__detail">
-                    {entry.event.location ??
-                      (entry.event.meeting_url ? "Online meeting" : "Google Calendar")}
+                  <span className="slot__from">
+                    {entry.event.source === "gmail" ? "Gmail" : "Google Calendar"}
                   </span>
+                  <span className="slot__detail">{calendarEventContext(entry.event)}</span>
                 </button>
               ) : (
                 <div

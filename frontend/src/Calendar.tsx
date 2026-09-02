@@ -3,7 +3,7 @@ import { useState } from "react";
 import { CalendarEventFrame, Frame, TaskFrame } from "./Frame";
 
 import { Mascot } from "./Mascot";
-import { calendarEntries, type CalendarEntry } from "./calendar-data";
+import { calendarEntries, calendarEventContext, type CalendarEntry } from "./calendar-data";
 import type { CalendarEvent, Category, Item, View } from "./types";
 
 /** How much calendar to show at once. */
@@ -384,7 +384,14 @@ export function Calendar({
           {entry.event?.all_day ? "All day" : clock(entry.start, zone)}
         </span>
         <span className="slot__title">{entry.title}</span>
-        {entry.event && <span className="slot__from">Google</span>}
+        {entry.event && (
+          <>
+            <span className="slot__from">
+              {entry.event.source === "gmail" ? "Gmail" : "Google Calendar"}
+            </span>
+            <span className="slot__detail">{calendarEventContext(entry.event)}</span>
+          </>
+        )}
       </button>
     );
   }
