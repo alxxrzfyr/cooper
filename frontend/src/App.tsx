@@ -184,7 +184,7 @@ function generateInitialSteps(sentence: string): AgentStep[] {
       icon: "connect",
       status: "running",
     },
-    { id: "3", title: "Preparing response", source: "Cooper", icon: "calc", status: "running" },
+    { id: "3", title: "Preparing response", source: "Cooper", icon: "write", status: "running" },
   ];
 }
 

@@ -2220,7 +2220,7 @@ html.lenis body {
 }
 
 .landing__product-window--capture {
-  aspect-ratio: 1440 / 680;
+  aspect-ratio: 2 / 1;
   transform: rotate(-1.4deg);
 }
 
@@ -2228,7 +2228,7 @@ html.lenis body {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 1440 / 680;
+  aspect-ratio: 2 / 1;
   object-fit: cover;
   object-position: left top;
 }
