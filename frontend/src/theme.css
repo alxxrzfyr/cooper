@@ -2616,7 +2616,6 @@ button.slot:active {
   background: var(--muted);
 }
 
-
 .frame__foot {
   flex: none;
   display: flex;
