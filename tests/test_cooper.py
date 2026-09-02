@@ -542,6 +542,72 @@ class TestGoogleTransport:
             }
         ]
 
+    def test_calendar_events_keep_display_details_separate_from_busy_records(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarEvent
+
+        calendar = self.calendar()
+        monkeypatch.setattr(
+            calendar,
+            "_call",
+            lambda *_args: {
+                "items": [
+                    {
+                        "id": "event-42",
+                        "summary": "Design review",
+                        "start": {
+                            "dateTime": "2026-09-03T15:00:00+08:00",
+                            "timeZone": "Asia/Singapore",
+                        },
+                        "end": {
+                            "dateTime": "2026-09-03T16:00:00+08:00",
+                            "timeZone": "Asia/Singapore",
+                        },
+                        "hangoutLink": "https://meet.google.com/design-review",
+                        "location": "Room 4B",
+                        "description": "Review the launch plan.",
+                        "organizer": {"email": "organizer@example.com", "displayName": "Organizer"},
+                        "attendees": [
+                            {
+                                "email": "guest@example.com",
+                                "displayName": "Guest",
+                                "responseStatus": "accepted",
+                            }
+                        ],
+                        "attendeesOmitted": False,
+                    }
+                ]
+            },
+        )
+
+        events = calendar.events(days=14)
+
+        assert events == [
+            CalendarEvent(
+                event_id="event-42",
+                title="Design review",
+                start=dt.datetime(2026, 9, 3, 7, 0, tzinfo=dt.UTC),
+                end=dt.datetime(2026, 9, 3, 8, 0, tzinfo=dt.UTC),
+                all_day=False,
+                time_zone="Asia/Singapore",
+                meeting_url="https://meet.google.com/design-review",
+                location="Room 4B",
+                description="Review the launch plan.",
+                organizer_email="organizer@example.com",
+                organizer_name="Organizer",
+                response_status=None,
+                attendees=(
+                    {
+                        "email": "guest@example.com",
+                        "name": "Guest",
+                        "response_status": "accepted",
+                    },
+                ),
+                mine=False,
+            )
+        ]
+
     def test_gmail_rejects_a_lookback_older_than_its_bound(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

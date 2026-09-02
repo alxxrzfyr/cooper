@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import type { Item, Ranked } from "./types";
+import type { CalendarEvent, Item, Ranked } from "./types";
 
 const CATEGORY_LABEL: Record<string, string> = {
   academics: "Academics",
@@ -23,6 +23,33 @@ function longDay(iso: string): string {
     day: "numeric",
     month: "long",
   });
+}
+
+function eventWhen(event: CalendarEvent, timeZone: string): string {
+  const zone = event.time_zone ?? timeZone;
+  if (event.all_day) {
+    return new Date(event.start_at).toLocaleDateString(undefined, {
+      timeZone: zone,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+  return `${new Date(event.start_at).toLocaleString(undefined, {
+    timeZone: zone,
+    dateStyle: "full",
+    timeStyle: "short",
+  })}–${new Date(event.end_at).toLocaleTimeString(undefined, {
+    timeZone: zone,
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  })}`;
+}
+
+function responseLabel(status: string): string {
+  return status.replaceAll("_", " ");
 }
 
 /** Detail frame rendered in a portal, as a sheet on narrow screens and a card on wide screens. */
@@ -178,6 +205,64 @@ export function TaskFrame({
       </dl>
 
       {item.notes && <p className="frame__notes">{item.notes}</p>}
+    </Frame>
+  );
+}
+
+/** Complete details for an event read from Google Calendar. */
+export function CalendarEventFrame({
+  event,
+  timeZone,
+  onClose,
+}: {
+  event: CalendarEvent;
+  timeZone: string;
+  onClose: () => void;
+}) {
+  const organizer = [event.organizer_name, event.organizer_email].filter(Boolean).join(" · ");
+  const facts: Array<[string, ReactNode]> = [["When", eventWhen(event, timeZone)]];
+
+  if (event.meeting_url) {
+    facts.push([
+      "Meeting",
+      <a href={event.meeting_url} target="_blank" rel="noreferrer">
+        {event.meeting_url}
+      </a>,
+    ]);
+  }
+  if (event.location) facts.push(["Location", event.location]);
+  if (organizer) facts.push(["Organizer", organizer]);
+  if (event.response_status) facts.push(["RSVP", responseLabel(event.response_status)]);
+
+  return (
+    <Frame title={event.title} subtitle="Google Calendar" onClose={onClose}>
+      <dl className="facts">
+        {facts.map(([label, value]) => (
+          <div className="facts__row" key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {event.attendees && event.attendees.length > 0 && (
+        <section className="frame__section">
+          <h3>Guests</h3>
+          <ul className="frame__list">
+            {event.attendees.map((attendee) => (
+              <li key={attendee.email}>
+                <span>{attendee.name || attendee.email}</span>
+                {attendee.name && <small>{attendee.email}</small>}
+                {attendee.response_status && (
+                  <small>{responseLabel(attendee.response_status)}</small>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {event.description && <p className="frame__notes">{event.description}</p>}
     </Frame>
   );
 }

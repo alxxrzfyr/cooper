@@ -1574,27 +1574,44 @@ describe("the dashboard", () => {
     expect(screen.queryByRole("button", { name: /next week's audit/ })).not.toBeInTheDocument();
   });
 
-  test("someone else's event is shown but is not something to act on", async () => {
+  test("someone else's event opens its full details from the home strip", async () => {
     stub({
       view: view({
         events: [
           {
+            event_id: "dentist-1",
             title: "dentist",
             start_at: atLocal(TODAY, 15),
             end_at: atLocal(TODAY, 16),
             category: "personal",
             mine: false,
             source: "google",
+            meeting_url: "https://meet.example.com/dentist",
+            location: "Dental clinic",
+            description: "Bring the insurance card.",
+            organizer_name: "Dr. Cooper",
+            organizer_email: "doctor@example.com",
+            response_status: "accepted",
+            attendees: [
+              { name: "Dr. Cooper", email: "doctor@example.com", response_status: "accepted" },
+            ],
           },
         ],
       }),
     });
     render(<App />);
+    const user = userEvent.setup();
 
     const dentist = await screen.findByText("dentist");
-    // Cooper did not place it and cannot finish it, so it is not a button.
-    expect(dentist.closest("button")).toBeNull();
+    expect(dentist.closest("button")).not.toBeNull();
     expect(dentist.closest(".slot")).toHaveClass("slot--google");
+
+    await user.click(dentist.closest("button")!);
+    expect(await screen.findByText("Dental clinic")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "https://meet.example.com/dentist" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Bring the insurance card.")).toBeInTheDocument();
   });
 
   test("an event Cooper placed is not listed twice", async () => {

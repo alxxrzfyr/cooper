@@ -19,10 +19,11 @@ import { PublicRoutes, readPublicRoute } from "./landing/PublicRoutes";
 import { Mascot, type MascotName } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
 import { Row } from "./Row";
-import { TaskFrame } from "./Frame";
+import { CalendarEventFrame, TaskFrame } from "./Frame";
 import {
   ApiError,
   type Item,
+  type CalendarEvent,
   type NewItem,
   type Ranked,
   type Reply,
@@ -73,6 +74,16 @@ function saveGeminiKey(value: string): void {
   } catch {
     /* a blocked store is not worth failing over; the key still applies this session */
   }
+}
+
+function progressFor(sentence: string): string {
+  const text = sentence.toLowerCase();
+  if (/gmail|email|inbox|message/.test(text)) return "Checking your Gmail…";
+  if (/calendar|meeting|event|availability|available|free/.test(text)) {
+    return "Checking your calendar…";
+  }
+  if (/send|create|edit|cancel|delete/.test(text)) return "Preparing a confirmation…";
+  return "Thinking…";
 }
 
 function formatChecked(value: string): string {
@@ -248,6 +259,7 @@ export default function App() {
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiProgress, setAiProgress] = useState("Thinking…");
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
   const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
@@ -264,7 +276,7 @@ export default function App() {
   );
   const pathnameRef = useRef(pathname);
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
-  const [detail, setDetail] = useState<Item | Ranked | null>(null);
+  const [detail, setDetail] = useState<Item | Ranked | CalendarEvent | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
   const saveGeminiKeyFromSettings = useCallback(() => {
@@ -487,6 +499,7 @@ export default function App() {
       setTab("chat");
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
+      setAiProgress(progressFor(said));
       setBusy(true);
 
       try {
@@ -532,6 +545,7 @@ export default function App() {
           announce("note", message);
         }
       } finally {
+        setAiProgress("Thinking…");
         setBusy(false);
       }
     },
@@ -689,6 +703,7 @@ export default function App() {
               <Chat
                 turns={turns}
                 thinking={busy}
+                progressLabel={aiProgress}
                 mode={mode}
                 canUseAi={canUseAi}
                 manualForm={<Form busy={busy} onSubmit={addFromForm} />}
@@ -1088,17 +1103,25 @@ export default function App() {
         </div>
       )}
 
-      {workspaceVisible && detail && (
-        <TaskFrame
-          item={detail}
-          today={view?.today ?? ""}
-          busy={busy}
-          onClose={() => setDetail(null)}
-          onComplete={() => void act(() => api.act(detail.id, "complete"))}
-          onPin={() => void act(() => api.act(detail.id, "pin"))}
-          onDrop={() => void act(() => api.act(detail.id, "drop"))}
-        />
-      )}
+      {workspaceVisible &&
+        detail &&
+        ("kind" in detail ? (
+          <TaskFrame
+            item={detail}
+            today={view?.today ?? ""}
+            busy={busy}
+            onClose={() => setDetail(null)}
+            onComplete={() => void act(() => api.act(detail.id, "complete"))}
+            onPin={() => void act(() => api.act(detail.id, "pin"))}
+            onDrop={() => void act(() => api.act(detail.id, "drop"))}
+          />
+        ) : (
+          <CalendarEventFrame
+            event={detail}
+            timeZone={view?.timezone ?? "UTC"}
+            onClose={() => setDetail(null)}
+          />
+        ))}
 
       {/*
         The composer is the sentence path. In Manual mode on the chat tab the form owns input, so

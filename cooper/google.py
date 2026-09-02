@@ -46,6 +46,26 @@ class Busy:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class CalendarEvent:
+    """The display fields for one Google Calendar event."""
+
+    event_id: str
+    title: str
+    start: dt.datetime
+    end: dt.datetime
+    all_day: bool
+    time_zone: str | None
+    meeting_url: str | None
+    location: str | None
+    description: str | None
+    organizer_email: str | None
+    organizer_name: str | None
+    response_status: str | None
+    attendees: tuple[dict[str, str | None], ...]
+    mine: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class GmailMessage:
     """The short-lived content a confirmation parser needs, and nothing else."""
 
@@ -164,7 +184,14 @@ class Calendar:
             return
 
     def busy(self, *, days: int = 14) -> list[Busy]:
-        """Events between now and the horizon, reduced to times and titles."""
+        """Events between now and the horizon, reduced to scheduling facts."""
+        return [
+            Busy(start=event.start, end=event.end, title=event.title, mine=event.mine)
+            for event in self.events(days=days)
+        ]
+
+    def events(self, *, days: int = 14) -> list[CalendarEvent]:
+        """Events between now and the horizon, including fields needed by the detail view."""
         if not self.connected:
             return []
         start = dt.datetime.now(tz=dt.UTC) - dt.timedelta(hours=6)
@@ -180,22 +207,12 @@ class Calendar:
         )
         payload = self._call("GET", f"/calendars/{self._encoded}/events?{query}")
 
-        out: list[Busy] = []
+        out: list[CalendarEvent] = []
         for raw in payload.get("items") or []:
-            begins = _moment(raw.get("start"))
-            finishes = _moment(raw.get("end"))
-            if begins is None or finishes is None or finishes <= begins:
+            event = _calendar_event(raw)
+            if event is None:
                 continue
-            private = (raw.get("extendedProperties") or {}).get("private") or {}
-            out.append(
-                Busy(
-                    start=begins,
-                    end=finishes,
-                    # Keep only the title. Do not expose descriptions, locations, or attendees.
-                    title=str(raw.get("summary") or "Busy")[:200],
-                    mine=TAG in private,
-                )
-            )
+            out.append(event)
         return out
 
     def add_block(self, *, item_id: str, title: str, start: dt.datetime, end: dt.datetime) -> str:
@@ -378,6 +395,91 @@ def _gmail_body(payload: dict) -> str:
             if mime_type == preferred and decoded:
                 return decoded
     return ""
+
+
+def _calendar_event(raw: dict) -> CalendarEvent | None:
+    begins = _moment(raw.get("start"))
+    finishes = _moment(raw.get("end"))
+    event_id = raw.get("id")
+    if (
+        not isinstance(event_id, str)
+        or not event_id
+        or begins is None
+        or finishes is None
+        or finishes <= begins
+    ):
+        return None
+
+    start = raw.get("start") if isinstance(raw.get("start"), dict) else {}
+    end = raw.get("end") if isinstance(raw.get("end"), dict) else {}
+    private = (raw.get("extendedProperties") or {}).get("private") or {}
+    organizer = raw.get("organizer") if isinstance(raw.get("organizer"), dict) else {}
+    attendees: list[dict[str, str | None]] = []
+    response_status: str | None = None
+    for attendee in raw.get("attendees") or []:
+        if not isinstance(attendee, dict) or not isinstance(attendee.get("email"), str):
+            continue
+        status = attendee.get("responseStatus")
+        attendee_data = {
+            "email": attendee["email"],
+            "name": attendee.get("displayName")
+            if isinstance(attendee.get("displayName"), str)
+            else None,
+            "response_status": status if isinstance(status, str) else None,
+        }
+        attendees.append(attendee_data)
+        if attendee.get("self") is True:
+            response_status = attendee_data["response_status"]
+
+    return CalendarEvent(
+        event_id=event_id,
+        title=str(raw.get("summary") or "Busy")[:200],
+        start=begins,
+        end=finishes,
+        all_day="date" in start,
+        time_zone=(
+            start.get("timeZone")
+            if isinstance(start.get("timeZone"), str)
+            else end.get("timeZone")
+            if isinstance(end.get("timeZone"), str)
+            else None
+        ),
+        meeting_url=_meeting_url(raw),
+        location=_bounded_text(raw.get("location"), 500),
+        description=_bounded_text(raw.get("description"), 5000),
+        organizer_email=organizer.get("email") if isinstance(organizer.get("email"), str) else None,
+        organizer_name=(
+            organizer.get("displayName") if isinstance(organizer.get("displayName"), str) else None
+        ),
+        response_status=response_status,
+        attendees=tuple(attendees[:100]),
+        mine=TAG in private,
+    )
+
+
+def _bounded_text(value: object, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text[:limit] or None
+
+
+def _meeting_url(raw: dict) -> str | None:
+    candidates = [raw.get("hangoutLink")]
+    conference = raw.get("conferenceData")
+    if isinstance(conference, dict):
+        candidates.extend(
+            entry.get("uri")
+            for entry in conference.get("entryPoints") or []
+            if isinstance(entry, dict) and entry.get("entryPointType") == "video"
+        )
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        parsed = urllib.parse.urlparse(candidate)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return candidate[:2000]
+    return None
 
 
 def _moment(value: dict | None) -> dt.datetime | None:

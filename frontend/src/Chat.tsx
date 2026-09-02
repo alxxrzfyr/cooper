@@ -170,6 +170,7 @@ export function groupTurns(turns: Turn[]): Group[] {
 export function Chat({
   turns,
   thinking,
+  progressLabel,
   mode,
   canUseAi,
   manualForm,
@@ -178,6 +179,7 @@ export function Chat({
 }: {
   turns: Turn[];
   thinking: boolean;
+  progressLabel?: string;
   mode: Mode;
   canUseAi: boolean;
   manualForm: React.ReactNode;
@@ -268,6 +270,7 @@ export function Chat({
                 className="bubble bubble--plain bubble--tail bubble--thinking"
                 aria-label="Thinking"
               >
+                {progressLabel && <span className="bubble__progress">{progressLabel}</span>}
                 <span />
                 <span />
                 <span />

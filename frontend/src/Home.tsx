@@ -1,25 +1,12 @@
 import { Mascot } from "./Mascot";
 import { Row } from "./Row";
+import { calendarEntries } from "./calendar-data";
 import type { CalendarEvent, Item, Ranked, View } from "./types";
 
 /** Dashboard backed by the single `/api/today` payload. */
 
 function clock(at: Date, timeZone: string): string {
   return at.toLocaleTimeString(undefined, { timeZone, hour: "numeric", minute: "2-digit" });
-}
-
-/** The calendar day a UTC instant falls on inside `timeZone`, in the same shape as `view.today`,
- *  so the two can be compared. The backend places `start_at` from `COOPER_TIMEZONE`; reading it
- *  back with the browser's own local zone can shift which day a booked block appears on. */
-function zonedDay(at: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(at);
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 function greeting(at: Date, timeZone: string): string {
@@ -41,58 +28,6 @@ function why(item: Item, today: string): string {
   return days === 1 ? "due tomorrow" : `due in ${days} days`;
 }
 
-interface Entry {
-  key: string;
-  title: string;
-  start: Date;
-  end: Date;
-  source: "cooper" | "google" | "gmail";
-  category: Item["category"];
-  item?: Item;
-}
-
-/** Merge local and external entries without duplicating Cooper-owned blocks. */
-function todayStrip(
-  scheduled: Item[],
-  events: CalendarEvent[],
-  today: string,
-  timeZone: string,
-): Entry[] {
-  const entries: Entry[] = [];
-
-  for (const item of scheduled) {
-    if (!item.start_at) continue;
-    const start = new Date(item.start_at);
-    if (zonedDay(start, timeZone) !== today) continue;
-    const source = item.source === "gmail" ? "gmail" : "cooper";
-    entries.push({
-      key: `c-${item.id}`,
-      title: item.title,
-      start,
-      end: new Date(item.end_at ?? item.start_at),
-      source,
-      category: item.category,
-      item: source === "cooper" ? item : undefined,
-    });
-  }
-
-  for (const event of events) {
-    if (event.mine) continue;
-    const start = new Date(event.start_at);
-    if (zonedDay(start, timeZone) !== today) continue;
-    entries.push({
-      key: `${event.source}-${event.start_at}-${event.title}`,
-      title: event.title,
-      start,
-      end: new Date(event.end_at),
-      source: event.source,
-      category: event.category,
-    });
-  }
-
-  return entries.sort((a, b) => a.start.getTime() - b.start.getTime());
-}
-
 export function Home({
   view,
   busy,
@@ -104,7 +39,7 @@ export function Home({
   view: View;
   busy: boolean;
   onComplete: (id: string) => void;
-  onOpen: (item: Item | Ranked) => void;
+  onOpen: (item: Item | Ranked | CalendarEvent) => void;
   onSchedule: () => void;
   onGoToChat: () => void;
 }) {
@@ -114,7 +49,7 @@ export function Home({
   const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
   const next = shortlist[0];
 
-  const strip = todayStrip(view.scheduled, view.events, today, zone);
+  const strip = calendarEntries(view.scheduled, view.events, zone, today);
   /** Still to come today, so the strip can lead with what has not happened yet. */
   const ahead = strip.filter((entry) => entry.end.getTime() >= now.getTime());
 
@@ -202,6 +137,19 @@ export function Home({
                   <span className="slot__time">{clock(entry.start, zone)}</span>
                   <span className="slot__title">{entry.title}</span>
                 </button>
+              ) : entry.event ? (
+                <button
+                  type="button"
+                  key={entry.key}
+                  className={`slot slot--${entry.source} cat--${entry.category}`}
+                  title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
+                  aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
+                  onClick={() => onOpen(entry.event!)}
+                >
+                  <span className="slot__time">{clock(entry.start, zone)}</span>
+                  <span className="slot__title">{entry.title}</span>
+                  <span className="slot__from">Google</span>
+                </button>
               ) : (
                 <div
                   key={entry.key}
@@ -210,9 +158,7 @@ export function Home({
                 >
                   <span className="slot__time">{clock(entry.start, zone)}</span>
                   <span className="slot__title">{entry.title}</span>
-                  <span className="slot__from">
-                    {entry.source === "gmail" ? "Gmail" : "Google"}
-                  </span>
+                  <span className="slot__from">Gmail</span>
                 </div>
               ),
             )}

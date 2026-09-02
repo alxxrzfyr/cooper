@@ -760,6 +760,12 @@ select {
   padding: 13px 16px;
 }
 
+.bubble__progress {
+  margin-right: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
 .bubble--thinking span {
   width: 7px;
   height: 7px;
@@ -2373,6 +2379,47 @@ button.slot:active {
   font-size: 14.5px;
   color: var(--muted);
   white-space: pre-wrap;
+}
+
+.frame__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.frame__section h3 {
+  margin: 0;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.frame__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.frame__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 14px;
+}
+
+.frame__list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.facts a {
+  overflow-wrap: anywhere;
+  color: var(--accent);
 }
 
 .frame__empty {

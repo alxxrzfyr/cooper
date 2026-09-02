@@ -52,12 +52,26 @@ export interface Hours {
 
 /** An event read from an external calendar. */
 export interface CalendarEvent {
+  event_id?: string;
   title: string;
   start_at: string;
   end_at: string;
   category: Category;
   mine: boolean;
   source: "google" | "gmail";
+  all_day?: boolean;
+  time_zone?: string | null;
+  meeting_url?: string | null;
+  location?: string | null;
+  description?: string | null;
+  organizer_email?: string | null;
+  organizer_name?: string | null;
+  response_status?: string | null;
+  attendees?: Array<{
+    email: string;
+    name: string | null;
+    response_status: string | null;
+  }>;
 }
 
 export interface GmailHealth {

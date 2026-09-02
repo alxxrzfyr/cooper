@@ -287,12 +287,13 @@ def find(session: Any, owner_id: str, words: str) -> Item | None:
 
 
 def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
-    """Your real calendar, reduced to times and titles. Empty when Google is off."""
+    """Your real calendar events for display. Empty when Google is off."""
     calendar = connected_calendar(owner_id)
     if calendar is None:
         return []
     try:
-        entries = calendar.busy(days=days)
+        events = getattr(calendar, "events", None)
+        entries = events(days=days) if callable(events) else calendar.busy(days=days)
     except CalendarError:
         # A calendar problem must never break the page. It just means less on screen.
         return []
@@ -304,6 +305,16 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
             "category": guess_category(entry.title),
             "mine": entry.mine,
             "source": "google",
+            "event_id": getattr(entry, "event_id", None),
+            "all_day": getattr(entry, "all_day", False),
+            "time_zone": getattr(entry, "time_zone", None),
+            "meeting_url": getattr(entry, "meeting_url", None),
+            "location": getattr(entry, "location", None),
+            "description": getattr(entry, "description", None),
+            "organizer_email": getattr(entry, "organizer_email", None),
+            "organizer_name": getattr(entry, "organizer_name", None),
+            "response_status": getattr(entry, "response_status", None),
+            "attendees": list(getattr(entry, "attendees", ())),
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]

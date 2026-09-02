@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import { Frame, TaskFrame } from "./Frame";
+import { CalendarEventFrame, Frame, TaskFrame } from "./Frame";
 
 import { Mascot } from "./Mascot";
+import { calendarEntries, type CalendarEntry } from "./calendar-data";
 import type { CalendarEvent, Category, Item, View } from "./types";
 
 /** How much calendar to show at once. */
@@ -29,17 +30,6 @@ const DAY_END = 22;
 const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + DAY_START);
 const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"];
 const MONTH_ROWS = 6;
-
-/** One thing at one time, whichever side it came from. */
-interface Entry {
-  key: string;
-  title: string;
-  start: Date;
-  end: Date;
-  source: "cooper" | "google" | "gmail";
-  category: Category;
-  item?: Item;
-}
 
 /** Field getters below all read a `Date` as wall-clock time in a named zone, not the browser's
  *  local zone. The backend places `start_at` from `COOPER_TIMEZONE`; a browser in any other zone
@@ -190,39 +180,6 @@ function daysShown(mode: Mode, anchor: Date, timeZone: string): Date[] {
   return Array.from({ length: MONTH_ROWS * 7 }, (_, index) => addDays(start, index, timeZone));
 }
 
-/** Merge local and external entries without duplicating local blocks. */
-function agenda(scheduled: Item[], events: CalendarEvent[]): Entry[] {
-  const entries: Entry[] = [];
-
-  for (const item of scheduled) {
-    if (!item.start_at) continue;
-    const source = item.source === "gmail" ? "gmail" : "cooper";
-    entries.push({
-      key: `c-${item.id}`,
-      title: item.title,
-      start: new Date(item.start_at),
-      end: new Date(item.end_at ?? item.start_at),
-      source,
-      category: item.category,
-      item: source === "cooper" ? item : undefined,
-    });
-  }
-
-  for (const event of events) {
-    if (event.mine) continue;
-    entries.push({
-      key: `${event.source}-${event.start_at}-${event.title}`,
-      title: event.title,
-      start: new Date(event.start_at),
-      end: new Date(event.end_at),
-      source: event.source,
-      category: event.category,
-    });
-  }
-
-  return entries.sort((a, b) => a.start.getTime() - b.start.getTime());
-}
-
 function loadMode(): Mode {
   try {
     const saved = localStorage.getItem(MODE_KEY);
@@ -260,8 +217,9 @@ export function Calendar({
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(today, zone));
   const [picked, setPicked] = useState<Date | null>(null);
   const [chosen, setChosen] = useState<Item | null>(null);
+  const [chosenEvent, setChosenEvent] = useState<CalendarEvent | null>(null);
 
-  const entries = agenda(view.scheduled, view.events);
+  const entries = calendarEntries(view.scheduled, view.events, zone);
   const days = daysShown(mode, anchor, zone);
 
   /** Which day a switch to day view should land on: the one whose frame you last opened. */
@@ -287,12 +245,20 @@ export function Calendar({
     );
   }
 
-  function on(day: Date, hour?: number): Entry[] {
+  function on(day: Date, hour?: number): CalendarEntry[] {
     return entries.filter(
-      (entry) =>
-        sameDay(entry.start, day, zone) &&
-        (hour === undefined || zonedFields(entry.start, zone).hour === hour),
+      (entry) => spansDay(entry, day) && (hour === undefined || entryHour(entry, day) === hour),
     );
+  }
+
+  function spansDay(entry: CalendarEntry, day: Date): boolean {
+    const dayStart = startOfDay(day, zone);
+    const nextDay = addDays(day, 1, zone);
+    return entry.start < nextDay && entry.end > dayStart;
+  }
+
+  function entryHour(entry: CalendarEntry, day: Date): number {
+    return sameDay(entry.start, day, zone) ? zonedFields(entry.start, zone).hour : DAY_START;
   }
 
   const header = (
@@ -381,12 +347,12 @@ export function Calendar({
   }
 
   /** Render one entry in the timed grid. */
-  function block(entry: Entry, compact: boolean) {
+  function block(entry: CalendarEntry, compact: boolean) {
     const label = `${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)} · ${
       CATEGORY_LABEL[entry.category]
     }`;
 
-    if (!entry.item) {
+    if (!entry.item && !entry.event) {
       return (
         <div
           className={`slot slot--${entry.source} cat--${entry.category}`}
@@ -409,10 +375,14 @@ export function Calendar({
         key={entry.key}
         title={label}
         aria-label={label}
-        onClick={() => setChosen(entry.item ?? null)}
+        onClick={() => {
+          if (entry.item) setChosen(entry.item);
+          else if (entry.event) setChosenEvent(entry.event);
+        }}
       >
         <span className="slot__time">{clock(entry.start, zone)}</span>
         <span className="slot__title">{entry.title}</span>
+        {entry.event && <span className="slot__from">Google</span>}
       </button>
     );
   }
@@ -564,6 +534,14 @@ export function Calendar({
           onComplete={() => onComplete(chosen.id)}
           onPin={() => onPin(chosen.id)}
           onDrop={() => onDrop(chosen.id)}
+        />
+      )}
+
+      {chosenEvent && (
+        <CalendarEventFrame
+          event={chosenEvent}
+          timeZone={zone}
+          onClose={() => setChosenEvent(null)}
         />
       )}
     </div>
