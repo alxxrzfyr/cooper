@@ -334,26 +334,22 @@ export function CalendarEventFrame({
     );
   }
 
-  const colorDot = (
-    <span
-      className={`event-dot cat--${event.category}`}
-      aria-hidden="true"
-    />
-  );
+  const colorDot = <span className={`event-dot cat--${event.category}`} aria-hidden="true" />;
 
   return (
-    <Frame
-      title={event.title}
-      subtitle="Google Calendar"
-      colorDot={colorDot}
-      onClose={onClose}
-    >
+    <Frame title={event.title} subtitle="Google Calendar" colorDot={colorDot} onClose={onClose}>
       <div className="event-rows">
-
         {/* Date / time row — no icon, lives under the title */}
         <div className="event-row event-row--datetime">
           <span className="event-row__icon" aria-hidden="true">
-            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              viewBox="0 0 20 20"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <rect x="2" y="4" width="16" height="14" rx="2.5" />
               <path d="M2 8h16M6 2v4M14 2v4" strokeLinecap="round" />
             </svg>
@@ -367,7 +363,14 @@ export function CalendarEventFrame({
         {meetingUrl && (
           <div className="event-row">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h8A2.5 2.5 0 0 1 15 6.5v7A2.5 2.5 0 0 1 12.5 16h-8A2.5 2.5 0 0 1 2 13.5v-7Z" />
                 <path d="M15 8l3-2v8l-3-2" strokeLinejoin="round" />
               </svg>
@@ -390,11 +393,29 @@ export function CalendarEventFrame({
               onClick={() => copyLink(meetingUrl)}
             >
               {copied ? (
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="2,9 6,13 14,4" />
                 </svg>
               ) : (
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <rect x="5" y="1" width="9" height="11" rx="1.5" />
                   <rect x="2" y="4" width="9" height="11" rx="1.5" />
                 </svg>
@@ -408,8 +429,18 @@ export function CalendarEventFrame({
         {meeting.phone && (
           <div className="event-row">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h2.128a1 1 0 0 1 .97.757l.812 3.25a1 1 0 0 1-.29.985L6.54 8.56A11.03 11.03 0 0 0 11.44 13.46l1.568-1.58a1 1 0 0 1 .985-.29l3.25.812A1 1 0 0 1 18 13.372V15.5A1.5 1.5 0 0 1 16.5 17C8.492 17 3 11.508 3 3.5Z" strokeLinejoin="round" />
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path
+                  d="M3 3.5A1.5 1.5 0 0 1 4.5 2h2.128a1 1 0 0 1 .97.757l.812 3.25a1 1 0 0 1-.29.985L6.54 8.56A11.03 11.03 0 0 0 11.44 13.46l1.568-1.58a1 1 0 0 1 .985-.29l3.25.812A1 1 0 0 1 18 13.372V15.5A1.5 1.5 0 0 1 16.5 17C8.492 17 3 11.508 3 3.5Z"
+                  strokeLinejoin="round"
+                />
               </svg>
             </span>
             <div className="event-row__body">
@@ -432,8 +463,18 @@ export function CalendarEventFrame({
         {event.location && (
           <div className="event-row">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M10 2a6 6 0 0 1 6 6c0 4-6 11-6 11S4 12 4 8a6 6 0 0 1 6-6Z" strokeLinejoin="round" />
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path
+                  d="M10 2a6 6 0 0 1 6 6c0 4-6 11-6 11S4 12 4 8a6 6 0 0 1 6-6Z"
+                  strokeLinejoin="round"
+                />
                 <circle cx="10" cy="8" r="2" />
               </svg>
             </span>
@@ -444,10 +485,17 @@ export function CalendarEventFrame({
         )}
 
         {/* Guests row */}
-        {(event.attendees && event.attendees.length > 0) && (
+        {event.attendees && event.attendees.length > 0 && (
           <div className="event-row event-row--guests">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <circle cx="7" cy="6" r="3" />
                 <path d="M1 17c0-3.314 2.686-5 6-5" />
                 <circle cx="14" cy="7" r="2.5" />
@@ -483,7 +531,14 @@ export function CalendarEventFrame({
         {organizer && (
           <div className="event-row">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <circle cx="10" cy="7" r="4" />
                 <path d="M2.5 19c0-4.142 3.358-7 7.5-7s7.5 2.858 7.5 7" strokeLinecap="round" />
               </svg>
@@ -499,16 +554,21 @@ export function CalendarEventFrame({
         {event.response_status && (
           <div className="event-row">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <path d="M2 4h16v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Z" />
                 <path d="M2 4l8 7 8-7" strokeLinejoin="round" />
               </svg>
             </span>
             <span className="event-row__body">
               <span className="event-row__label">RSVP</span>
-              <span
-                className={`event-row__primary event-rsvp--${event.response_status}`}
-              >
+              <span className={`event-row__primary event-rsvp--${event.response_status}`}>
                 {responseLabel(event.response_status)}
               </span>
             </span>
@@ -519,13 +579,18 @@ export function CalendarEventFrame({
         {description && description.nodes.length > 0 && (
           <div className="event-row event-row--description">
             <span className="event-row__icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <path d="M3 5h14M3 9h10M3 13h12M3 17h8" strokeLinecap="round" />
               </svg>
             </span>
-            <div className="event-row__body frame__description">
-              {description.nodes}
-            </div>
+            <div className="event-row__body frame__description">{description.nodes}</div>
           </div>
         )}
       </div>

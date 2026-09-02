@@ -428,40 +428,100 @@ function StepActionIcon({ icon }: { icon: StepIcon }) {
   switch (icon) {
     case "search":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="7" cy="7" r="4.5" />
           <line x1="10.5" y1="10.5" x2="14" y2="14" />
         </svg>
       );
     case "connect":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <rect x="2" y="3" width="12" height="10" rx="2" />
           <path d="M2 7h12M6 10h4" />
         </svg>
       );
     case "calc":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <polygon points="9 1 3 9 8 9 7 15 13 7 8 7 9 1" />
         </svg>
       );
     case "write":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M11 2a1.5 1.5 0 0 1 2 2L4.5 12.5l-3 .5.5-3L11 2Z" />
         </svg>
       );
     case "calendar":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <rect x="2" y="3" width="12" height="11" rx="2" />
           <path d="M2 6h12M5 1.5v3M11 1.5v3" />
         </svg>
       );
     case "mail":
       return (
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
           <path d="m2 4.5 6 4.5 6-4.5" />
         </svg>
@@ -473,7 +533,15 @@ function StepStatusIndicator({ status }: { status: StepStatus }) {
   if (status === "running") {
     return (
       <span className="agent-step__spinner" aria-label="In progress">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
           <circle cx="8" cy="8" r="6" strokeOpacity="0.25" />
           <path d="M8 2a6 6 0 0 1 6 6" strokeLinecap="round" />
         </svg>
@@ -483,7 +551,17 @@ function StepStatusIndicator({ status }: { status: StepStatus }) {
   if (status === "done") {
     return (
       <span className="agent-step__done" aria-label="Completed">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
         </svg>
       </span>
@@ -491,7 +569,17 @@ function StepStatusIndicator({ status }: { status: StepStatus }) {
   }
   return (
     <span className="agent-step__error" aria-label="Error">
-      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg
+        viewBox="0 0 16 16"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
         <line x1="4" y1="4" x2="12" y2="12" />
         <line x1="12" y1="4" x2="4" y2="12" />
       </svg>
@@ -532,18 +620,12 @@ export function AgentTrace({
               <div className="agent-step__content">
                 <div className="agent-step__main">
                   <span className="agent-step__title">{step.title}</span>
-                  {step.source && (
-                    <span className="agent-step__badge">{step.source}</span>
-                  )}
+                  {step.source && <span className="agent-step__badge">{step.source}</span>}
                   <StepStatusIndicator status={step.status} />
                 </div>
 
-                {step.subtext && (
-                  <span className="agent-step__subtext">{step.subtext}</span>
-                )}
-                {step.error && (
-                  <span className="agent-step__errortext">{step.error}</span>
-                )}
+                {step.subtext && <span className="agent-step__subtext">{step.subtext}</span>}
+                {step.error && <span className="agent-step__errortext">{step.error}</span>}
               </div>
             </div>
           );
@@ -552,4 +634,3 @@ export function AgentTrace({
     </div>
   );
 }
-

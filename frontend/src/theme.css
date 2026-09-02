@@ -868,7 +868,9 @@ select {
   display: grid;
   place-items: center;
   flex: none;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .agent-step--running .agent-step__icon {
@@ -972,7 +974,6 @@ select {
   color: var(--tone-bad, #ef4444);
   flex: none;
 }
-
 
 .opening {
   margin: auto;
@@ -2794,7 +2795,10 @@ button.slot:active {
   place-items: center;
   cursor: pointer;
   padding: 0;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .event-copy:hover {
@@ -2863,7 +2867,6 @@ button.slot:active {
   color: var(--tone-answer, #f59e0b);
   font-weight: 600;
 }
-
 
 @media (min-width: 700px) {
   .frame {

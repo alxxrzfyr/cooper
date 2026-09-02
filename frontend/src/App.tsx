@@ -4,7 +4,16 @@ import "./theme.css";
 import { applyAppearance, type Appearance, readAppearance, saveAppearance } from "./appearance";
 import { api } from "./api";
 import { Calendar } from "./Calendar";
-import { Chat, loadMode, loadTurns, saveMode, saveTurns, type AgentStep, type Mode, type Turn } from "./Chat";
+import {
+  Chat,
+  loadMode,
+  loadTurns,
+  saveMode,
+  saveTurns,
+  type AgentStep,
+  type Mode,
+  type Turn,
+} from "./Chat";
 import {
   firebaseConfigError,
   firebaseConfigured,
@@ -81,38 +90,103 @@ function generateInitialSteps(sentence: string): AgentStep[] {
   if (/gmail|email|inbox|thread|reply|message/.test(text)) {
     if (/reply|draft|send/.test(text)) {
       return [
-        { id: "1", title: "Connecting to Gmail", source: "Gmail", icon: "connect", status: "running" },
+        {
+          id: "1",
+          title: "Connecting to Gmail",
+          source: "Gmail",
+          icon: "connect",
+          status: "running",
+        },
         { id: "2", title: "Reading the thread", source: "Gmail", icon: "mail", status: "running" },
         { id: "3", title: "Drafting a reply", source: "Gmail", icon: "write", status: "running" },
       ];
     }
     return [
-      { id: "1", title: "Connecting to Gmail", source: "Gmail", icon: "connect", status: "running" },
+      {
+        id: "1",
+        title: "Connecting to Gmail",
+        source: "Gmail",
+        icon: "connect",
+        status: "running",
+      },
       { id: "2", title: "Reading your inbox", source: "Gmail", icon: "search", status: "running" },
-      { id: "3", title: "Summarizing key emails", source: "Gmail", icon: "mail", status: "running" },
+      {
+        id: "3",
+        title: "Summarizing key emails",
+        source: "Gmail",
+        icon: "mail",
+        status: "running",
+      },
     ];
   }
   if (/calendar|meeting|event|schedule|availability|available|free|book|time|plan/.test(text)) {
     if (/create|add|schedule|book|new/.test(text)) {
       return [
-        { id: "1", title: "Connecting to Google Calendar", source: "Google Calendar", icon: "connect", status: "running" },
-        { id: "2", title: "Checking your availability", source: "Google Calendar", icon: "search", status: "running" },
-        { id: "3", title: "Creating the event", source: "Google Calendar", icon: "calendar", status: "running" },
+        {
+          id: "1",
+          title: "Connecting to Google Calendar",
+          source: "Google Calendar",
+          icon: "connect",
+          status: "running",
+        },
+        {
+          id: "2",
+          title: "Checking your availability",
+          source: "Google Calendar",
+          icon: "search",
+          status: "running",
+        },
+        {
+          id: "3",
+          title: "Creating the event",
+          source: "Google Calendar",
+          icon: "calendar",
+          status: "running",
+        },
       ];
     }
     return [
-      { id: "1", title: "Connecting to Google Calendar", source: "Google Calendar", icon: "connect", status: "running" },
-      { id: "2", title: "Checking your calendar", source: "Google Calendar", icon: "search", status: "running" },
-      { id: "3", title: "Finding open slots", source: "Google Calendar", icon: "calendar", status: "running" },
+      {
+        id: "1",
+        title: "Connecting to Google Calendar",
+        source: "Google Calendar",
+        icon: "connect",
+        status: "running",
+      },
+      {
+        id: "2",
+        title: "Checking your calendar",
+        source: "Google Calendar",
+        icon: "search",
+        status: "running",
+      },
+      {
+        id: "3",
+        title: "Finding open slots",
+        source: "Google Calendar",
+        icon: "calendar",
+        status: "running",
+      },
     ];
   }
   return [
-    { id: "1", title: "Analyzing your request", source: "Cooper", icon: "search", status: "running" },
-    { id: "2", title: "Checking tasks and priorities", source: "Tasks", icon: "connect", status: "running" },
+    {
+      id: "1",
+      title: "Analyzing your request",
+      source: "Cooper",
+      icon: "search",
+      status: "running",
+    },
+    {
+      id: "2",
+      title: "Checking tasks and priorities",
+      source: "Tasks",
+      icon: "connect",
+      status: "running",
+    },
     { id: "3", title: "Preparing response", source: "Cooper", icon: "calc", status: "running" },
   ];
 }
-
 
 function googleEventKey(event: CalendarEvent): string {
   return `${event.event_id ?? `${event.start_at}-${event.end_at}`}|${event.title}`;
@@ -583,10 +657,7 @@ export default function App() {
       setBusy(true);
 
       const timer1 = window.setTimeout(() => {
-        setAgentSteps([
-          { ...initial[0], status: "done", subtext: "Connected" },
-          initial[1],
-        ]);
+        setAgentSteps([{ ...initial[0], status: "done", subtext: "Connected" }, initial[1]]);
       }, 450);
 
       const timer2 = window.setTimeout(() => {
