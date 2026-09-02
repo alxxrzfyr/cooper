@@ -190,29 +190,35 @@ class Calendar:
             for event in self.events(days=days)
         ]
 
-    def events(self, *, days: int = 14) -> list[CalendarEvent]:
-        """Events between now and the horizon, including fields needed by the detail view."""
+    def events(self, *, days: int = 14, lookback_days: int = 0) -> list[CalendarEvent]:
+        """Events in the requested window, including fields needed by the detail view."""
         if not self.connected:
             return []
-        start = dt.datetime.now(tz=dt.UTC) - dt.timedelta(hours=6)
+        now = dt.datetime.now(tz=dt.UTC)
+        start = now - dt.timedelta(days=lookback_days, hours=6)
         end = start + dt.timedelta(days=days)
-        query = urllib.parse.urlencode(
-            {
+        out: list[CalendarEvent] = []
+        page_token: str | None = None
+        while True:
+            params = {
                 "timeMin": start.isoformat(),
                 "timeMax": end.isoformat(),
                 "singleEvents": "true",
                 "orderBy": "startTime",
                 "maxResults": "250",
             }
-        )
-        payload = self._call("GET", f"/calendars/{self._encoded}/events?{query}")
-
-        out: list[CalendarEvent] = []
-        for raw in payload.get("items") or []:
-            event = _calendar_event(raw)
-            if event is None:
-                continue
-            out.append(event)
+            if page_token:
+                params["pageToken"] = page_token
+            query = urllib.parse.urlencode(params)
+            payload = self._call("GET", f"/calendars/{self._encoded}/events?{query}")
+            for raw in payload.get("items") or []:
+                event = _calendar_event(raw)
+                if event is not None:
+                    out.append(event)
+            next_token = payload.get("nextPageToken")
+            if not isinstance(next_token, str) or not next_token:
+                break
+            page_token = next_token
         return out
 
     def add_block(self, *, item_id: str, title: str, start: dt.datetime, end: dt.datetime) -> str:

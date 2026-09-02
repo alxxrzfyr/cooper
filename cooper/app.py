@@ -287,13 +287,19 @@ def find(session: Any, owner_id: str, words: str) -> Item | None:
 
 
 def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
-    """Your real calendar events for display. Empty when Google is off."""
+    """Your real calendar events for display. Empty when Google is off.
+
+    The display window is wider than the planner window so Calendar can show a complete month
+    and nearby ranges. Scheduling still uses the shorter busy-time horizon in sources.py.
+    """
     calendar = connected_calendar(owner_id)
     if calendar is None:
         return []
     try:
         events = getattr(calendar, "events", None)
-        entries = events(days=days) if callable(events) else calendar.busy(days=days)
+        entries = (
+            events(days=366, lookback_days=366) if callable(events) else calendar.busy(days=days)
+        )
     except CalendarError:
         # A calendar problem must never break the page. It just means less on screen.
         return []
