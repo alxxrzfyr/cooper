@@ -2524,6 +2524,7 @@ button.slot:active {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   animation: sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1);
   outline: none;
+  overflow: hidden;
 }
 
 @keyframes sheet-up {
@@ -2547,6 +2548,7 @@ button.slot:active {
   align-items: flex-start;
   gap: 12px;
   padding: 12px 18px 10px;
+  flex: none;
 }
 
 .frame__heading {
@@ -2583,15 +2585,37 @@ button.slot:active {
 }
 
 .frame__body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 0 18px 16px;
+  padding: 0 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair) transparent;
 }
+
+.frame__body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.frame__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.frame__body::-webkit-scrollbar-thumb {
+  background: var(--hair);
+  border-radius: var(--pill);
+}
+
+.frame__body::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 
 .frame__foot {
   flex: none;
@@ -2871,10 +2895,12 @@ button.slot:active {
 @media (min-width: 700px) {
   .frame {
     align-items: center;
+    padding: 24px;
   }
 
   .frame__panel {
     width: min(560px, calc(100vw - 48px));
+    max-height: min(85vh, 640px);
     border-radius: 20px;
     animation: card-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
   }
