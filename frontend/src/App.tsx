@@ -4,7 +4,7 @@ import "./theme.css";
 import { applyAppearance, type Appearance, readAppearance, saveAppearance } from "./appearance";
 import { api } from "./api";
 import { Calendar } from "./Calendar";
-import { Chat, loadMode, loadTurns, saveMode, saveTurns, type Mode, type Turn } from "./Chat";
+import { Chat, loadMode, loadTurns, saveMode, saveTurns, type AgentStep, type Mode, type Turn } from "./Chat";
 import {
   firebaseConfigError,
   firebaseConfigured,
@@ -76,15 +76,43 @@ function saveGeminiKey(value: string): void {
   }
 }
 
-function progressFor(sentence: string): string {
+function generateInitialSteps(sentence: string): AgentStep[] {
   const text = sentence.toLowerCase();
-  if (/gmail|email|inbox|message/.test(text)) return "Checking your Gmail…";
-  if (/calendar|meeting|event|availability|available|free/.test(text)) {
-    return "Checking your calendar…";
+  if (/gmail|email|inbox|thread|reply|message/.test(text)) {
+    if (/reply|draft|send/.test(text)) {
+      return [
+        { id: "1", title: "Connecting to Gmail", source: "Gmail", icon: "connect", status: "running" },
+        { id: "2", title: "Reading the thread", source: "Gmail", icon: "mail", status: "running" },
+        { id: "3", title: "Drafting a reply", source: "Gmail", icon: "write", status: "running" },
+      ];
+    }
+    return [
+      { id: "1", title: "Connecting to Gmail", source: "Gmail", icon: "connect", status: "running" },
+      { id: "2", title: "Reading your inbox", source: "Gmail", icon: "search", status: "running" },
+      { id: "3", title: "Summarizing key emails", source: "Gmail", icon: "mail", status: "running" },
+    ];
   }
-  if (/send|create|edit|cancel|delete/.test(text)) return "Preparing a confirmation…";
-  return "Thinking…";
+  if (/calendar|meeting|event|schedule|availability|available|free|book|time|plan/.test(text)) {
+    if (/create|add|schedule|book|new/.test(text)) {
+      return [
+        { id: "1", title: "Connecting to Google Calendar", source: "Google Calendar", icon: "connect", status: "running" },
+        { id: "2", title: "Checking your availability", source: "Google Calendar", icon: "search", status: "running" },
+        { id: "3", title: "Creating the event", source: "Google Calendar", icon: "calendar", status: "running" },
+      ];
+    }
+    return [
+      { id: "1", title: "Connecting to Google Calendar", source: "Google Calendar", icon: "connect", status: "running" },
+      { id: "2", title: "Checking your calendar", source: "Google Calendar", icon: "search", status: "running" },
+      { id: "3", title: "Finding open slots", source: "Google Calendar", icon: "calendar", status: "running" },
+    ];
+  }
+  return [
+    { id: "1", title: "Analyzing your request", source: "Cooper", icon: "search", status: "running" },
+    { id: "2", title: "Checking tasks and priorities", source: "Tasks", icon: "connect", status: "running" },
+    { id: "3", title: "Preparing response", source: "Cooper", icon: "calc", status: "running" },
+  ];
 }
+
 
 function googleEventKey(event: CalendarEvent): string {
   return `${event.event_id ?? `${event.start_at}-${event.end_at}`}|${event.title}`;
@@ -275,6 +303,7 @@ export default function App() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiProgress, setAiProgress] = useState("Thinking…");
+  const [agentSteps, setAgentSteps] = useState<AgentStep[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
   const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
@@ -549,11 +578,29 @@ export default function App() {
       setTab("chat");
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
-      setAiProgress(progressFor(said));
+      const initial = generateInitialSteps(said);
+      setAgentSteps([initial[0]]);
       setBusy(true);
+
+      const timer1 = window.setTimeout(() => {
+        setAgentSteps([
+          { ...initial[0], status: "done", subtext: "Connected" },
+          initial[1],
+        ]);
+      }, 450);
+
+      const timer2 = window.setTimeout(() => {
+        setAgentSteps([
+          { ...initial[0], status: "done", subtext: "Connected" },
+          { ...initial[1], status: "done", subtext: "Checked" },
+          initial[2],
+        ]);
+      }, 950);
 
       try {
         const result = await api.say(said, mode, geminiKey);
+        window.clearTimeout(timer1);
+        window.clearTimeout(timer2);
         if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
@@ -580,6 +627,8 @@ export default function App() {
           });
         }
       } catch (error) {
+        window.clearTimeout(timer1);
+        window.clearTimeout(timer2);
         if (requestEpoch !== authEpoch.current) return;
         if (error instanceof ApiError) {
           if (error.status === 401 && returnToSignIn()) return;
@@ -595,7 +644,7 @@ export default function App() {
           announce("note", message);
         }
       } finally {
-        setAiProgress("Thinking…");
+        setAgentSteps(null);
         setBusy(false);
       }
     },
@@ -753,7 +802,7 @@ export default function App() {
               <Chat
                 turns={turns}
                 thinking={busy}
-                progressLabel={aiProgress}
+                agentSteps={agentSteps ?? undefined}
                 mode={mode}
                 canUseAi={canUseAi}
                 manualForm={<Form busy={busy} onSubmit={addFromForm} />}

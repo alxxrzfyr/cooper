@@ -51,6 +51,12 @@ export interface Hours {
 }
 
 /** An event read from an external calendar. */
+export interface CalendarEventAttendee {
+  email: string;
+  name: string | null;
+  response_status: string | null;
+}
+
 export interface CalendarEvent {
   event_id?: string;
   title: string;
@@ -66,6 +72,7 @@ export interface CalendarEvent {
   description?: string | null;
   organizer_name?: string | null;
   response_status?: string | null;
+  attendees?: CalendarEventAttendee[];
 }
 
 export interface GmailHealth {

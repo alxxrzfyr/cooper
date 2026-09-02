@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { Mascot, type MascotName } from "./Mascot";
 import type { Item, ReplyKind } from "./types";
@@ -15,6 +15,26 @@ export interface Turn {
   item?: Item;
   lines?: string[];
   at: number;
+}
+
+export type StepStatus = "running" | "done" | "error";
+export type StepIcon = "search" | "connect" | "calc" | "write" | "calendar" | "mail";
+
+/** One step shown in the agent trace while thinking. */
+export interface AgentStep {
+  id: string;
+  /** Present-tense active title. */
+  title: string;
+  /** Integration source badge (e.g. Gmail, Google Calendar, Tasks). */
+  source: string;
+  /** Action type icon. */
+  icon: StepIcon;
+  /** Execution status. */
+  status: StepStatus;
+  /** Muted subtext showing concrete result once complete. */
+  subtext?: string | null;
+  /** Error message if failed. */
+  error?: string | null;
 }
 
 const STORE_KEY = "cooper.chat.v1";
@@ -170,7 +190,7 @@ export function groupTurns(turns: Turn[]): Group[] {
 export function Chat({
   turns,
   thinking,
-  progressLabel,
+  agentSteps,
   mode,
   canUseAi,
   manualForm,
@@ -179,7 +199,7 @@ export function Chat({
 }: {
   turns: Turn[];
   thinking: boolean;
-  progressLabel?: string;
+  agentSteps?: AgentStep[];
   mode: Mode;
   canUseAi: boolean;
   manualForm: React.ReactNode;
@@ -266,15 +286,18 @@ export function Chat({
           <div className="run run--otter">
             <Mascot name="cooper_thinking" size="sm" decorative />
             <div className="run__stack">
-              <div
-                className="bubble bubble--plain bubble--tail bubble--thinking"
-                aria-label="Thinking"
-              >
-                {progressLabel && <span className="bubble__progress">{progressLabel}</span>}
-                <span />
-                <span />
-                <span />
-              </div>
+              {agentSteps && agentSteps.length > 0 ? (
+                <AgentTrace steps={agentSteps} />
+              ) : (
+                <div
+                  className="bubble bubble--plain bubble--tail bubble--thinking"
+                  aria-label="Thinking"
+                >
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -400,3 +423,133 @@ function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) =>
     </div>
   );
 }
+
+function StepActionIcon({ icon }: { icon: StepIcon }) {
+  switch (icon) {
+    case "search":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="14" y2="14" />
+        </svg>
+      );
+    case "connect":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="10" rx="2" />
+          <path d="M2 7h12M6 10h4" />
+        </svg>
+      );
+    case "calc":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="9 1 3 9 8 9 7 15 13 7 8 7 9 1" />
+        </svg>
+      );
+    case "write":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M11 2a1.5 1.5 0 0 1 2 2L4.5 12.5l-3 .5.5-3L11 2Z" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="11" rx="2" />
+          <path d="M2 6h12M5 1.5v3M11 1.5v3" />
+        </svg>
+      );
+    case "mail":
+      return (
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+          <path d="m2 4.5 6 4.5 6-4.5" />
+        </svg>
+      );
+  }
+}
+
+function StepStatusIndicator({ status }: { status: StepStatus }) {
+  if (status === "running") {
+    return (
+      <span className="agent-step__spinner" aria-label="In progress">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" strokeOpacity="0.25" />
+          <path d="M8 2a6 6 0 0 1 6 6" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+  if (status === "done") {
+    return (
+      <span className="agent-step__done" aria-label="Completed">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="agent-step__error" aria-label="Error">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="4" y1="4" x2="12" y2="12" />
+        <line x1="12" y1="4" x2="4" y2="12" />
+      </svg>
+    </span>
+  );
+}
+
+/** Step-by-step trace showing real-time agent execution with tool badges and sequential progress. */
+export function AgentTrace({
+  header = "Putting it all together…",
+  steps,
+}: {
+  header?: string;
+  steps: AgentStep[];
+}) {
+  return (
+    <div className="agent-trace" role="status" aria-label="Agent execution trace">
+      <div className="agent-trace__head">
+        <span className="agent-trace__title">{header}</span>
+      </div>
+
+      <div className="agent-trace__steps">
+        {steps.map((step, index) => {
+          const isLast = index === steps.length - 1;
+          return (
+            <div
+              key={step.id}
+              className={`agent-step agent-step--${step.status}`}
+              data-status={step.status}
+            >
+              <div className="agent-step__rail">
+                <span className={`agent-step__icon agent-step__icon--${step.icon}`}>
+                  <StepActionIcon icon={step.icon} />
+                </span>
+                {!isLast && <span className="agent-step__line" aria-hidden="true" />}
+              </div>
+
+              <div className="agent-step__content">
+                <div className="agent-step__main">
+                  <span className="agent-step__title">{step.title}</span>
+                  {step.source && (
+                    <span className="agent-step__badge">{step.source}</span>
+                  )}
+                  <StepStatusIndicator status={step.status} />
+                </div>
+
+                {step.subtext && (
+                  <span className="agent-step__subtext">{step.subtext}</span>
+                )}
+                {step.error && (
+                  <span className="agent-step__errortext">{step.error}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
