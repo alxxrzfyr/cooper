@@ -2515,7 +2515,6 @@ button.slot:active {
 
 .frame__panel {
   width: 100%;
-  height: min(88dvh, 720px);
   max-height: min(88vh, 720px);
   display: flex;
   flex-direction: column;
@@ -2586,9 +2585,8 @@ button.slot:active {
 }
 
 .frame__body {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
-  max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -2900,7 +2898,6 @@ button.slot:active {
 
   .frame__panel {
     width: min(560px, calc(100vw - 48px));
-    height: min(85dvh, 640px);
     max-height: min(85vh, 640px);
     border-radius: 20px;
     animation: card-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
