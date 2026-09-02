@@ -151,7 +151,7 @@ export function Home({
                   </span>
                   <span className="slot__title">{entry.title}</span>
                   <span className="slot__from">
-                    {entry.event.source === "gmail" ? "Gmail" : "Google Calendar"}
+                    {entry.event.source === "gmail" ? "Gmail" : "Google"}
                   </span>
                   <span className="slot__detail">{calendarEventContext(entry.event)}</span>
                 </button>
