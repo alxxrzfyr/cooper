@@ -54,21 +54,29 @@ approved audience, but it is not a team or project-management tool.
 Cooper keeps the model, application state, and external services separate. The backend has one
 database writer and one scheduling pipeline.
 
-```text
-Form or Ask input
-       |
-       v
-FastAPI route
-       |
-       v
-brain.py  -->  validated Action
-       |
-       v
-app.py    -->  the only database writer
-       |
-       +--> planner.py  -->  ranked items and local time placement
-       |
-       +--> Google Calendar mirror, best effort
+```mermaid
+flowchart LR
+    subgraph Frontend["React frontend"]
+        Form["Form.tsx<br/>Manual capture"] --> API["api.ts"]
+        Ask["Chat.tsx<br/>Ask mode"] --> API
+        API --> Routes["FastAPI routes"]
+        Routes --> Views["Home.tsx / Calendar.tsx"]
+    end
+
+    subgraph Backend["Python backend"]
+        Routes --> Brain["brain.py<br/>Validated Action"]
+        Brain --> App["app.py<br/>Only database writer"]
+        App --> Planner["planner.py<br/>Rank and place"]
+        Sources["sources.py<br/>Busy intervals"] --> Planner
+        App --> Database[("SQLAlchemy database")]
+        Watcher["watcher.py<br/>Fixed Gmail sync"] --> Google["google.py<br/>Calendar and Gmail"]
+        App --> Google
+        Google --> Sources
+    end
+
+    Google --> CalendarAPI["Google Calendar API"]
+    Google --> GmailAPI["Gmail API"]
+    Brain -. optional .-> Gemini["Gemini"]
 ```
 
 ### Backend boundaries
