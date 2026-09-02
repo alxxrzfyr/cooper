@@ -180,6 +180,9 @@ Today is {today} ({weekday}) in {tz}.
 Your open items:
 {items}
 
+Known busy times, without event details:
+{busy_times}
+
 Question: {question}"""
 
 # Answers use text-specific length and leakage checks.
@@ -251,7 +254,9 @@ class Brain:
 
         return rules_action
 
-    def answer(self, question: str, items: list[str]) -> str | None:
+    def answer(
+        self, question: str, items: list[str], busy_times: list[str] | None = None
+    ) -> str | None:
         """Answer a question about the given items, or None if the model cannot be reached.
 
         Only the caller's own words and its own item summaries go out. Never notes, never event
@@ -276,6 +281,10 @@ class Brain:
             items=(
                 "\n".join(f"  {sanitize_for_prompt(line)}" for line in items[:MAX_ANSWER_ITEMS])
                 or "  (nothing open)"
+            ),
+            busy_times=(
+                "\n".join(f"  {sanitize_for_prompt(line)}" for line in (busy_times or [])[:32])
+                or "  (no connected busy times)"
             ),
             question=text,
         )

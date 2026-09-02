@@ -1311,6 +1311,20 @@ class TestTheAnswerDeclinesOffTopicRequests:
 
         assert answer == "You have one task open."
 
+    def test_calendar_context_contains_only_busy_times(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        seen: list[str] = []
+        monkeypatch.setattr(
+            cooper, "_generate", lambda prompt, **kwargs: (seen.append(prompt), "You are free.")[1]
+        )
+
+        cooper.answer("when am I free", [], ["Tue 02 Sep 10:00–11:00"])
+
+        assert "Tue 02 Sep 10:00–11:00" in seen[0]
+        assert "meeting title" not in seen[0]
+
     def test_an_embedded_instruction_in_an_item_never_reaches_the_model_intact(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

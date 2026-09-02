@@ -559,7 +559,7 @@ def say(body: Say, request: Request) -> dict[str, Any]:
 
     # Questions are answered as text and never reach the mutation path.
     if ai and (action.verb == "show" or looks_like_a_question(body.text)):
-        answered = request_brain.answer(body.text, summaries)
+        answered = request_brain.answer(body.text, summaries, _busy_time_context(owner_id))
         if answered:
             return {
                 "kind": "answered",
@@ -597,6 +597,20 @@ def _summarise(item: Item) -> str:
     if item.start_at:
         bits.append(f"at {item.start_at.astimezone(zone).strftime('%a %d %b %H:%M')}")
     return " · ".join(bits)
+
+
+def _busy_time_context(owner_id: str) -> list[str]:
+    """Give Ask only calendar occupancy, never the contents of external events."""
+    zone = ZoneInfo(settings.timezone)
+    try:
+        windows = busy_windows(owner_id)
+    except Exception:
+        return []
+    return [
+        f"{start.astimezone(zone).strftime('%a %d %b %H:%M')}–"
+        f"{end.astimezone(zone).strftime('%H:%M')}"
+        for start, end in windows[:32]
+    ]
 
 
 def run(owner_id: str, action: Action) -> dict[str, Any]:
