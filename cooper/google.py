@@ -196,7 +196,7 @@ class Calendar:
             return []
         now = dt.datetime.now(tz=dt.UTC)
         start = now - dt.timedelta(days=lookback_days, hours=6)
-        end = start + dt.timedelta(days=days)
+        end = now + dt.timedelta(days=days)
         out: list[CalendarEvent] = []
         page_token: str | None = None
         while True:

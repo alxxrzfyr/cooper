@@ -297,9 +297,7 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
         return []
     try:
         events = getattr(calendar, "events", None)
-        entries = (
-            events(days=366, lookback_days=366) if callable(events) else calendar.busy(days=days)
-        )
+        entries = events(days=366) if callable(events) else calendar.busy(days=days)
     except CalendarError:
         # A calendar problem must never break the page. It just means less on screen.
         return []
