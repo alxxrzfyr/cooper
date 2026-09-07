@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from cooper.db import aware
-from cooper.google import CalendarError
+from cooper.google import Busy, CalendarError
 
 if TYPE_CHECKING:
     from cooper.db import Store
@@ -33,18 +34,14 @@ if TYPE_CHECKING:
 Interval = tuple[dt.datetime, dt.datetime]
 
 
-class _Blocks(Protocol):
-    """The little that a remote calendar has to offer to be a source: busy intervals over N days.
+class CalendarProvider(Protocol):
+    @property
+    def connected(self) -> bool: ...
 
-    `calendar.busy()` already returns objects with `.start` and `.end`, so Google satisfies this
-    as it stands. Microsoft will satisfy it the same way. Typed as a Protocol so a new source is
-    a shape to match rather than a base class to inherit.
-    """
-
-    def busy(self, *, days: int) -> object: ...
+    def busy(self, *, days: int) -> list[Busy]: ...
 
 
-def collect_google(calendar: Calendar | None, *, days: int) -> list[Interval]:
+def collect_google(calendar: CalendarProvider | None, *, days: int) -> list[Interval]:
     """Busy intervals from Google Calendar, or nothing if it is off or unreachable."""
     if calendar is None or not calendar.connected:
         return []
@@ -82,7 +79,13 @@ def collect_gmail(store: Store, owner_id: str, *, at: dt.datetime) -> list[Inter
 
 
 def busy_windows(
-    store: Store, owner_id: str, calendar: Calendar | None, *, at: dt.datetime, days: int = 14
+    store: Store,
+    owner_id: str,
+    calendar: Calendar | None,
+    *,
+    at: dt.datetime,
+    days: int = 14,
+    providers: Sequence[CalendarProvider] = (),
 ) -> list[Interval]:
     """Every commitment, from every source, as one list of intervals the planner routes around.
 
@@ -91,6 +94,8 @@ def busy_windows(
     """
     spans: list[Interval] = []
     spans.extend(collect_google(calendar, days=days))
+    for provider in providers:
+        spans.extend(collect_google(provider, days=days))
     spans.extend(collect_gmail(store, owner_id, at=at))
     spans.extend(collect_local(store, owner_id, at=at))
     return spans

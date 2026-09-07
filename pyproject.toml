@@ -5,6 +5,7 @@ description = "A personal calendar you talk to"
 requires-python = "==3.12.*"
 dependencies = [
     "alembic==1.19.1",
+    "caldav==3.3.0",
     "cryptography==50.0.1",
     "fastapi==0.141.1",
     "firebase-admin==7.5.0",

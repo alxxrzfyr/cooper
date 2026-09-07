@@ -216,6 +216,19 @@ class Action:
         return self.verb == "ask"
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ToolCall:
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ToolTurn:
+    content: dict[str, Any]
+    calls: tuple[ToolCall, ...]
+    text: str | None
+
+
 class Brain:
     def __init__(self, *, api_key: str | None, model: str, timezone: str) -> None:
         self._key = api_key
@@ -301,6 +314,53 @@ class Brain:
         if not cleaned or len(cleaned.split()) > ANSWER_WORD_LIMIT:
             return None
         return cleaned[:ANSWER_LIMIT]
+
+    def tool_turn(
+        self,
+        contents: list[dict[str, Any]],
+        declarations: list[dict[str, Any]],
+    ) -> ToolTurn | None:
+        if not self._key:
+            return None
+        body = json.dumps(
+            {
+                "contents": contents,
+                "tools": [{"functionDeclarations": declarations}],
+                "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 384},
+            }
+        )
+        request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
+            f"{GEMINI_URL}/{self._model}:generateContent",
+            data=body.encode(),
+            headers={"Content-Type": "application/json", "x-goog-api-key": self._key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
+                envelope = json.loads(response.read())
+            content = envelope["candidates"][0]["content"]
+            parts = content.get("parts", [])
+        except Exception:
+            return None
+        calls: list[ToolCall] = []
+        text_parts: list[str] = []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            call = part.get("functionCall")
+            if isinstance(call, dict) and isinstance(call.get("name"), str):
+                arguments = call.get("args")
+                calls.append(
+                    ToolCall(
+                        name=call["name"],
+                        arguments=arguments if isinstance(arguments, dict) else {},
+                    )
+                )
+            if isinstance(part.get("text"), str):
+                text_parts.append(part["text"])
+        text = _safe_model_text(" ".join(text_parts), max_words=100, max_chars=1000)
+        return ToolTurn(content=content, calls=tuple(calls), text=text)
 
     def _call_gemini(
         self,

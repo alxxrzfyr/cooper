@@ -252,6 +252,15 @@ class Calendar:
         except CalendarError as error:
             if "409" not in str(error):
                 raise
+            existing = self._call(
+                "GET",
+                f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",
+            )
+            extended = existing.get("extendedProperties")
+            private = extended.get("private") if isinstance(extended, dict) else {}
+            private = private if isinstance(private, dict) else {}
+            if private.get(TAG) != item_id:
+                raise CalendarError("Google event id is not owned by Cooper.") from None
             self._call(
                 "PATCH",
                 f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",
@@ -263,6 +272,15 @@ class Calendar:
         if not self.connected:
             return
         try:
+            existing = self._call(
+                "GET",
+                f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",
+            )
+            extended = existing.get("extendedProperties")
+            private = extended.get("private") if isinstance(extended, dict) else {}
+            private = private if isinstance(private, dict) else {}
+            if not isinstance(private.get(TAG), str) or not private[TAG]:
+                raise CalendarError("Google event is not owned by Cooper.")
             self._call(
                 "DELETE",
                 f"/calendars/{self._encoded}/events/{urllib.parse.quote(event_id)}",

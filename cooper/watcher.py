@@ -28,6 +28,8 @@ class EmailProposal:
     start: dt.datetime | None
     end: dt.datetime | None
     cancelled: bool
+    meeting_url: str | None = None
+    location: str | None = None
 
 
 class Watcher:
@@ -67,6 +69,7 @@ _DATE_LINE = re.compile(
     r"(?P<end>\d{1,2}(?::\d{2})?\s*(?:a\.?(?:m\.?)|p\.?(?:m\.?)))\s*$"
 )
 _DATE_LABEL = re.compile(r"(?im)^(?:when|date(?:\s+and\s+time)?|time)\s*:")
+_LOCATION = re.compile(r"(?im)^(?:location|venue)\s*:\s*(?P<value>[^\n]+)$")
 _CONFIRMATION = re.compile(
     r"\b(?:rsvp|registration|order)\s+(?:is\s+)?confirmed\b|\byou(?:'re| are) going\b",
     re.IGNORECASE,
@@ -115,6 +118,8 @@ def parse_confirmation(
         start=start,
         end=end,
         cancelled=cancelled,
+        meeting_url=_meeting_url_from(body),
+        location=_location_from(body),
     )
 
 
@@ -197,6 +202,27 @@ def _provider_reference(provider: str, url: str) -> str | None:
         match = re.search(r"(?:-|/)(\d{6,})(?:/|$)", path)
         return f"eventbrite:{match.group(1)}" if match else None
     return None
+
+
+def _meeting_url_from(body: str) -> str | None:
+    allowed = ("meet.google.com", "zoom.us", "teams.microsoft.com")
+    matches = {
+        url.rstrip(".,);]}\"'")
+        for url in _URL.findall(body)
+        if (parsed := urlparse(url)).scheme == "https"
+        and parsed.hostname
+        and any(_is_domain(parsed.hostname.lower(), domain) for domain in allowed)
+    }
+    return matches.pop() if len(matches) == 1 else None
+
+
+def _location_from(body: str) -> str | None:
+    matches = {_normalize(match.group("value")) for match in _LOCATION.finditer(body)}
+    matches.discard("")
+    if len(matches) != 1:
+        return None
+    value = matches.pop()
+    return value[:500] if "http://" not in value and "https://" not in value else None
 
 
 def _is_domain(host: str, allowed: str) -> bool:

@@ -62,11 +62,13 @@ class TestReadingSentences:
 
     def test_a_full_sentence_fills_every_field(self) -> None:
         action = read("write the quarterly report, 90m, important, due friday")
+        today = dt.datetime.now(ZoneInfo(TZ)).date()
+        ahead = (4 - today.weekday()) % 7 or 7
 
         assert action.title == "write the quarterly report"
         assert action.minutes == 90
         assert action.importance == 4
-        assert action.due == dt.date(2026, 9, 4)
+        assert action.due == today + dt.timedelta(days=ahead)
 
     def test_a_clock_time_makes_it_an_event(self) -> None:
         action = read("dentist thursday 3pm")
@@ -515,6 +517,46 @@ class TestGoogleTransport:
             "https://www.googleapis.com/auth/gmail.readonly",
         )
         assert parse_qs(urlparse(url).query)["scope"] == [" ".join(GOOGLE_SCOPES)]
+
+    def test_add_block_refuses_to_patch_an_unowned_id_collision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarError
+
+        calendar = self.calendar()
+        responses = iter(
+            [
+                CalendarError("Google returned 409."),
+                {"extendedProperties": {"private": {}}},
+            ]
+        )
+
+        def call(*args: object) -> dict:
+            result = next(responses)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        monkeypatch.setattr(calendar, "_call", call)
+
+        with pytest.raises(CalendarError, match="not owned"):
+            calendar.add_block(
+                item_id="item-1",
+                title="Work",
+                start=NOW,
+                end=NOW + dt.timedelta(hours=1),
+            )
+
+    def test_remove_block_checks_the_private_ownership_tag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cooper.google import CalendarError
+
+        calendar = self.calendar()
+        monkeypatch.setattr(calendar, "_call", lambda *args: {"extendedProperties": {}})
+
+        with pytest.raises(CalendarError, match="not owned"):
+            calendar.remove_block("someone-elses-event")
 
     def test_gmail_uses_calendars_shared_refreshed_access_token(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1142,6 +1184,54 @@ class TestCooperIdentityAndLimits:
             },
             {"temperature": 0, "maxOutputTokens": brain.ANSWER_OUTPUT_TOKENS},
         ]
+
+    def test_tool_turn_preserves_function_call_and_arguments(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        requests: list[dict[str, object]] = []
+
+        class Response:
+            def __enter__(self) -> Response:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps(
+                    {
+                        "candidates": [
+                            {
+                                "content": {
+                                    "role": "model",
+                                    "parts": [
+                                        {
+                                            "functionCall": {
+                                                "name": "calendar_availability",
+                                                "args": {"days": 5},
+                                            }
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    }
+                ).encode()
+
+        def fake_urlopen(request: object, timeout: int) -> Response:
+            requests.append(json.loads(request.data))
+            return Response()
+
+        monkeypatch.setattr(brain.urllib.request, "urlopen", fake_urlopen)
+        turn = _brain().tool_turn(
+            [{"role": "user", "parts": [{"text": "Find time"}]}],
+            [{"name": "calendar_availability", "parameters": {"type": "object"}}],
+        )
+
+        assert turn is not None
+        assert turn.calls == (brain.ToolCall("calendar_availability", {"days": 5}),)
+        assert turn.text is None
+        assert requests[0]["toolConfig"] == {"functionCallingConfig": {"mode": "AUTO"}}
 
 
 class TestOneSentenceIntoManyTasks:

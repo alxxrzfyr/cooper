@@ -27,6 +27,8 @@ def test_parses_luma_plain_text_confirmation_in_the_configured_timezone() -> Non
 Title: Climate Action Meetup
 When: Thursday, September 10, 2026, 6:30 PM - 8:00 PM
 https://lu.ma/climate-action-manila
+Location: The Atrium
+https://meet.google.com/abc-defg-hij
 """,
         ),
         timezone="Asia/Manila",
@@ -40,6 +42,8 @@ https://lu.ma/climate-action-manila
         start=dt.datetime(2026, 9, 10, 18, 30, tzinfo=ZoneInfo("Asia/Manila")),
         end=dt.datetime(2026, 9, 10, 20, 0, tzinfo=ZoneInfo("Asia/Manila")),
         cancelled=False,
+        meeting_url="https://meet.google.com/abc-defg-hij",
+        location="The Atrium",
     )
 
 
@@ -179,6 +183,8 @@ Private body text that must not survive parsing.
         "start",
         "end",
         "cancelled",
+        "meeting_url",
+        "location",
     }
     assert "Private body text" not in repr(proposal)
 

@@ -33,21 +33,23 @@ approved audience, but it is not a team or project-management tool.
 - Undo the latest change, including a complete scheduling run.
 - Connect Google Calendar and Gmail as read-only commitment sources. Cooper writes only the
   calendar blocks it places.
+- Read iCloud calendars through CalDAV so those commitments also block scheduling.
+- Let Ask select bounded availability, Gmail confirmation, and planning tools through MCP.
 - Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
 - Install the frontend as a responsive PWA with light and dark themes.
 
 ## Technology stack
 
-| Area                         | Technology                                               |
-| ---------------------------- | -------------------------------------------------------- |
-| Backend                      | Python 3.12, FastAPI, Uvicorn                            |
-| Validation and configuration | Pydantic Settings                                        |
-| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                  |
-| Frontend                     | React 19, TypeScript, Vite                               |
-| Authentication               | Firebase Authentication with Google sign-in              |
-| Calendar and mail            | Google Calendar API and Gmail API over REST              |
-| AI assistance                | Gemini, supplied per browser through Settings            |
-| Delivery                     | Firebase Hosting for the frontend and Render for the API |
+| Area                         | Technology                                                             |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| Backend                      | Python 3.12, FastAPI, Uvicorn                                          |
+| Validation and configuration | Pydantic Settings                                                      |
+| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                                |
+| Frontend                     | React 19, TypeScript, Vite                                             |
+| Authentication               | Firebase Authentication with Google or verified email/password sign-in |
+| Calendar and mail            | Google Calendar/Gmail REST APIs and iCloud CalDAV                      |
+| AI assistance                | Gemini, supplied per browser through Settings                          |
+| Delivery                     | Firebase Hosting for the frontend and Render for the API               |
 
 ## Architecture
 
@@ -70,12 +72,15 @@ flowchart LR
         Sources["sources.py<br/>Busy intervals"] --> Planner
         App --> Database[("SQLAlchemy database")]
         Watcher["watcher.py<br/>Fixed Gmail sync"] --> Google["google.py<br/>Calendar and Gmail"]
+        MCP["mcp.py<br/>Bounded tools"] --> App
+        ICloud["icloud.py<br/>CalDAV reader"] --> Sources
         App --> Google
         Google --> Sources
     end
 
     Google --> CalendarAPI["Google Calendar API"]
     Google --> GmailAPI["Gmail API"]
+    ICloud --> CalDAV["iCloud CalDAV"]
     Brain -. optional .-> Gemini["Gemini"]
 ```
 
@@ -84,9 +89,11 @@ flowchart LR
 - `brain.py` parses input and returns a validated `Action`. It never accesses the database.
 - `app.py` validates and executes every mutation, including events parsed from email.
 - `planner.py` ranks and places work without network or database I/O.
-- `sources.py` combines Cooper blocks, Google Calendar events, and reconciled Gmail commitments
-  into the busy intervals used by the planner.
+- `sources.py` combines Cooper blocks, Google Calendar events, iCloud events, and reconciled Gmail
+  commitments into the busy intervals used by the planner.
 - `google.py` handles Calendar writes, Gmail reads, and per-owner OAuth tokens.
+- `icloud.py` reads iCloud calendars with encrypted owner credentials and never writes remotely.
+- `mcp.py` defines bounded tool schemas shared by Ask and the authenticated MCP endpoint.
 - `watcher.py` runs the fixed-interval Gmail sync and reports its last check through the app.
 
 ### Frontend structure
@@ -118,6 +125,7 @@ responsible for identity, and Supabase Auth and Supabase Storage are not used.
 
 - Firebase ID tokens identify hosted users, and every query is scoped by the verified owner.
 - Google refresh tokens are encrypted before storage.
+- iCloud app-specific passwords are encrypted server-side and never returned to the browser or model.
 - Manual mode never calls a model or the network.
 - A Gemini key entered in Settings stays in that browser and is sent only with AI requests.
 - Titles are sanitized before they reach a model.
@@ -131,7 +139,7 @@ Cooper follows a small set of product rules:
 2. The planner places work only within configured working hours.
 3. Ambiguous references produce a question instead of a guess.
 4. Green indicates a completed or added item. Red indicates a deleted item.
-5. Google integrations are additive. Cooper remains useful without them.
+5. Calendar integrations are additive. Cooper remains useful without them.
 
 ## Project documentation
 
@@ -139,6 +147,8 @@ Cooper follows a small set of product rules:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation in detail.
 - [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
 - [`docs/DESIGN.md`](docs/DESIGN.md) describes the visual system and interaction rules.
+- [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) provides the local
+  Google, Gmail, iCloud, and calendar-write acceptance checklist before deployment.
 
 ## License
 

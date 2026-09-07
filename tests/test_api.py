@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from cooper.auth import AuthIdentity
 from cooper.db import Change
-from cooper.google import CalendarError
+from cooper.google import Busy, CalendarError
 from cooper.watcher import EmailProposal
 
 KEY = "test-key-that-is-long-enough-x"
@@ -97,6 +97,297 @@ def say(client: TestClient, text: str) -> dict:
     response = client.post("/api/say", json={"text": text}, headers=HEADERS)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_mcp_catalog_and_disconnected_read(client):
+    def rpc(method, params=None):
+        return client.post(
+            "/api/mcp",
+            headers=HEADERS,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": method,
+                "params": params or {},
+            },
+        )
+
+    initialized = rpc("initialize").json()
+    assert initialized["result"]["capabilities"]["tools"] == {}
+    names = {tool["name"] for tool in rpc("tools/list").json()["result"]["tools"]}
+    assert {"calendar_availability", "gmail_confirmations", "plan_tasks", "apply_plan"} <= names
+    result = rpc("tools/call", {"name": "gmail_confirmations", "arguments": {}}).json()
+    assert result["result"]["isError"] is True
+    assert "not connected" in result["result"]["content"][0]["text"]
+
+
+def test_mcp_requires_auth_and_rejects_unbounded_arguments(client):
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "calendar_availability",
+            "arguments": {"days": 900},
+        },
+    }
+    assert client.post("/api/mcp", json=payload).status_code == 403
+    result = client.post("/api/mcp", headers=HEADERS, json=payload).json()
+    assert result["result"]["isError"] is True
+
+
+def test_availability_names_a_connected_source_that_could_not_be_read(client, monkeypatch):
+    import cooper.app as module
+
+    class BrokenCalendar:
+        connected = True
+
+        def busy(self, *, days: int):
+            raise CalendarError("Google returned 503.")
+
+    monkeypatch.setattr(module, "connected_calendar", lambda owner_id: BrokenCalendar())
+    response = client.post(
+        "/api/mcp",
+        headers=HEADERS,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "calendar_availability",
+                "arguments": {"days": 7},
+            },
+        },
+    )
+
+    result = response.json()["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["unavailable_sources"] == ["google"]
+
+
+def test_ask_executes_model_selected_read_tool(client, monkeypatch):
+    import cooper.app as module
+    import cooper.brain as brain_module
+
+    monkeypatch.setattr(
+        module.Brain,
+        "_generate",
+        lambda self, prompt, **kwargs: '{"verb":"ask","question":"When?"}',
+    )
+    turns = iter(
+        [
+            brain_module.ToolTurn(
+                content={
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "calendar_availability",
+                                "args": {"days": 3},
+                            }
+                        }
+                    ],
+                },
+                calls=(brain_module.ToolCall("calendar_availability", {"days": 3}),),
+                text=None,
+            ),
+            brain_module.ToolTurn(
+                content={"role": "model", "parts": [{"text": "You have room this week."}]},
+                calls=(),
+                text="You have room this week.",
+            ),
+        ]
+    )
+    monkeypatch.setattr(module.Brain, "tool_turn", lambda self, contents, declarations: next(turns))
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={"text": "When can I work?", "mode": "ai", "gemini_api_key": "fake-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "You have room this week."
+    assert response.json()["tools"] == [{"name": "calendar_availability", "ok": True}]
+
+
+def test_plan_preview_does_not_write_and_apply_requires_confirmation(client, monkeypatch):
+    import cooper.app as module
+
+    fixed = dt.datetime(2026, 9, 7, 0, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(module, "now", lambda: fixed)
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="task-owned",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="Finish the project",
+                minutes=60,
+                importance=4,
+                category="academics",
+                created_at=fixed,
+            )
+        )
+
+    def tool(name, arguments):
+        return client.post(
+            "/api/mcp",
+            headers=HEADERS,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            },
+        ).json()["result"]
+
+    preview = tool("plan_tasks", {"item_ids": ["task-owned"], "days": 7})
+    with module.store.session() as session:
+        assert module.store.get_item(session, "local", "task-owned").start_at is None
+    refused = tool("apply_plan", {"item_ids": ["task-owned"], "days": 7})
+    applied = tool(
+        "apply_plan",
+        {"item_ids": ["task-owned"], "days": 7, "confirmed": True},
+    )
+
+    assert preview["isError"] is False
+    assert preview["structuredContent"]["slots"][0]["item_id"] == "task-owned"
+    assert refused["isError"] is True
+    assert applied["isError"] is False
+    with module.store.session() as session:
+        item = module.store.get_item(session, "local", "task-owned")
+        assert item.start_at is not None
+
+
+def test_confirmed_plan_avoids_commitment_mirrors_to_google_and_refreshes_view(client, monkeypatch):
+    import cooper.app as module
+
+    fixed = dt.datetime(2026, 9, 9, 0, 0, tzinfo=dt.UTC)
+    meetup_start = dt.datetime(2026, 9, 10, 2, 0, tzinfo=dt.UTC)
+    meetup_end = dt.datetime(2026, 9, 10, 4, 0, tzinfo=dt.UTC)
+    written: list[tuple[dt.datetime, dt.datetime]] = []
+
+    class Calendar:
+        connected = True
+
+        def busy(self, *, days: int):
+            return [Busy(meetup_start, meetup_end, "Meetup", False)]
+
+        def add_block(self, **kwargs):
+            written.append((kwargs["start"], kwargs["end"]))
+            return f"cooper{kwargs['item_id']}"
+
+    monkeypatch.setattr(module, "now", lambda: fixed)
+    monkeypatch.setattr(module, "connected_calendar", lambda owner_id: Calendar())
+    module.store.set_setting(
+        "local",
+        module.HOURS_SETTING,
+        {"start_hour": 9, "end_hour": 18, "weekdays": [3], "max_per_day": 4},
+    )
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="cs-project",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="CS project",
+                minutes=120,
+                importance=5,
+                due=dt.datetime(2026, 9, 11, 15, 59, tzinfo=dt.UTC),
+                category="academics",
+                created_at=fixed,
+            )
+        )
+
+    response = client.post(
+        "/api/mcp",
+        headers=HEADERS,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "apply_plan",
+                "arguments": {
+                    "item_ids": ["cs-project"],
+                    "days": 7,
+                    "confirmed": True,
+                },
+            },
+        },
+    )
+    result = response.json()["result"]
+    refreshed = client.get("/api/today", headers=HEADERS).json()
+
+    slot = result["structuredContent"]["slots"][0]
+    assert dt.datetime.fromisoformat(slot["start"]) >= meetup_end
+    assert written == [
+        (dt.datetime.fromisoformat(slot["start"]), dt.datetime.fromisoformat(slot["end"]))
+    ]
+    assert result["structuredContent"]["google_calendar"] == {"cs-project": True}
+    assert any(item["id"] == "cs-project" for item in refreshed["scheduled"])
+
+
+def test_icloud_is_optional_and_credentials_never_appear_in_status(client):
+    status = client.get("/api/today", headers=HEADERS).json()["icloud"]
+    assert status == {"configured": False, "connected": False, "email": None, "error": None}
+    result = client.post(
+        "/api/icloud/connect",
+        headers=HEADERS,
+        json={
+            "email": "owner@example.com",
+            "password": "abcd-efgh-ijkl-mnop",
+        },
+    )
+    assert result.status_code == 409
+    assert "abcd-efgh-ijkl-mnop" not in result.text
+
+
+def test_icloud_connect_stores_only_an_encrypted_owner_credential(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()
+    with configured_client(
+        monkeypatch,
+        f"sqlite:///{tmp_path / 'icloud.db'}",
+        encryption_key=key,
+    ) as (module, client):
+        monkeypatch.setattr(module.ICloudCalDAVProvider, "events", lambda self, **kwargs: [])
+        response = client.post(
+            "/api/icloud/connect",
+            headers=HEADERS,
+            json={"email": "owner@icloud.com", "password": "app-specific-password"},
+        )
+        saved = module.store.get_setting("local", module.ICLOUD_SETTING)
+
+    assert response.status_code == 200
+    assert response.json()["view"]["icloud"]["email"] == "owner@icloud.com"
+    assert "app-specific-password" not in response.text
+    assert saved.keys() == {"credential"}
+    assert "app-specific-password" not in saved["credential"]
+
+
+def test_icloud_busy_periods_feed_the_shared_scheduler(client, monkeypatch):
+    import cooper.app as module
+
+    start = module.now() + dt.timedelta(hours=2)
+    end = start + dt.timedelta(hours=1)
+
+    class ICloud:
+        connected = True
+
+        def busy(self, *, days: int):
+            return [Busy(start, end, "Private title", False)]
+
+    monkeypatch.setattr(module, "icloud_calendar", lambda owner_id: ICloud())
+    monkeypatch.setattr(module, "connected_calendar", lambda owner_id: None)
+
+    windows = module.busy_windows("local")
+
+    assert (start, end) in windows
 
 
 def ask(client: TestClient, text: str) -> dict:

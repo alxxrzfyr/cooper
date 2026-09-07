@@ -29,9 +29,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import AnyHttpUrl, BaseModel, Field
 from sqlalchemy import select
 
-from cooper import sources
+from cooper import mcp, sources
 from cooper.auth import AuthFailure, AuthIdentity, check_allowed_email, verify_firebase_token
 from cooper.brain import (
+    COOPER_IDENTITY,
     Action,
     Brain,
     guess_category,
@@ -42,6 +43,7 @@ from cooper.brain import (
 from cooper.config import KEY_MIN, Settings
 from cooper.db import Change, Item, Setting, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
+from cooper.icloud import ICloudCalDAVProvider
 from cooper.planner import Hours, Slot, place, rank
 from cooper.watcher import EmailProposal, parse_confirmation
 
@@ -51,6 +53,8 @@ GOOGLE_SETTING = "google_token"
 GOOGLE_CONNECTED_SETTING = "google_connected"
 GOOGLE_OAUTH_NONCE_SETTING = "google_oauth_nonce"
 GMAIL_SETTING = "gmail"
+ICLOUD_SETTING = "icloud_credentials"
+ICLOUD_STATUS_SETTING = "icloud_status"
 GOOGLE_NOT_CONNECTED = "Google is not connected for this account."
 OAUTH_STATE_SECONDS = 600
 
@@ -208,6 +212,11 @@ class BulkIn(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=100)
 
 
+class ICloudCredentials(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+
+
 def current_hours(owner_id: str) -> Hours:
     saved = store.get_setting(owner_id, HOURS_SETTING)
     if saved:
@@ -237,6 +246,16 @@ def google_gmail(owner_id: str) -> Gmail:
 def connected_calendar(owner_id: str) -> Calendar | None:
     calendar = google_calendar(owner_id)
     return calendar if calendar.connected else None
+
+
+def icloud_calendar(owner_id: str) -> ICloudCalDAVProvider:
+    saved = store.get_setting(owner_id, ICLOUD_SETTING) or {}
+    sealed = saved.get("credential") if isinstance(saved, dict) else None
+    return ICloudCalDAVProvider(
+        encryption_key=settings.encryption(),
+        sealed=sealed if isinstance(sealed, str) else None,
+        timezone=settings.timezone,
+    )
 
 
 def _google_connected(owner_id: str) -> dict[str, Any]:
@@ -329,6 +348,37 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
     ]
 
 
+def icloud_events(owner_id: str, *, days: int = 366) -> list[dict[str, Any]]:
+    calendar = icloud_calendar(owner_id)
+    if not calendar.connected:
+        return []
+    try:
+        entries = calendar.events(days=days)
+    except CalendarError as error:
+        store.set_setting(owner_id, ICLOUD_STATUS_SETTING, {"error": str(error)})
+        return []
+    return [
+        {
+            "title": entry.title,
+            "start_at": entry.start.isoformat(),
+            "end_at": entry.end.isoformat(),
+            "category": guess_category(entry.title),
+            "mine": False,
+            "source": "icloud",
+            "event_id": entry.event_id,
+            "all_day": entry.all_day,
+            "time_zone": entry.time_zone,
+            "meeting_url": entry.meeting_url,
+            "location": entry.location,
+            "description": None,
+            "organizer_name": None,
+            "response_status": None,
+            "attendees": [],
+        }
+        for entry in sorted(entries, key=lambda entry: entry.start)
+    ]
+
+
 def item_details(*, notes: str | None, location: str | None, meeting_url: str | None) -> str | None:
     """Store optional form details in the existing item notes field."""
     parts = []
@@ -355,7 +405,16 @@ def busy_windows(owner_id: str, *, days: int = 14) -> list[tuple[dt.datetime, dt
     Kept as a one-line wrapper so the schedulers below read the same as before and there is one
     obvious place — sources.py — where a new commitment source is added.
     """
-    return sources.busy_windows(store, owner_id, connected_calendar(owner_id), at=now(), days=days)
+    icloud = icloud_calendar(owner_id)
+    providers = (icloud,) if icloud.connected else ()
+    return sources.busy_windows(
+        store,
+        owner_id,
+        connected_calendar(owner_id),
+        at=now(),
+        days=days,
+        providers=providers,
+    )
 
 
 def sync_gmail_once(owner_id: str) -> SyncSummary:
@@ -428,6 +487,8 @@ def _reconcile_gmail_proposals(
                     start=proposal.start,
                     end=proposal.end,
                     category=guess_category(proposal.title),
+                    location=proposal.location,
+                    meeting_url=proposal.meeting_url,
                     source="gmail",
                 )
             )
@@ -464,6 +525,11 @@ def _reconcile_gmail_proposals(
                         title=action.title or proposal.title,
                         importance=3,
                         category=action.category or "personal",
+                        notes=item_details(
+                            notes=None,
+                            location=proposal.location,
+                            meeting_url=proposal.meeting_url,
+                        ),
                         start_at=action.start,
                         end_at=action.end,
                         created_at=now(),
@@ -477,6 +543,12 @@ def _reconcile_gmail_proposals(
                 or aware(row.start_at) != action.start.astimezone(dt.UTC)
                 or aware(row.end_at) != action.end.astimezone(dt.UTC)
                 or row.category != action.category
+                or row.notes
+                != item_details(
+                    notes=None,
+                    location=proposal.location,
+                    meeting_url=proposal.meeting_url,
+                )
                 or row.status != "open"
             )
             if not changed:
@@ -486,6 +558,11 @@ def _reconcile_gmail_proposals(
             row.start_at = action.start
             row.end_at = action.end
             row.category = action.category or "personal"
+            row.notes = item_details(
+                notes=None,
+                location=proposal.location,
+                meeting_url=proposal.meeting_url,
+            )
             row.status = "open"
             updated += 1
 
@@ -532,6 +609,8 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
     calendar = google_calendar(owner_id)
     gmail = Gmail(calendar, lookback_days=settings.gmail_lookback_days)
     google_connected = _google_connected(owner_id)
+    icloud = icloud_calendar(owner_id)
+    icloud_status = store.get_setting(owner_id, ICLOUD_STATUS_SETTING) or {}
 
     return {
         "now": at.isoformat(),
@@ -542,7 +621,7 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         ],
         "scheduled": scheduled,
         "hours": hours.as_setting(),
-        "events": google_events(owner_id),
+        "events": [*google_events(owner_id), *icloud_events(owner_id)],
         "undo": undo_label,
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
@@ -558,6 +637,12 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
             "imported": gmail_counts.get("created", 0),
             "skipped": gmail_counts.get("skipped", 0),
         },
+        "icloud": {
+            "configured": icloud.configured,
+            "connected": icloud.connected,
+            "email": icloud.email,
+            "error": icloud_status.get("error") if isinstance(icloud_status, dict) else None,
+        },
     }
 
 
@@ -569,6 +654,149 @@ def health() -> dict[str, str]:
 @app.get("/api/today")
 def get_today(request: Request) -> dict[str, Any]:
     return today_view(request_owner(request).uid)
+
+
+def _slot_payload(slot: Slot) -> dict[str, Any]:
+    return {
+        "item_id": slot.item_id,
+        "title": slot.title,
+        "start": slot.start.isoformat(),
+        "end": slot.end.isoformat(),
+        "minutes": slot.minutes,
+    }
+
+
+def execute_tool(owner_id: str, name: str, arguments: object) -> dict[str, Any]:
+    try:
+        parsed = mcp.parse_arguments(name, arguments)
+    except ValueError as error:
+        return mcp.tool_result(str(error), error=True)
+
+    if isinstance(parsed, mcp.AvailabilityArgs):
+        zone = ZoneInfo(settings.timezone)
+        windows = [
+            *sources.collect_gmail(store, owner_id, at=now()),
+            *sources.collect_local(store, owner_id, at=now()),
+        ]
+        unavailable: list[str] = []
+        for name, provider in (
+            ("google", connected_calendar(owner_id)),
+            ("icloud", icloud_calendar(owner_id)),
+        ):
+            if provider is None or not provider.connected:
+                continue
+            try:
+                windows.extend(
+                    (entry.start, entry.end) for entry in provider.busy(days=parsed.days)
+                )
+            except CalendarError:
+                unavailable.append(name)
+        return mcp.tool_result(
+            {
+                "timezone": settings.timezone,
+                "working_hours": current_hours(owner_id).as_setting(),
+                "unavailable_sources": unavailable,
+                "busy": [
+                    {
+                        "start": start.astimezone(zone).isoformat(),
+                        "end": end.astimezone(zone).isoformat(),
+                    }
+                    for start, end in sorted(windows)[:200]
+                ],
+            }
+        )
+
+    if isinstance(parsed, mcp.GmailArgs):
+        gmail = google_gmail(owner_id)
+        if not gmail.connected:
+            return mcp.tool_result(GOOGLE_NOT_CONNECTED, error=True)
+        summary = sync_gmail_once(owner_id) if parsed.refresh else SyncSummary()
+        if summary.error:
+            return mcp.tool_result(summary.error, error=True)
+        with store.session() as session:
+            commitments = [
+                {
+                    "title": sanitize_for_prompt(item.title),
+                    "start": aware(item.start_at).isoformat() if aware(item.start_at) else None,
+                    "end": aware(item.end_at).isoformat() if aware(item.end_at) else None,
+                }
+                for item in store.open_items(session, owner_id)
+                if item.source == "gmail"
+            ][:50]
+        return mcp.tool_result({"sync": dataclasses.asdict(summary), "confirmations": commitments})
+
+    if isinstance(parsed, mcp.PlanArgs):
+        slots = plan_tasks(owner_id, item_ids=parsed.item_ids, days=parsed.days)
+        return mcp.tool_result(
+            {
+                "slots": [_slot_payload(slot) for slot in slots],
+                "reason": (
+                    "Tasks are ranked by deadline, age, and duration, then fitted into your "
+                    "working hours around existing commitments."
+                ),
+            }
+        )
+
+    if isinstance(parsed, mcp.ApplyPlanArgs):
+        slots = plan_tasks(owner_id, item_ids=parsed.item_ids, days=parsed.days)
+        if not slots:
+            return mcp.tool_result(
+                "No selected task can be placed in the available hours.", error=True
+            )
+        applied = apply_slots(owner_id, slots)
+        with store.session() as session:
+            mirrored = {
+                item_id: bool(item and item.google_event_id)
+                for item_id in [slot.item_id for slot in applied]
+                for item in [store.get_item(session, owner_id, item_id)]
+            }
+        return mcp.tool_result(
+            {
+                "slots": [_slot_payload(slot) for slot in applied],
+                "google_calendar": mirrored,
+            }
+        )
+
+    return mcp.tool_result("Unknown tool.", error=True)
+
+
+@app.post("/api/mcp")
+def mcp_endpoint(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    request_id = body.get("id")
+    if body.get("jsonrpc") != "2.0" or not isinstance(body.get("method"), str):
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32600, "message": "Invalid Request"},
+        }
+    method = body["method"]
+    if method == "initialize":
+        result = {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "cooper", "version": "1.0.0"},
+        }
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        result = {"tools": mcp.TOOLS}
+    elif method == "tools/call":
+        params = body.get("params")
+        if not isinstance(params, dict) or not isinstance(params.get("name"), str):
+            result = mcp.tool_result("Invalid tool call.", error=True)
+        else:
+            result = execute_tool(
+                request_owner(request).uid,
+                params["name"],
+                params.get("arguments", {}),
+            )
+    else:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": "Method not found"},
+        }
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
 @app.post("/api/say")
@@ -590,6 +818,20 @@ def say(body: Say, request: Request) -> dict[str, Any]:
     if ai and (
         action.verb == "show" or (action.verb == "ask" and looks_like_a_question(body.text))
     ):
+        tool_answer, tool_steps = answer_with_tools(
+            request_brain,
+            owner_id,
+            body.text,
+            summaries,
+        )
+        if tool_answer:
+            return {
+                "kind": "answered",
+                "message": tool_answer,
+                "source": "gemini",
+                "tools": tool_steps,
+                "view": today_view(owner_id, using_model=request_brain.using_model),
+            }
         answered = request_brain.answer(body.text, summaries, _busy_time_context(owner_id))
         if answered:
             return {
@@ -605,6 +847,63 @@ def say(body: Say, request: Request) -> dict[str, Any]:
         "source": action.source,
         "view": today_view(owner_id, using_model=request_brain.using_model),
     }
+
+
+def answer_with_tools(
+    request_brain: Brain,
+    owner_id: str,
+    question: str,
+    summaries: list[str],
+) -> tuple[str | None, list[dict[str, Any]]]:
+    declarations = [
+        {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": tool["inputSchema"],
+        }
+        for tool in mcp.TOOLS
+        if tool["name"] != "apply_plan"
+    ]
+    prompt = (
+        f"{COOPER_IDENTITY}\n\n"
+        "Answer only about the person's tasks and calendar. Use a tool when current availability, "
+        "Gmail confirmations, or a proposed work plan is needed. Never claim a write occurred. "
+        "Calendar tool output intentionally contains no event titles. Be concise and explain why "
+        "suggested times fit.\n\n"
+        f"Timezone: {settings.timezone}\n"
+        f"Own open items:\n{chr(10).join(summaries[:24]) or '(none)'}\n\n"
+        f"Question: {sanitize_for_prompt(question)}"
+    )
+    contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": prompt}]}]
+    steps: list[dict[str, Any]] = []
+    for _ in range(4):
+        turn = request_brain.tool_turn(contents, declarations)
+        if turn is None:
+            return None, steps
+        contents.append(turn.content)
+        if turn.text and not turn.calls:
+            return turn.text, steps
+        if not turn.calls:
+            return None, steps
+        response_parts: list[dict[str, Any]] = []
+        for call in turn.calls[:3]:
+            result = execute_tool(owner_id, call.name, call.arguments)
+            failed = bool(result.get("isError"))
+            payload = result.get("structuredContent")
+            if payload is None:
+                content = result.get("content")
+                payload = content[0].get("text") if isinstance(content, list) and content else ""
+            steps.append({"name": call.name, "ok": not failed})
+            response_parts.append(
+                {
+                    "functionResponse": {
+                        "name": call.name,
+                        "response": {"output": payload, "ok": not failed},
+                    }
+                }
+            )
+        contents.append({"role": "user", "parts": response_parts})
+    return None, steps
 
 
 def _summarise(item: Item) -> str:
@@ -938,39 +1237,53 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
 
 
 def schedule_now(owner_id: str) -> list[Slot]:
+    slots = plan_tasks(owner_id)
+    return apply_slots(owner_id, slots)
+
+
+def plan_tasks(owner_id: str, *, item_ids: list[str] | None = None, days: int = 7) -> list[Slot]:
     at = now()
     hours = current_hours(owner_id)
-    busy = busy_windows(owner_id)
+    busy = busy_windows(owner_id, days=days)
+    selected = set(item_ids or [])
 
     with store.session() as session:
         ranked = rank(
             [
                 item
                 for item in store.open_items(session, owner_id)
-                if _is_local_item(item, owner_id)
+                if _is_local_item(item, owner_id) and (not selected or item.id in selected)
             ],
             at=at,
         )
-        slots = place(ranked, busy=busy, hours=hours, at=at, days=7)
-        if not slots:
-            return []
+    return place(ranked, busy=busy, hours=hours, at=at, days=days)
+
+
+def apply_slots(owner_id: str, slots: list[Slot]) -> list[Slot]:
+    if not slots:
+        return []
+    applied: list[Slot] = []
+    with store.session() as session:
         for slot in slots:
             item = store.get_item(session, owner_id, slot.item_id)
-            if item is None:
+            if item is None or not _is_local_item(item, owner_id) or item.scheduled:
                 continue
             item.start_at = slot.start
             item.end_at = slot.end
+            applied.append(slot)
+        if not applied:
+            return []
         store.record(
             session,
             owner_id,
-            label=f"Scheduled {len(slots)} task{'s' if len(slots) != 1 else ''}",
+            label=f"Scheduled {len(applied)} task{'s' if len(applied) != 1 else ''}",
             item=None,
-            before={"scheduled": [slot.item_id for slot in slots]},
+            before={"scheduled": [slot.item_id for slot in applied]},
         )
 
     calendar = connected_calendar(owner_id)
     if calendar is not None:
-        for slot in slots:
+        for slot in applied:
             try:
                 event_id = calendar.add_block(
                     item_id=slot.item_id,
@@ -985,7 +1298,7 @@ def schedule_now(owner_id: str) -> list[Slot]:
             except CalendarError:
                 # Leave it scheduled locally. The calendar can catch up next time.
                 continue
-    return slots
+    return applied
 
 
 def undo_last(owner_id: str) -> dict[str, Any]:
@@ -1408,6 +1721,33 @@ def connect(request: Request) -> dict[str, str]:
         {"nonce": nonce, "expires_at": expires_at.isoformat()},
     )
     return {"url": url}
+
+
+@app.post("/api/icloud/connect")
+def connect_icloud(payload: ICloudCredentials, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    calendar = icloud_calendar(owner_id)
+    if not calendar.configured:
+        raise HTTPException(
+            status_code=409,
+            detail="Server encryption must be configured before connecting iCloud.",
+        )
+    try:
+        sealed = calendar.connect(payload.email, payload.password)
+    except CalendarError as error:
+        store.set_setting(owner_id, ICLOUD_STATUS_SETTING, {"error": str(error)})
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    store.set_setting(owner_id, ICLOUD_SETTING, {"credential": sealed})
+    store.set_setting(owner_id, ICLOUD_STATUS_SETTING, {"error": None})
+    return {"view": today_view(owner_id)}
+
+
+@app.post("/api/icloud/disconnect")
+def disconnect_icloud(request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    store.set_setting(owner_id, ICLOUD_SETTING, {})
+    store.set_setting(owner_id, ICLOUD_STATUS_SETTING, {})
+    return {"view": today_view(owner_id)}
 
 
 @app.get("/api/google/callback")

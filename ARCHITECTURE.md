@@ -14,6 +14,8 @@ cooper/
   brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
   planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
   google.py   ~390 lines   Calendar and Gmail over REST; no SDK
+  icloud.py   ~120 lines   Read-only iCloud calendars over CalDAV
+  mcp.py      ~90 lines    Bounded tool schemas and MCP result shapes
   sources.py  ~100 lines   one busy-time pipe for every commitment source
   watcher.py  ~250 lines   one fixed Gmail sync timer
   app.py      ~1,450 lines every route; the only thing that writes to the database
@@ -30,7 +32,8 @@ cooper/
 ```
 
 `sources.py` turns every commitment into one list of busy intervals the planner routes around.
-Today it combines Google Calendar, Cooper's own blocks, and reconciled Gmail confirmations.
+Today it combines Google Calendar, read-only iCloud calendars, Cooper's own blocks, and
+reconciled Gmail confirmations.
 `watcher.py` reads Gmail on one fixed interval and reports its last check through the dashboard;
 it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
 second writer.
@@ -60,9 +63,9 @@ frontend/src/
   theme.css         tokens, light and dark
 ```
 
-The frontend can run in local mode with `X-Cooper-Key` or hosted mode with Firebase Google sign-in.
-Firebase sign-in only identifies the user; Calendar and Gmail access are separate Settings
-connections handled by the backend OAuth flow.
+The frontend can run in local mode with `X-Cooper-Key` or hosted mode with Firebase Google or verified email/password sign-in.
+Firebase sign-in only identifies the user; Google Calendar, Gmail, and iCloud access are separate
+Settings connections. Google uses OAuth, while iCloud uses an encrypted app-specific password.
 
 The browser resolves its public configuration at startup: Firebase Hosting supplies the Firebase
 Web config through `/__/firebase/init.json`, while local Vite development keeps the browser on
@@ -147,6 +150,11 @@ planner.place()       pure fitting, inside working hours, around sources.busy()
 google.add_block()    best effort; a failure leaves it scheduled locally
 ```
 
+Ask can also enter a bounded Gemini function-calling loop. `mcp.py` publishes the read tools,
+`app.py` validates their arguments and derives the owner from authentication, and provider
+credentials never enter tool arguments or results. Applying a plan is a separate authenticated
+tool call that requires explicit confirmation. `app.py` remains the only database writer.
+
 The important part of that diagram is the join. An event parsed out of an email is a _proposal_
 and goes through the same validation as a sentence you typed. There is no second write path.
 
@@ -171,7 +179,7 @@ SQLite drops offsets, and without this a 3pm appointment displayed at 11pm and e
 slid a day. It is a type rather than a convention so no future query can forget. Incoming remote
 events carry their own offsets and must go through the same type.
 
-**Remote failures never block you.** Every Google call is wrapped. If it fails the item is
+**Remote failures never block you.** Every Google and iCloud call is wrapped. If one fails the item is
 still captured, still ranked, still scheduled locally. Same contract for Microsoft and for the
 watcher.
 
@@ -218,7 +226,7 @@ localhost, so:
 - bind `127.0.0.1`
 - every route except `/health` and the OAuth callback needs `X-Cooper-Key`
 - CORS pinned to one origin
-- the Google refresh token is encrypted with Fernet before it touches the database
+- Google refresh tokens and iCloud app-specific passwords are encrypted with Fernet before storage
 - the refusal is _returned_ from middleware, not raised — exception handlers do not run for
   middleware, so raising would surface as a 500
 
