@@ -2508,8 +2508,6 @@ button.slot:active {
   align-items: flex-end;
   justify-content: center;
   background: var(--scrim);
-  backdrop-filter: blur(20px) saturate(120%);
-  -webkit-backdrop-filter: blur(20px) saturate(120%);
   animation: frame-in 0.18s ease-out;
 }
 

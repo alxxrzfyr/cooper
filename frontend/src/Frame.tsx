@@ -541,7 +541,7 @@ export function CalendarEventFrame({
                 {event.attendees.length} guest{event.attendees.length === 1 ? "" : "s"}
               </span>
               <ul className="event-guests">
-                {event.attendees.slice(0, 8).map((g) => (
+                {event.attendees.map((g) => (
                   <li key={g.email} className="event-guest">
                     <span className="event-guest__name">{g.name ?? g.email}</span>
                     {g.response_status && g.response_status !== "accepted" && (
@@ -551,11 +551,6 @@ export function CalendarEventFrame({
                     )}
                   </li>
                 ))}
-                {event.attendees.length > 8 && (
-                  <li className="event-guest event-guest--more">
-                    +{event.attendees.length - 8} more
-                  </li>
-                )}
               </ul>
             </div>
           </div>
