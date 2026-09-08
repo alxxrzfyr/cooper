@@ -61,6 +61,13 @@ describe("public landing", () => {
     expect(onSignIn).toHaveBeenCalledOnce();
   });
 
+  test("keeps the first-panel scroll cue as a non-interactive visual prompt", () => {
+    render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
+
+    expect(screen.getByText("Keep going")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /next section/i })).not.toBeInTheDocument();
+  });
+
   test("shows an email form and submits the current auth intent", async () => {
     const onEmailAuth = vi.fn(async () => undefined);
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} onEmailAuth={onEmailAuth} />);
@@ -72,5 +79,21 @@ describe("public landing", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Register with email" }));
 
     expect(onEmailAuth).toHaveBeenCalledWith("friend@example.com", "password", "signup");
+  });
+
+  test("lets a visitor reveal and hide the password they entered", async () => {
+    const user = userEvent.setup();
+    render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
+
+    const password = screen.getByLabelText("Password");
+    await user.type(password, "cooper-secret");
+    expect(password).toHaveAttribute("type", "password");
+
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("cooper-secret");
+
+    await user.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
   });
 });

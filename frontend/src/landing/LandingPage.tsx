@@ -332,12 +332,7 @@ export function LandingPage({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="landing__scroll-cue"
-            aria-label={`Next section: ${PANELS[1].label}`}
-            onClick={() => moveBy(1)}
-          >
+          <div className="landing__scroll-cue" aria-hidden="true">
             <span className="landing__scroll-cue-label">Keep going</span>
             <svg className="landing__scroll-cue-art" viewBox="0 0 116 36" aria-hidden="true">
               <path
@@ -348,7 +343,7 @@ export function LandingPage({
               <circle className="landing__scroll-cue-spark" cx="6" cy="20" r="2" />
             </svg>
             <span className="landing__scroll-cue-destination">{PANELS[1].label}</span>
-          </button>
+          </div>
         </section>
 
         <section className="landing__panel landing__panel--features" id={panelId("features")}>

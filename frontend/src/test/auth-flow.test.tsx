@@ -152,17 +152,6 @@ describe("public auth flow", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  test("unknown public paths fall back to the landing surface", () => {
-    window.history.replaceState({}, "", "/not-a-page");
-    const fetch = vi.fn(async () => json(view()));
-    vi.stubGlobal("fetch", fetch);
-
-    render(<App />);
-
-    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   test("local mode keeps the shared key header", async () => {
     const calls: Headers[] = [];
     vi.stubGlobal(

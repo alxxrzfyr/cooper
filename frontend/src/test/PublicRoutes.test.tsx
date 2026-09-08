@@ -16,10 +16,11 @@ describe("public route surface", () => {
   test.each([
     ["/", "landing"],
     ["/login", "login"],
+    ["/app", "landing"],
     ["/signup/", "signup"],
     ["/terms", "terms"],
     ["/privacy/", "privacy"],
-    ["/unknown", "landing"],
+    ["/unknown", "not-found"],
   ] as const)("maps %s to %s", (pathname, route) => {
     expect(readPublicRoute(pathname)).toBe(route);
   });
@@ -69,6 +70,13 @@ describe("public route surface", () => {
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
   });
 
+  test("gives an unknown address a clear route back to Cooper", () => {
+    render(<PublicRoutes route="not-found" {...props} />);
+
+    expect(screen.getByRole("heading", { name: "This page wandered off." })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Cooper home" })).toHaveAttribute("href", "/");
+  });
+
   test("explains unavailable hosted auth in local mode", () => {
     render(<PublicRoutes route="login" {...props} authEnabled={false} />);
 
@@ -79,5 +87,7 @@ describe("public route surface", () => {
     render(<PublicRoutes route="landing" {...props} authEnabled={false} />);
 
     expect(screen.getByRole("button", { name: "Hosted sign-in unavailable" })).toBeDisabled();
+    expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
+    expect(screen.getByText(/Email sign-in will be available/i)).toBeInTheDocument();
   });
 });
