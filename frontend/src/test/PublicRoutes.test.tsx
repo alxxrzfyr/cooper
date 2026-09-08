@@ -83,11 +83,18 @@ describe("public route surface", () => {
     expect(screen.getByRole("button", { name: "Hosted sign-in unavailable" })).toBeDisabled();
   });
 
-  test("keeps the landing sign-in action unavailable in local mode", () => {
+  test("keeps email and password fields usable in local mode", async () => {
     render(<PublicRoutes route="landing" {...props} authEnabled={false} />);
 
     expect(screen.getByRole("button", { name: "Hosted sign-in unavailable" })).toBeDisabled();
-    expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
-    expect(screen.getByText(/Email sign-in will be available/i)).toBeInTheDocument();
+    const email = screen.getByLabelText("Email address");
+    const password = screen.getByLabelText("Password");
+
+    expect(email).toBeEnabled();
+    expect(password).toBeEnabled();
+    await userEvent.setup().type(email, "friend@example.com");
+    await userEvent.setup().type(password, "cooper-secret");
+    expect(email).toHaveValue("friend@example.com");
+    expect(password).toHaveValue("cooper-secret");
   });
 });

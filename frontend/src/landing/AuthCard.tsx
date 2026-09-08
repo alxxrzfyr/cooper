@@ -49,7 +49,8 @@ export function AuthCard({
   const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const copy = COPY[intent];
-  const disabled = busy || authLoading || !authEnabled;
+  const disabled = busy || authLoading;
+  const googleDisabled = disabled || !authEnabled;
   const googleAction = intent === "login" ? "Sign in with Google" : "Register with Google";
   const emailAction = intent === "login" ? "Sign in with email" : "Register with email";
 
@@ -125,7 +126,7 @@ export function AuthCard({
       <button
         type="button"
         className={`landing__google${!authEnabled ? " landing__google--unavailable" : ""}`}
-        disabled={disabled}
+        disabled={googleDisabled}
         onClick={onSignIn}
       >
         {authEnabled && (
@@ -157,111 +158,107 @@ export function AuthCard({
               : "Hosted sign-in unavailable"}
       </button>
 
-      {authEnabled && (
-        <>
-          <div className="landing__auth-divider" aria-hidden="true">
-            <span>or continue with email</span>
-          </div>
+      <div className="landing__auth-divider" aria-hidden="true">
+        <span>or continue with email</span>
+      </div>
 
-          {resetMode ? (
-            <form className="landing__email-form" onSubmit={submitReset}>
-              <label>
-                Email address
-                <input
-                  type="email"
-                  name="reset-email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  disabled={disabled}
-                  required
-                />
-              </label>
-              <button
-                type="submit"
-                className="landing__email-submit"
-                disabled={disabled || !onResetPassword}
-              >
-                {busy ? "Sending…" : "Send reset email"}
-              </button>
+      {resetMode ? (
+        <form className="landing__email-form" onSubmit={submitReset}>
+          <label>
+            Email address
+            <input
+              type="email"
+              name="reset-email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </label>
+          <button
+            type="submit"
+            className="landing__email-submit"
+            disabled={disabled || !onResetPassword}
+          >
+            {busy ? "Sending…" : "Send reset email"}
+          </button>
+          <button
+            type="button"
+            className="landing__text-button"
+            onClick={() => {
+              setResetMode(false);
+              setResetSent(false);
+            }}
+          >
+            Back to sign in
+          </button>
+          {resetSent && (
+            <p className="landing__success" role="status">
+              If an account exists, check your email for a reset link.
+            </p>
+          )}
+        </form>
+      ) : (
+        <form className="landing__email-form" onSubmit={submitEmail}>
+          <label>
+            Email address
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </label>
+          <label>
+            Password
+            <span className="landing__password-control">
+              <input
+                type={passwordVisible ? "text" : "password"}
+                name="password"
+                autoComplete={intent === "login" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={disabled}
+                minLength={6}
+                required
+              />
               <button
                 type="button"
-                className="landing__text-button"
-                onClick={() => {
-                  setResetMode(false);
-                  setResetSent(false);
-                }}
+                className="landing__password-toggle"
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                aria-pressed={passwordVisible}
+                disabled={disabled}
+                onClick={() => setPasswordVisible((visible) => !visible)}
               >
-                Back to sign in
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                  <circle cx="12" cy="12" r="2.75" />
+                </svg>
               </button>
-              {resetSent && (
-                <p className="landing__success" role="status">
-                  If an account exists, check your email for a reset link.
-                </p>
-              )}
-            </form>
-          ) : (
-            <form className="landing__email-form" onSubmit={submitEmail}>
-              <label>
-                Email address
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  disabled={disabled}
-                  required
-                />
-              </label>
-              <label>
-                Password
-                <span className="landing__password-control">
-                  <input
-                    type={passwordVisible ? "text" : "password"}
-                    name="password"
-                    autoComplete={intent === "login" ? "current-password" : "new-password"}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    disabled={disabled}
-                    minLength={6}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="landing__password-toggle"
-                    aria-label={passwordVisible ? "Hide password" : "Show password"}
-                    aria-pressed={passwordVisible}
-                    disabled={disabled}
-                    onClick={() => setPasswordVisible((visible) => !visible)}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
-                      <circle cx="12" cy="12" r="2.75" />
-                    </svg>
-                  </button>
-                </span>
-              </label>
-              <button type="submit" className="landing__email-submit" disabled={disabled}>
-                {busy ? "Working…" : emailAction}
-              </button>
-              {intent === "login" && (
-                <button
-                  type="button"
-                  className="landing__text-button"
-                  onClick={() => setResetMode(true)}
-                >
-                  Forgot password?
-                </button>
-              )}
-            </form>
+            </span>
+          </label>
+          <button type="submit" className="landing__email-submit" disabled={disabled}>
+            {busy ? "Working…" : emailAction}
+          </button>
+          {intent === "login" && (
+            <button
+              type="button"
+              className="landing__text-button"
+              onClick={() => setResetMode(true)}
+            >
+              Forgot password?
+            </button>
           )}
-        </>
+        </form>
       )}
 
       {!authEnabled && (
         <p className="landing__availability">
-          Email sign-in will be available after Firebase is configured for this deployment.
+          You can fill in your details now. Connect Firebase to complete email sign-in.
         </p>
       )}
 

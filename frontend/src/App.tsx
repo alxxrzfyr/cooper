@@ -198,6 +198,10 @@ function firebaseAuthMessage(error: unknown): string {
     typeof error === "object" && error !== null && "code" in error
       ? String((error as { code: unknown }).code)
       : "";
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Firebase is not configured")) {
+    return "Email and password are ready to use, but this local app needs Firebase configuration to finish sign-in.";
+  }
   if (code.includes("email-already-in-use")) {
     return "That email already has an account. Try logging in.";
   }
