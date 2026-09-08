@@ -2844,7 +2844,7 @@ button.slot:active {
 
 .event-guest {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
@@ -2852,9 +2852,8 @@ button.slot:active {
 }
 
 .event-guest__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .event-guest__status {
