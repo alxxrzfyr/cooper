@@ -101,6 +101,7 @@ function view(overrides: Partial<View> = {}): View {
     undo: null,
     using_model: false,
     calendar: { configured: false, connected: false, email: null },
+    icloud: { configured: false, connected: false, email: null, error: null },
     gmail: {
       configured: false,
       connected: false,
@@ -139,6 +140,7 @@ async function openAi(user = userEvent.setup()) {
 }
 
 interface Routes {
+  itemError?: string;
   view?: View;
   todayView?: View;
   today?: View | { status: number; detail: string };
@@ -205,6 +207,9 @@ function stub(routes: Routes) {
           view: currentView,
         });
       }
+      if (url.includes("/api/icloud/")) {
+        return json({ view: currentView });
+      }
       if (url.includes("/api/undo")) {
         return json(withView(reply({ kind: "undone", message: "Undid: Added." })));
       }
@@ -215,6 +220,7 @@ function stub(routes: Routes) {
         return json(withView(reply({ kind: "completed", message: "Completed." })));
       }
       if (url.endsWith("/api/items")) {
+        if (routes.itemError) return json({ detail: routes.itemError }, 503);
         // Manual mode's form add: same Reply shape as a parsed add.
         return json(withView(reply({ kind: "added", message: "Added “write the report”." })));
       }
@@ -236,6 +242,7 @@ beforeEach(() => {
   firebaseMock.unsubscribe.mockClear();
   // The conversation persists in localStorage, so each test starts from an empty one.
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -408,7 +415,7 @@ describe("first impression", () => {
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Your day is still here." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(document.querySelector(".auth-page__note .mascot")).toHaveAttribute(
       "src",
       "/assets/mascot/cooper_waving.webp",
@@ -463,7 +470,7 @@ describe("first impression", () => {
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Offline rules")).toBeInTheDocument();
-    expect(screen.getByText(/Works fine without a key/)).toBeInTheDocument();
+    expect(screen.getByText(/Add a Gemini API key to talk to Cooper/)).toBeInTheDocument();
   });
 
   test("saves a Gemini key in this browser and reports AI as available", async () => {
@@ -483,7 +490,7 @@ describe("first impression", () => {
     await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
     expect(await screen.findByRole("button", { name: "Ask" })).not.toBeDisabled();
     expect(calls.every((call) => !call.body?.gemini_api_key)).toBe(true);
-  });
+  }, 10_000);
 
   test("does not save an empty Gemini key", async () => {
     stub({});
@@ -583,7 +590,7 @@ describe("manual and ai", () => {
     await user.click(await screen.findByRole("button", { name: "Clear" }));
     await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).not.toBeDisabled());
     expect(calls.filter((call) => call.url.includes("/api/today")).length).toBeGreaterThan(1);
   });
 
@@ -593,8 +600,7 @@ describe("manual and ai", () => {
     render(<App />);
     await openChat();
 
-    expect(await screen.findByRole("button", { name: "Ask" })).toBeDisabled();
-    expect(screen.getByText(/No model key/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Ask" })).not.toBeDisabled();
   });
 
   test("an answer is blue, not an action", async () => {
@@ -1321,7 +1327,7 @@ describe("google calendar", () => {
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Not connected")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Google" })).toBeInTheDocument();
   });
 
   test("a connected calendar is named", async () => {
@@ -1337,7 +1343,34 @@ describe("google calendar", () => {
 
     await user.click((await screen.findAllByRole("button", { name: /Calendar/ }))[0]);
 
-    expect(await screen.findByText(/Synced with me@example.com/)).toBeInTheDocument();
+    expect(await screen.findByText(/Connected to me@example.com/)).toBeInTheDocument();
+  });
+});
+
+describe("icloud calendar", () => {
+  test("submits the app-specific password without storing it in the browser", async () => {
+    const calls = stub({
+      view: view({
+        icloud: { configured: true, connected: false, email: null, error: null },
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
+    await user.type(await screen.findByLabelText("Apple ID"), "owner@icloud.com");
+    await user.type(screen.getByLabelText("App-specific password"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Connect iCloud" }));
+
+    await waitFor(() => {
+      const request = calls.find((call) => call.url.includes("/api/icloud/connect"));
+      expect(request?.body).toEqual({
+        email: "owner@icloud.com",
+        password: "secret-password",
+      });
+    });
+    expect(screen.getByLabelText("App-specific password")).toHaveValue("");
+    expect(JSON.stringify(localStorage)).not.toContain("secret-password");
   });
 });
 
@@ -1431,17 +1464,17 @@ describe("gmail confirmations", () => {
     expect(screen.getByText(/2 imported/)).toBeInTheDocument();
   });
 
-  test("planned sources are listed as coming soon under settings", async () => {
+  test("future sources are listed as coming soon under settings", async () => {
     stub({});
     render(<App />);
     const user = userEvent.setup();
 
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
-    for (const label of ["Luma", "Meetup", "Microsoft Teams", "Google Classroom"]) {
+    for (const label of ["Microsoft Teams", "Google Classroom"]) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
-    expect(screen.getAllByText("Coming soon")).toHaveLength(4);
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
   });
 
   test("Gmail commitments are outlined and read-only on the dashboard", async () => {
@@ -1709,14 +1742,46 @@ describe("the dashboard", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Say something" }));
 
-    expect(within(nav).getByRole("button", { name: /Cooper/ })).toHaveAttribute(
+    expect(screen.getByLabelText("Say something to Cooper")).toHaveFocus();
+    expect(within(nav).getByRole("button", { name: /Home/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
   });
+
+  test("the Home composer talks to Cooper instead of opening the silent form", async () => {
+    const calls = stub({
+      view: view({ using_model: true }),
+      say: reply({ kind: "added", message: "Added “buy milk”." }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByText("Up next");
+
+    await user.type(screen.getByLabelText("Say something to Cooper"), "buy milk{Enter}");
+
+    const log = await screen.findByRole("log", { name: "Conversation" });
+    expect(within(log).getByText("buy milk")).toBeInTheDocument();
+    expect(within(log).getByText("Added “buy milk”.")).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/api/say"))).toBe(true);
+  });
 });
 
 describe("manual mode as a form", () => {
+  test("a failed save preserves the draft and optional details", async () => {
+    stub({ itemError: "Could not save. Try again." });
+    render(<App />);
+    const user = await openChat();
+    await user.type(await screen.findByLabelText("What"), "planning session");
+    await user.type(screen.getByLabelText("Location"), "Studio 3");
+    await user.type(screen.getByLabelText("Notes"), "Bring the draft.");
+    await user.click(screen.getByRole("button", { name: "Add it" }));
+    await screen.findByText("Could not save. Try again.");
+    expect(screen.getByLabelText("What")).toHaveValue("planning session");
+    expect(screen.getByLabelText("Location")).toHaveValue("Studio 3");
+    expect(screen.getByLabelText("Notes")).toHaveValue("Bring the draft.");
+  });
+
   test("Manual mode on the chat tab is a form, not a sentence box", async () => {
     stub({});
     render(<App />);

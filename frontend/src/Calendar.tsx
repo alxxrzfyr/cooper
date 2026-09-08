@@ -267,8 +267,10 @@ export function Calendar({
         Calendar
         <span className="largetitle__sub">
           {view.calendar.connected
-            ? `Synced with ${view.calendar.email ?? "Google"}`
-            : "On this device · connect Google in Settings"}
+            ? `Connected to ${view.calendar.email ?? "Google Calendar"}`
+            : view.icloud.connected
+              ? `Connected to ${view.icloud.email ?? "iCloud Calendar"}`
+              : "On this device · connect a calendar in Settings"}
         </span>
       </h1>
 
@@ -362,7 +364,9 @@ export function Calendar({
           <span className="slot__time">{clock(entry.start, zone)}</span>
           <span className="slot__title">{entry.title}</span>
           {compact ? null : (
-            <span className="slot__from">{entry.source === "gmail" ? "Gmail" : "Google"}</span>
+            <span className="slot__from">
+              {entry.source === "gmail" ? "Gmail" : entry.source === "icloud" ? "iCloud" : "Google"}
+            </span>
           )}
         </div>
       );
@@ -387,7 +391,11 @@ export function Calendar({
         {entry.event && (
           <>
             <span className="slot__from">
-              {entry.event.source === "gmail" ? "Gmail" : "Google"}
+              {entry.event.source === "gmail"
+                ? "Gmail"
+                : entry.event.source === "icloud"
+                  ? "iCloud"
+                  : "Google"}
             </span>
             <span className="slot__detail">{calendarEventContext(entry.event)}</span>
           </>
@@ -504,7 +512,7 @@ export function Calendar({
         {legend}
         <p className="hint">
           Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
-          placed; outlined ones came from Google Calendar or Gmail.
+          placed; outlined ones came from Google Calendar, iCloud, or Gmail.
         </p>
       </footer>
 

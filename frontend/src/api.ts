@@ -29,13 +29,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getRuntimeConfig().apiBase;
   let response: Response | undefined;
   let networkError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const attempts = !init?.method || init.method === "GET" ? 2 : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       response = await fetch(`${base}${path}`, { ...init, headers });
       break;
     } catch (error: unknown) {
       networkError = error;
-      if (attempt === 0) {
+      if (attempt + 1 < attempts) {
         await new Promise((resolve) => globalThis.setTimeout(resolve, 750));
       }
     }
@@ -111,4 +112,7 @@ export const api = {
   connect: () => call<{ url: string }>("/api/google/connect", post()),
   disconnect: () => call<{ view: View }>("/api/google/disconnect", post()),
   syncGoogle: () => call<{ summary: SyncSummary; view: View }>("/api/google/sync", post()),
+  connectICloud: (email: string, password: string) =>
+    call<{ view: View }>("/api/icloud/connect", post({ email, password })),
+  disconnectICloud: () => call<{ view: View }>("/api/icloud/disconnect", post()),
 };

@@ -62,6 +62,7 @@ function view(overrides: Partial<View> = {}): View {
       max_per_day: 4,
     },
     calendar: { configured: false, connected: false, email: null },
+    icloud: { configured: false, connected: false, email: null, error: null },
     gmail: {
       configured: false,
       connected: false,

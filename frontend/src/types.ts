@@ -67,7 +67,7 @@ export interface CalendarEvent {
   end_at: string;
   category: Category;
   mine: boolean;
-  source: "google" | "gmail";
+  source: "google" | "gmail" | "icloud";
   all_day?: boolean;
   time_zone?: string | null;
   meeting_url?: string | null;
@@ -107,6 +107,12 @@ export interface View {
   using_model: boolean;
   calendar: { configured: boolean; connected: boolean; email: string | null };
   gmail: GmailHealth;
+  icloud: {
+    configured: boolean;
+    connected: boolean;
+    email: string | null;
+    error: string | null;
+  };
 }
 
 /** Reply kind, which determines its semantic colour. */
@@ -128,6 +134,7 @@ export interface Reply {
   item?: Item;
   chip?: string[];
   source?: string;
+  tools?: { name: string; ok: boolean }[];
   view: View;
 }
 

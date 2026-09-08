@@ -35,6 +35,12 @@ interface PublicRoutesProps {
   authEnabled: boolean;
   authLoading: boolean;
   onSignIn: () => void;
+  onEmailAuth?: (email: string, password: string, intent: AuthIntent) => Promise<void>;
+  authStatus?: "idle" | "verification-pending" | "access-denied";
+  onCheckVerification?: () => Promise<void>;
+  onResendVerification?: () => Promise<void>;
+  onResetPassword?: (email: string) => Promise<void>;
+  onUseAnotherAccount?: () => void;
 }
 
 function authIntent(route: PublicRoute): AuthIntent {
@@ -54,7 +60,7 @@ function PublicLoading({ onOverview }: { onOverview: () => void }) {
         <Mascot name="cooper_idle" size="lg" decorative loading="eager" />
         <p className="landing__eyebrow">Welcome to Cooper</p>
         <h1 id="public-loading-title">Checking your account.</h1>
-        <p>One moment while we confirm your Google account.</p>
+        <p>One moment while we confirm your Cooper account.</p>
         <button type="button" className="landing__secondary" onClick={onOverview}>
           View the overview
         </button>
@@ -71,6 +77,27 @@ function PublicLoading({ onOverview }: { onOverview: () => void }) {
   );
 }
 
+function AccessDeniedPage({ onUseAnotherAccount }: { onUseAnotherAccount: () => void }) {
+  return (
+    <div className="public-page public-loading" role="alert">
+      <header className="public-page__header">
+        <a className="public-page__brand" href="/" aria-label="Cooper home">
+          <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
+          <span className="landing__wordmark">Cooper</span>
+        </a>
+      </header>
+      <section className="public-loading__main" aria-labelledby="access-denied-title">
+        <Mascot name="cooper_puzzled" size="lg" decorative loading="eager" />
+        <h1 id="access-denied-title">This beta is invite-only.</h1>
+        <p>Your account is valid, but it is not on Cooper’s approved access list yet.</p>
+        <button type="button" className="landing__secondary" onClick={onUseAnotherAccount}>
+          Use another account
+        </button>
+      </section>
+    </div>
+  );
+}
+
 export function PublicRoutes({
   route,
   busy,
@@ -78,11 +105,20 @@ export function PublicRoutes({
   authEnabled,
   authLoading,
   onSignIn,
+  onEmailAuth,
+  authStatus = "idle",
+  onCheckVerification,
+  onResendVerification,
+  onResetPassword,
+  onUseAnotherAccount,
 }: PublicRoutesProps) {
   const [showOverview, setShowOverview] = useState(false);
 
   if (route === "terms") return <TermsPage />;
   if (route === "privacy") return <PrivacyPage />;
+  if (authStatus === "access-denied") {
+    return <AccessDeniedPage onUseAnotherAccount={onUseAnotherAccount ?? onSignIn} />;
+  }
   if (route === "landing") {
     if (authLoading && !showOverview) {
       return <PublicLoading onOverview={() => setShowOverview(true)} />;
@@ -94,6 +130,7 @@ export function PublicRoutes({
         authEnabled={authEnabled}
         authLoading={authLoading}
         onSignIn={onSignIn}
+        onEmailAuth={onEmailAuth}
       />
     );
   }
@@ -106,6 +143,12 @@ export function PublicRoutes({
       authEnabled={authEnabled}
       authLoading={authLoading}
       onSignIn={onSignIn}
+      onEmailAuth={onEmailAuth}
+      authStatus={authStatus === "verification-pending" ? "verification-pending" : "idle"}
+      onCheckVerification={onCheckVerification}
+      onResendVerification={onResendVerification}
+      onResetPassword={onResetPassword}
+      onUseAnotherAccount={onUseAnotherAccount}
     />
   );
 }

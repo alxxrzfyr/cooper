@@ -5,7 +5,7 @@ export interface CalendarEntry {
   title: string;
   start: Date;
   end: Date;
-  source: "cooper" | "google" | "gmail";
+  source: "cooper" | "google" | "gmail" | "icloud";
   category: Category;
   item?: Item;
   event?: CalendarEvent;
@@ -21,7 +21,8 @@ export function calendarEventContext(event: CalendarEvent): string {
       return "Online meeting";
     }
   }
-  return event.source === "gmail" ? "Gmail" : "Google Calendar";
+  if (event.source === "gmail") return "Gmail";
+  return event.source === "icloud" ? "iCloud Calendar" : "Google Calendar";
 }
 
 function zonedDay(at: Date, timeZone: string): string {

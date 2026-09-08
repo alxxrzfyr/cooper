@@ -34,6 +34,38 @@ describe("runtime configuration", () => {
     });
   });
 
+  test("does not load the hosted public config during local development", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              authMode: "firebase",
+              apiBase: "https://cooper.example.com",
+              firebase: {
+                apiKey: "hosted-key",
+                authDomain: "cooper.firebaseapp.com",
+                projectId: "cooper",
+              },
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+
+    const { loadRuntimeConfig } = await loadRuntimeModule();
+    const config = await loadRuntimeConfig();
+
+    expect(config).toEqual({
+      authMode: "local",
+      apiBase: "",
+      localKey: "",
+      firebase: null,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test("accepts a host-provided Firebase public config", async () => {
     window.__COOPER_CONFIG__ = {
       authMode: "firebase",

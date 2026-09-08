@@ -27,7 +27,7 @@ describe("public route surface", () => {
   test("renders a dedicated login surface", () => {
     render(<PublicRoutes route="login" {...props} />);
 
-    expect(screen.getByRole("heading", { name: "Your day is still here." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeEnabled();
     expect(screen.getByRole("link", { name: "Back to Cooper home" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
@@ -53,7 +53,7 @@ describe("public route surface", () => {
   test("renders signup with a distinct intent", () => {
     render(<PublicRoutes route="signup" {...props} />);
 
-    expect(screen.getByRole("heading", { name: "Make room for your day." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Get started" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Create your Cooper account" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
       "aria-current",

@@ -10,15 +10,21 @@ interface AuthPageProps {
   authEnabled: boolean;
   authLoading: boolean;
   onSignIn: () => void;
+  onEmailAuth?: (email: string, password: string, intent: AuthIntent) => Promise<void>;
+  authStatus?: "idle" | "verification-pending";
+  onCheckVerification?: () => Promise<void>;
+  onResendVerification?: () => Promise<void>;
+  onResetPassword?: (email: string) => Promise<void>;
+  onUseAnotherAccount?: () => void;
 }
 
 const PAGE_COPY: Record<AuthIntent, { title: string; description: string }> = {
   signup: {
-    title: "Make room for your day.",
+    title: "Get started",
     description: "A small, steady place for the things you need to remember and do.",
   },
   login: {
-    title: "Your day is still here.",
+    title: "Welcome back",
     description: "Log in to see what matters now and the time you have to make it happen.",
   },
 };
@@ -39,6 +45,12 @@ export function AuthPage({
   authEnabled,
   authLoading,
   onSignIn,
+  onEmailAuth,
+  authStatus,
+  onCheckVerification,
+  onResendVerification,
+  onResetPassword,
+  onUseAnotherAccount,
 }: AuthPageProps) {
   const copy = PAGE_COPY[intent];
 
@@ -56,9 +68,6 @@ export function AuthPage({
 
       <section className="auth-page__main" aria-labelledby="auth-page-title">
         <div className="auth-page__intro">
-          <p className="auth-page__kicker">
-            {intent === "signup" ? "Get started" : "Welcome back"}
-          </p>
           <h1 id="auth-page-title">{copy.title}</h1>
           <p>{copy.description}</p>
           <div className="auth-page__note">
@@ -80,6 +89,12 @@ export function AuthPage({
           authEnabled={authEnabled}
           authLoading={authLoading}
           onSignIn={onSignIn}
+          onEmailAuth={onEmailAuth}
+          authStatus={authStatus}
+          onCheckVerification={onCheckVerification}
+          onResendVerification={onResendVerification}
+          onResetPassword={onResetPassword}
+          onUseAnotherAccount={onUseAnotherAccount}
         />
       </section>
 

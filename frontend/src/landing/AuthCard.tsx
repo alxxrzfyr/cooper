@@ -1,3 +1,5 @@
+import { useState, type FormEvent } from "react";
+
 export type AuthIntent = "login" | "signup";
 
 interface AuthCardProps {
@@ -7,6 +9,12 @@ interface AuthCardProps {
   authEnabled: boolean;
   authLoading?: boolean;
   onSignIn: () => void;
+  onEmailAuth?: (email: string, password: string, intent: AuthIntent) => Promise<void>;
+  authStatus?: "idle" | "verification-pending";
+  onCheckVerification?: () => Promise<void>;
+  onResendVerification?: () => Promise<void>;
+  onResetPassword?: (email: string) => Promise<void>;
+  onUseAnotherAccount?: () => void;
 }
 
 const COPY: Record<AuthIntent, { title: string; description: string }> = {
@@ -28,10 +36,76 @@ export function AuthCard({
   authEnabled,
   authLoading = false,
   onSignIn,
+  onEmailAuth,
+  authStatus = "idle",
+  onCheckVerification,
+  onResendVerification,
+  onResetPassword,
+  onUseAnotherAccount,
 }: AuthCardProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const copy = COPY[intent];
   const disabled = busy || authLoading || !authEnabled;
   const googleAction = intent === "login" ? "Sign in with Google" : "Register with Google";
+  const emailAction = intent === "login" ? "Sign in with email" : "Register with email";
+
+  if (authStatus === "verification-pending") {
+    return (
+      <section className="landing__auth-card" aria-labelledby="auth-card-title">
+        <h2 id="auth-card-title">Check your email</h2>
+        <p>We sent a verification link. Confirm it, then come back here to open Cooper.</p>
+        <div className="landing__auth-actions">
+          <button
+            type="button"
+            className="landing__email-submit"
+            disabled={busy}
+            onClick={() => void onCheckVerification?.()}
+          >
+            {busy ? "Checking…" : "I’ve verified my email"}
+          </button>
+          <button
+            type="button"
+            className="landing__secondary"
+            disabled={busy}
+            onClick={() => void onResendVerification?.()}
+          >
+            Resend verification email
+          </button>
+        </div>
+        <p className="landing__fineprint">
+          Still waiting? Check spam, or use another account below.
+        </p>
+        <button
+          type="button"
+          className="landing__text-button"
+          onClick={onUseAnotherAccount ?? onSignIn}
+        >
+          Use another account
+        </button>
+        {error && (
+          <p className="landing__error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  function submitEmail(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (!onEmailAuth) return;
+    void onEmailAuth(email.trim(), password, intent);
+  }
+
+  function submitReset(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (!onResetPassword) return;
+    setResetSent(false);
+    void onResetPassword(email.trim()).then(() => setResetSent(true));
+  }
 
   return (
     <section className="landing__auth-card" aria-labelledby="auth-card-title">
@@ -82,9 +156,92 @@ export function AuthCard({
               : "Hosted sign-in unavailable"}
       </button>
 
+      <div className="landing__auth-divider" aria-hidden="true">
+        <span>or continue with email</span>
+      </div>
+
+      {resetMode ? (
+        <form className="landing__email-form" onSubmit={submitReset}>
+          <label>
+            Email address
+            <input
+              type="email"
+              name="reset-email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </label>
+          <button
+            type="submit"
+            className="landing__email-submit"
+            disabled={disabled || !onResetPassword}
+          >
+            {busy ? "Sending…" : "Send reset email"}
+          </button>
+          <button
+            type="button"
+            className="landing__text-button"
+            onClick={() => {
+              setResetMode(false);
+              setResetSent(false);
+            }}
+          >
+            Back to sign in
+          </button>
+          {resetSent && (
+            <p className="landing__success" role="status">
+              If an account exists, check your email for a reset link.
+            </p>
+          )}
+        </form>
+      ) : (
+        <form className="landing__email-form" onSubmit={submitEmail}>
+          <label>
+            Email address
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              name="password"
+              autoComplete={intent === "login" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={disabled}
+              minLength={6}
+              required
+            />
+          </label>
+          <button type="submit" className="landing__email-submit" disabled={disabled}>
+            {busy ? "Working…" : emailAction}
+          </button>
+          {intent === "login" && (
+            <button
+              type="button"
+              className="landing__text-button"
+              onClick={() => setResetMode(true)}
+            >
+              Forgot password?
+            </button>
+          )}
+        </form>
+      )}
+
       {!authEnabled && (
         <p className="landing__availability">
-          Hosted Google sign-in appears after Firebase is configured for this deployment.
+          Hosted account sign-in appears after Firebase is configured for this deployment.
         </p>
       )}
 
@@ -95,7 +252,7 @@ export function AuthCard({
       )}
 
       <p className="landing__fineprint">
-        No password to remember. Returning users use the same Google sign-in.
+        Your account stays private to you. Cooper never shares your tasks or calendar.
       </p>
     </section>
   );

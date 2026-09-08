@@ -77,4 +77,18 @@ describe("API runtime configuration", () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  test("does not retry a mutation after an uncertain network failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    vi.resetModules();
+    const { api } = await import("../api");
+
+    await expect(api.createItem({ title: "Write report" })).rejects.toMatchObject({ status: 503 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

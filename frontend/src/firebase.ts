@@ -3,8 +3,13 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  reload,
   type Unsubscribe,
   type User,
 } from "firebase/auth";
@@ -35,6 +40,43 @@ export const auth = app ? getAuth(app) : null;
 export function signInWithGoogle(): Promise<void> {
   if (!auth) return Promise.reject(new Error("Firebase is not configured."));
   return signInWithPopup(auth, new GoogleAuthProvider()).then(() => undefined);
+}
+
+export function signInWithEmail(email: string, password: string): Promise<User> {
+  if (!auth) return Promise.reject(new Error("Firebase is not configured."));
+  return signInWithEmailAndPassword(auth, email, password).then(({ user }) => user);
+}
+
+function actionCodeSettings(): { url: string; handleCodeInApp: false } | undefined {
+  if (typeof window === "undefined") return undefined;
+  return { url: `${window.location.origin}/login`, handleCodeInApp: false };
+}
+
+export async function registerWithEmail(email: string, password: string): Promise<User> {
+  if (!auth) return Promise.reject(new Error("Firebase is not configured."));
+  const { user } = await createUserWithEmailAndPassword(auth, email, password);
+  await sendEmailVerification(user, actionCodeSettings());
+  return user;
+}
+
+export async function resendVerificationEmail(user: User): Promise<void> {
+  await sendEmailVerification(user, actionCodeSettings());
+}
+
+export function resetPassword(email: string): Promise<void> {
+  if (!auth) return Promise.reject(new Error("Firebase is not configured."));
+  return sendPasswordResetEmail(auth, email, actionCodeSettings());
+}
+
+export async function refreshFirebaseUser(user: User): Promise<User> {
+  await reload(user);
+  await user.getIdToken(true);
+  return user;
+}
+
+export async function refreshCurrentUser(): Promise<User | null> {
+  if (!auth?.currentUser) return null;
+  return refreshFirebaseUser(auth.currentUser);
 }
 
 export function signOutUser(): Promise<void> {

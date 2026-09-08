@@ -366,7 +366,12 @@ export function CalendarEventFrame({
   const colorDot = <span className={`event-dot cat--${event.category}`} aria-hidden="true" />;
 
   return (
-    <Frame title={event.title} subtitle="Google Calendar" colorDot={colorDot} onClose={onClose}>
+    <Frame
+      title={event.title}
+      subtitle={event.source === "icloud" ? "iCloud Calendar" : "Google Calendar"}
+      colorDot={colorDot}
+      onClose={onClose}
+    >
       <div className="event-rows">
         {/* Date / time row — no icon, lives under the title */}
         <div className="event-row event-row--datetime">

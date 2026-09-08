@@ -17,6 +17,12 @@ import {
 import {
   firebaseConfigError,
   firebaseConfigured,
+  auth,
+  registerWithEmail,
+  refreshCurrentUser,
+  resendVerificationEmail,
+  resetPassword,
+  signInWithEmail,
   signInWithGoogle,
   signOutUser,
   subscribeToAuth,
@@ -27,6 +33,12 @@ import { Form } from "./Form";
 import { PublicRoutes, readPublicRoute } from "./landing/PublicRoutes";
 import { Mascot, type MascotName } from "./Mascot";
 import { Nav, type Tab } from "./Nav";
+import {
+  finishOnboarding,
+  Onboarding,
+  type OnboardingProgress,
+  onboardingDone,
+} from "./Onboarding";
 import { Row } from "./Row";
 import { CalendarEventFrame, TaskFrame } from "./Frame";
 import {
@@ -52,8 +64,6 @@ const APPEARANCES: Array<{ id: Appearance; label: string }> = [
 /** Event sources planned but not yet wired up. Shown so people know what's coming, not to imply
  *  they can connect one today. */
 const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
-  { id: "luma", label: "Luma" },
-  { id: "meetup", label: "Meetup" },
   { id: "teams", label: "Microsoft Teams" },
   { id: "classroom", label: "Google Classroom" },
 ];
@@ -67,125 +77,31 @@ function normalizePathname(pathname: string): string {
   return pathname.replace(/\/+$/, "") || "/";
 }
 
-function loadGeminiKey(): string {
+function geminiStorageKey(uid?: string | null): string | null {
+  if (firebaseConfigured) return uid ? `${GEMINI_KEY}:${uid}` : null;
+  return GEMINI_KEY;
+}
+
+function loadGeminiKey(uid?: string | null): string {
+  const storageKey = geminiStorageKey(uid);
+  if (!storageKey) return "";
   try {
-    return localStorage.getItem(GEMINI_KEY) ?? "";
+    return localStorage.getItem(storageKey) ?? "";
   } catch {
     return "";
   }
 }
 
-function saveGeminiKey(value: string): void {
+function saveGeminiKey(value: string, uid?: string | null): void {
+  const storageKey = geminiStorageKey(uid);
+  if (!storageKey) return;
   try {
     const key = value.trim();
-    if (key) localStorage.setItem(GEMINI_KEY, key);
-    else localStorage.removeItem(GEMINI_KEY);
+    if (key) localStorage.setItem(storageKey, key);
+    else localStorage.removeItem(storageKey);
   } catch {
     /* a blocked store is not worth failing over; the key still applies this session */
   }
-}
-
-function generateInitialSteps(sentence: string): AgentStep[] {
-  const text = sentence.toLowerCase();
-  if (/gmail|email|inbox|thread|reply|message/.test(text)) {
-    if (/reply|draft|send/.test(text)) {
-      return [
-        {
-          id: "1",
-          title: "Connecting to Gmail",
-          source: "Gmail",
-          icon: "connect",
-          status: "running",
-        },
-        { id: "2", title: "Reading the thread", source: "Gmail", icon: "mail", status: "running" },
-        { id: "3", title: "Drafting a reply", source: "Gmail", icon: "write", status: "running" },
-      ];
-    }
-    return [
-      {
-        id: "1",
-        title: "Connecting to Gmail",
-        source: "Gmail",
-        icon: "connect",
-        status: "running",
-      },
-      { id: "2", title: "Reading your inbox", source: "Gmail", icon: "search", status: "running" },
-      {
-        id: "3",
-        title: "Summarizing key emails",
-        source: "Gmail",
-        icon: "mail",
-        status: "running",
-      },
-    ];
-  }
-  if (/calendar|meeting|event|schedule|availability|available|free|book|time|plan/.test(text)) {
-    if (/create|add|schedule|book|new/.test(text)) {
-      return [
-        {
-          id: "1",
-          title: "Connecting to Google Calendar",
-          source: "Google Calendar",
-          icon: "connect",
-          status: "running",
-        },
-        {
-          id: "2",
-          title: "Checking your availability",
-          source: "Google Calendar",
-          icon: "search",
-          status: "running",
-        },
-        {
-          id: "3",
-          title: "Creating the event",
-          source: "Google Calendar",
-          icon: "calendar",
-          status: "running",
-        },
-      ];
-    }
-    return [
-      {
-        id: "1",
-        title: "Connecting to Google Calendar",
-        source: "Google Calendar",
-        icon: "connect",
-        status: "running",
-      },
-      {
-        id: "2",
-        title: "Checking your calendar",
-        source: "Google Calendar",
-        icon: "search",
-        status: "running",
-      },
-      {
-        id: "3",
-        title: "Finding open slots",
-        source: "Google Calendar",
-        icon: "calendar",
-        status: "running",
-      },
-    ];
-  }
-  return [
-    {
-      id: "1",
-      title: "Analyzing your request",
-      source: "Cooper",
-      icon: "search",
-      status: "running",
-    },
-    {
-      id: "2",
-      title: "Checking tasks and priorities",
-      source: "Tasks",
-      icon: "connect",
-      status: "running",
-    },
-    { id: "3", title: "Preparing response", source: "Cooper", icon: "write", status: "running" },
-  ];
 }
 
 function googleEventKey(event: CalendarEvent): string {
@@ -273,7 +189,36 @@ type AuthState =
   | { kind: "config-error"; message: string }
   | { kind: "loading" }
   | { kind: "signed-out" }
+  | { kind: "verification-pending"; user: FirebaseUser }
+  | { kind: "access-denied"; user: FirebaseUser; message: string }
   | { kind: "signed-in"; user: FirebaseUser };
+
+function firebaseAuthMessage(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: unknown }).code)
+      : "";
+  if (code.includes("email-already-in-use")) {
+    return "That email already has an account. Try logging in.";
+  }
+  if (
+    code.includes("invalid-credential") ||
+    code.includes("wrong-password") ||
+    code.includes("user-not-found")
+  ) {
+    return "Email or password did not match.";
+  }
+  if (code.includes("weak-password")) return "Use at least 6 characters for the password.";
+  if (code.includes("invalid-email")) return "That does not look like an email address.";
+  if (code.includes("too-many-requests")) return "Too many attempts. Wait a moment and try again.";
+  if (code.includes("operation-not-allowed")) {
+    return "Email sign-in is not enabled for this deployment. Ask the Cooper maintainer to enable it in Firebase.";
+  }
+  if (code.includes("network-request-failed")) {
+    return "Cooper could not reach Firebase. Check your connection and try again.";
+  }
+  return "Cooper could not start that account action. Check the details and try again.";
+}
 
 function AuthSetupErrorSurface({ message }: { message: string }) {
   return (
@@ -371,7 +316,6 @@ export default function App() {
   );
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
-  const [serverModelAvailable, setServerModelAvailable] = useState(false);
   const [loadResolved, setLoadResolved] = useState(false);
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
@@ -383,13 +327,19 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
   const [geminiKeyDraft, setGeminiKeyDraft] = useState(loadGeminiKey);
   const [geminiKeyStatus, setGeminiKeyStatus] = useState<GeminiKeyStatus>(null);
+  const [icloudEmail, setIcloudEmail] = useState("");
+  const [icloudPassword, setIcloudPassword] = useState("");
   const [mode, setMode] = useState<Mode>(loadMode);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [browserAlerts, setBrowserAlerts] = useState<BrowserPermission>(browserPermission);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guideSessionDismissed, setGuideSessionDismissed] = useState(false);
+  const [hasCreatedItem, setHasCreatedItem] = useState(false);
   const noticeTimer = useRef<number | null>(null);
   const observedGoogleEvents = useRef<Set<string> | null>(null);
   const firebaseSubject = useRef<string | null>(null);
   const authEpoch = useRef(0);
+  const modeAvailabilityChecked = useRef(false);
   const [pathname, setPathname] = useState(() =>
     typeof window === "undefined" ? "/" : window.location.pathname,
   );
@@ -397,18 +347,27 @@ export default function App() {
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | CalendarEvent | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const canUseAi = Boolean(geminiKey.trim()) || serverModelAvailable;
+  const canUseAi = Boolean(geminiKey.trim()) || Boolean(view?.using_model && authState.kind === "local");
+  const canCompose = canUseAi || authState.kind === "local";
+  const canAsk = canUseAi || authState.kind === "local";
+  const signedInUser =
+    authState.kind === "signed-in" ||
+    authState.kind === "verification-pending" ||
+    authState.kind === "access-denied"
+      ? authState.user
+      : null;
+  const signedInUid = signedInUser?.uid ?? null;
   const saveGeminiKeyFromSettings = useCallback(() => {
     const key = geminiKeyDraft.trim();
     if (!key) {
       setGeminiKeyStatus("empty");
       return;
     }
-    saveGeminiKey(key);
+    saveGeminiKey(key, signedInUid);
     setGeminiKey(key);
     setGeminiKeyDraft(key);
     setGeminiKeyStatus("saved");
-  }, [geminiKeyDraft]);
+  }, [geminiKeyDraft, signedInUid]);
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
   const publicRoute = readPublicRoute(pathname);
   const normalizedPathname = normalizePathname(pathname);
@@ -416,7 +375,7 @@ export default function App() {
   const publicSurface = !isWorkspacePath || (firebaseConfigured && authState.kind !== "signed-in");
   const publicLandingSurface = publicSurface && publicRoute === "landing";
   const workspaceVisible = canLoadProtectedData && !publicSurface;
-  const signedInEmail = authState.kind === "signed-in" ? authState.user.email : null;
+  const signedInEmail = signedInUser?.email ?? null;
 
   const navigate = useCallback((nextPath: string) => {
     const next = normalizePathname(nextPath);
@@ -454,21 +413,32 @@ export default function App() {
     if (!firebaseConfigured) return;
     return subscribeToAuth((user) => {
       const currentPath = normalizePathname(pathnameRef.current);
-      if (user && PUBLIC_AUTH_PATHS.has(currentPath)) {
-        navigate("/app");
-      }
-      if (!user && currentPath === "/app") {
-        navigate("/login");
-      }
-      const nextSubject = user?.uid ?? null;
+      const verified = user ? user.emailVerified !== false : false;
+      if (user && verified && PUBLIC_AUTH_PATHS.has(currentPath)) navigate("/app");
+      if (user && !verified && currentPath !== "/login") navigate("/login");
+      if ((!user || !verified) && currentPath === "/app") navigate("/login");
+      const nextSubject = user && verified ? user.uid : null;
       if (firebaseSubject.current !== nextSubject) {
         firebaseSubject.current = nextSubject;
         authEpoch.current += 1;
         clearConversation();
+        const nextKey = loadGeminiKey(nextSubject);
+        setGeminiKey(nextKey);
+        setGeminiKeyDraft(nextKey);
+        setGeminiKeyStatus(null);
+        setGuideVisible(false);
+        setGuideSessionDismissed(false);
+        setHasCreatedItem(false);
       }
-      setAuthState(user ? { kind: "signed-in", user } : { kind: "signed-out" });
+      setAuthState(
+        !user
+          ? { kind: "signed-out" }
+          : verified
+            ? { kind: "signed-in", user }
+            : { kind: "verification-pending", user },
+      );
       setView(null);
-      setLoadResolved(user === null);
+      setLoadResolved(!user || !verified);
     });
   }, [clearConversation, navigate]);
 
@@ -493,18 +463,110 @@ export default function App() {
     return true;
   }, [signOutOfFirebase]);
 
+  const handleApiAuthFailure = useCallback(
+    (error: unknown): boolean => {
+      if (!(error instanceof ApiError)) return false;
+      if (error.status === 401) return returnToSignIn();
+      if (error.status === 403 && firebaseConfigured && auth?.currentUser) {
+        setView(null);
+        setAgentSteps(null);
+        setText("");
+        setAuthState({
+          kind: "access-denied",
+          user: auth.currentUser,
+          message: "This beta is invite-only. Ask the Cooper maintainer to approve this email.",
+        });
+        setLoadResolved(true);
+        navigate("/login");
+        return true;
+      }
+      return false;
+    },
+    [navigate, returnToSignIn],
+  );
+
   const startSignIn = useCallback(() => {
     setFailure(null);
     setBusy(true);
-    void signInWithGoogle().catch((error: unknown) => {
+    void signInWithGoogle()
+      .catch((error: unknown) => {
+        setFailure(firebaseAuthMessage(error));
+      })
+      .finally(() => setBusy(false));
+  }, []);
+
+  const startEmailAuth = useCallback(
+    async (email: string, password: string, intent: "login" | "signup") => {
+      setFailure(null);
+      setBusy(true);
+      try {
+        if (intent === "login") await signInWithEmail(email, password);
+        else await registerWithEmail(email, password);
+      } catch (error: unknown) {
+        setFailure(firebaseAuthMessage(error));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const checkVerification = useCallback(async () => {
+    setFailure(null);
+    setBusy(true);
+    try {
+      const user = await refreshCurrentUser();
+      if (!user || user.emailVerified === false) {
+        setFailure(
+          "Your email is not verified yet. Open the latest email from Cooper and try again.",
+        );
+        return;
+      }
+      setAuthState({ kind: "signed-in", user });
+      const nextKey = loadGeminiKey(user.uid);
+      setGeminiKey(nextKey);
+      setGeminiKeyDraft(nextKey);
+      navigate("/app");
+    } catch (error: unknown) {
+      setFailure(firebaseAuthMessage(error));
+    } finally {
       setBusy(false);
-      setFailure(error instanceof Error ? error.message : "Could not start sign in.");
-    });
+    }
+  }, [navigate]);
+
+  const resendVerification = useCallback(async () => {
+    setFailure(null);
+    setBusy(true);
+    try {
+      if (!auth?.currentUser) throw new Error("No account is signed in.");
+      await resendVerificationEmail(auth.currentUser);
+      setFailure("Verification email sent. Check your inbox and spam folder.");
+    } catch (error: unknown) {
+      setFailure(firebaseAuthMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const sendPasswordReset = useCallback(async (email: string) => {
+    setFailure(null);
+    setBusy(true);
+    try {
+      await resetPassword(email.trim());
+    } catch (error: unknown) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code: unknown }).code)
+          : "";
+      if (code && !code.includes("user-not-found")) setFailure(firebaseAuthMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }, []);
 
   const announce = useCallback(
     (kind: ReplyKind, message: string, showToast = true) => {
-      if (showToast && tab !== "chat") {
+      if (showToast && (tab !== "chat" || mode === "manual")) {
         setNotice({ kind, message });
         if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
         noticeTimer.current = window.setTimeout(() => {
@@ -524,7 +586,7 @@ export default function App() {
         });
       }
     },
-    [browserAlerts, tab],
+    [browserAlerts, mode, tab],
   );
 
   const announceNewGoogleEvents = useCallback(
@@ -575,7 +637,9 @@ export default function App() {
   useEffect(() => saveTurns(turns), [turns]);
 
   useEffect(() => {
-    if (loadResolved && !canUseAi && mode === "ai") {
+    if (!loadResolved || modeAvailabilityChecked.current) return;
+    modeAvailabilityChecked.current = true;
+    if (!canUseAi && mode === "ai") {
       setMode("manual");
       saveMode("manual");
     }
@@ -591,18 +655,17 @@ export default function App() {
       if (requestEpoch !== authEpoch.current) return;
       announceNewGoogleEvents(nextView);
       setView(nextView);
-      setServerModelAvailable(nextView.using_model);
       setFailure(null);
     } catch (error) {
       if (requestEpoch !== authEpoch.current) return;
-      if (error instanceof ApiError && error.status === 401 && returnToSignIn()) return;
+      if (handleApiAuthFailure(error)) return;
       // Stay in the workspace for config/network failures (502, CORS, cold start).
       // Signing out here made successful Google login look like it "did nothing".
       setFailure(error instanceof Error ? error.message : "Cannot reach Cooper.");
     } finally {
       if (requestEpoch === authEpoch.current) setLoadResolved(true);
     }
-  }, [announceNewGoogleEvents, returnToSignIn, workspaceVisible]);
+  }, [announceNewGoogleEvents, handleApiAuthFailure, workspaceVisible]);
 
   useEffect(() => {
     if (workspaceVisible) void load();
@@ -617,7 +680,6 @@ export default function App() {
         if (requestEpoch !== authEpoch.current) return;
         announceNewGoogleEvents(nextView);
         setView(nextView);
-        setServerModelAvailable(nextView.using_model);
       } catch {
         // The normal workspace load owns visible connection errors; polling stays quiet.
       }
@@ -648,34 +710,31 @@ export default function App() {
       const said = sentence.trim();
       if (!said || busy) return;
       const requestEpoch = authEpoch.current;
+      if (!canCompose) return;
+      const openAsk = canUseAi || mode === "ai";
+      if (openAsk) {
+        setMode("ai");
+        saveMode("ai");
+        setTab("chat");
+      }
 
-      setTab("chat");
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
-      const initial = generateInitialSteps(said);
-      setAgentSteps([initial[0]]);
+      setAgentSteps([{
+        id: "request",
+        title: "Working on your request",
+        source: "Cooper",
+        icon: "search",
+        status: "running",
+      }]);
       setBusy(true);
 
-      const timer1 = window.setTimeout(() => {
-        setAgentSteps([{ ...initial[0], status: "done", subtext: "Connected" }, initial[1]]);
-      }, 450);
-
-      const timer2 = window.setTimeout(() => {
-        setAgentSteps([
-          { ...initial[0], status: "done", subtext: "Connected" },
-          { ...initial[1], status: "done", subtext: "Checked" },
-          initial[2],
-        ]);
-      }, 950);
-
       try {
-        const result = await api.say(said, mode, geminiKey);
-        window.clearTimeout(timer1);
-        window.clearTimeout(timer2);
+        const result = await api.say(said, openAsk ? "ai" : "manual", geminiKey);
         if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
-        announce(result.kind, result.message, false);
+        announce(result.kind, result.message, !openAsk);
 
         if (result.kind === "shown") {
           const list = result.view.shortlist.slice(0, 4);
@@ -694,15 +753,18 @@ export default function App() {
             text: result.message,
             kind: result.kind,
             item: result.item,
-            lines: result.chip,
+            lines: [
+              ...(result.tools?.map(
+                (tool) => `${tool.ok ? "Checked" : "Could not check"} ${tool.name.replaceAll("_", " ")}`,
+              ) ?? []),
+              ...(result.chip ?? []),
+            ],
           });
         }
       } catch (error) {
-        window.clearTimeout(timer1);
-        window.clearTimeout(timer2);
         if (requestEpoch !== authEpoch.current) return;
         if (error instanceof ApiError) {
-          if (error.status === 401 && returnToSignIn()) return;
+          if (handleApiAuthFailure(error)) return;
           const kind = error.status === 409 ? "question" : "note";
           reply({
             text: error.message,
@@ -719,26 +781,26 @@ export default function App() {
         setBusy(false);
       }
     },
-    [announce, busy, geminiKey, mode, returnToSignIn],
+    [announce, busy, canCompose, canUseAi, geminiKey, handleApiAuthFailure, mode],
   );
 
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
   const act = useCallback(
-    async (work: () => Promise<Reply | { view: View }>) => {
+    async (work: () => Promise<Reply | { view: View }>): Promise<boolean> => {
       const requestEpoch = authEpoch.current;
       setBusy(true);
       try {
         const result = await work();
-        if (requestEpoch !== authEpoch.current) return;
+        if (requestEpoch !== authEpoch.current) return false;
         setView(result.view);
         setFailure(null);
         if ("kind" in result) {
           announce(result.kind, result.message);
         }
       } catch (error) {
-        if (requestEpoch !== authEpoch.current) return;
+        if (requestEpoch !== authEpoch.current) return false;
         if (error instanceof ApiError) {
-          if (error.status === 401 && returnToSignIn()) return;
+          if (handleApiAuthFailure(error)) return false;
           const kind = error.status === 409 ? "question" : "note";
           announce(kind, error.message);
         } else {
@@ -746,11 +808,13 @@ export default function App() {
           setFailure(message);
           announce("note", message);
         }
+        return false;
       } finally {
         setBusy(false);
       }
+      return true;
     },
-    [announce, returnToSignIn],
+    [announce, handleApiAuthFailure],
   );
 
   const connectGoogle = useCallback(async () => {
@@ -764,7 +828,7 @@ export default function App() {
     } catch (error) {
       if (requestEpoch !== authEpoch.current) return;
       if (error instanceof ApiError) {
-        if (error.status === 401 && returnToSignIn()) return;
+        if (handleApiAuthFailure(error)) return;
         const kind = error.status === 409 ? "question" : "note";
         announce(kind, error.message);
       } else {
@@ -775,12 +839,26 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  }, [announce, returnToSignIn]);
+  }, [announce, handleApiAuthFailure]);
+
+  const connectICloud = useCallback(async () => {
+    const email = icloudEmail.trim();
+    const password = icloudPassword.trim();
+    if (!email || !password) {
+      announce("question", "Enter your Apple ID and app-specific password.");
+      return;
+    }
+    const connected = await act(() => api.connectICloud(email, password));
+    setIcloudPassword("");
+    if (connected) setIcloudEmail("");
+  }, [act, announce, icloudEmail, icloudPassword]);
 
   /** Manual mode's form: post the fields and let Cooper narrate it into the conversation. */
   const addFromForm = useCallback(
     async (item: NewItem) => {
-      await act(() => api.createItem(item));
+      const saved = await act(() => api.createItem(item));
+      if (saved) setHasCreatedItem(true);
+      return saved;
     },
     [act],
   );
@@ -789,6 +867,27 @@ export default function App() {
   const scheduled = view?.scheduled ?? [];
   const hours = view?.hours;
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
+  const guideProgress: OnboardingProgress = {
+    hasItem: hasCreatedItem || Boolean(view?.shortlist.length || view?.scheduled.length),
+    hasGeminiKey: canUseAi,
+    googleConnected: Boolean(view?.calendar.connected),
+  };
+
+  useEffect(() => {
+    if (authState.kind !== "signed-in" || !view || guideSessionDismissed) return;
+    if (!onboardingDone(authState.user.uid)) setGuideVisible(true);
+  }, [authState, guideSessionDismissed, view]);
+
+  const dismissGuide = useCallback(() => {
+    if (authState.kind === "signed-in") finishOnboarding(authState.user.uid);
+    setGuideSessionDismissed(true);
+    setGuideVisible(false);
+  }, [authState]);
+
+  const openSettings = useCallback(() => {
+    setTab("settings");
+    window.setTimeout(() => document.getElementById("gemini-key")?.focus(), 0);
+  }, []);
 
   return (
     <div
@@ -817,6 +916,18 @@ export default function App() {
             authEnabled={firebaseConfigured}
             authLoading={authState.kind === "loading"}
             onSignIn={startSignIn}
+            onEmailAuth={startEmailAuth}
+            authStatus={
+              authState.kind === "verification-pending"
+                ? "verification-pending"
+                : authState.kind === "access-denied"
+                  ? "access-denied"
+                  : "idle"
+            }
+            onCheckVerification={checkVerification}
+            onResendVerification={resendVerification}
+            onResetPassword={sendPasswordReset}
+            onUseAnotherAccount={signOutOfFirebase}
           />
         ) : (
           <>
@@ -851,6 +962,34 @@ export default function App() {
               </div>
             )}
 
+            {workspaceVisible && firebaseConfigured && tab === "home" && view && !canUseAi && (
+              <div className="home-ask-setup" role="status" aria-labelledby="home-ask-title">
+                <Mascot name="cooper_thinking" size="sm" decorative />
+                <div className="home-ask-setup__body">
+                  <h2 id="home-ask-title">Ask is one small setup away</h2>
+                  <p>
+                    Add your Gemini API key in Settings when you want natural-language help. Form
+                    works offline.
+                  </p>
+                </div>
+                <div className="home-ask-setup__actions">
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    onClick={() => {
+                      setTab("chat");
+                      setMode("manual");
+                    }}
+                  >
+                    Add with Form
+                  </button>
+                  <button type="button" className="btn btn--quiet" onClick={openSettings}>
+                    Set up Ask
+                  </button>
+                </div>
+              </div>
+            )}
+
             {workspaceVisible && tab === "home" && view && (
               <Home
                 view={view}
@@ -859,9 +998,30 @@ export default function App() {
                 onOpen={setDetail}
                 onSchedule={() => void act(() => api.schedule())}
                 onGoToChat={() => {
-                  setTab("chat");
-                  input.current?.focus();
+                  if (canUseAi) {
+                    setTab("chat");
+                    setMode("ai");
+                    saveMode("ai");
+                    window.setTimeout(() => input.current?.focus(), 0);
+                  } else if (authState.kind === "local") {
+                    window.setTimeout(() => input.current?.focus(), 0);
+                  } else {
+                    setTab("chat");
+                    setMode("manual");
+                  }
                 }}
+              />
+            )}
+
+            {workspaceVisible && tab === "home" && view && guideVisible && (
+              <Onboarding
+                progress={guideProgress}
+                onOpenForm={() => {
+                  setTab("chat");
+                  setMode("manual");
+                }}
+                onOpenSettings={openSettings}
+                onDismiss={dismissGuide}
               />
             )}
 
@@ -875,7 +1035,7 @@ export default function App() {
                 thinking={busy}
                 agentSteps={agentSteps ?? undefined}
                 mode={mode}
-                canUseAi={canUseAi}
+                canUseAi={canAsk}
                 manualForm={<Form busy={busy} onSubmit={addFromForm} />}
                 onMode={(next) => {
                   setMode(next);
@@ -940,6 +1100,17 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      onClick={() => {
+                        setTab("home");
+                        setGuideSessionDismissed(false);
+                        setGuideVisible(true);
+                      }}
+                    >
+                      Show getting-started guide
+                    </button>
                   </section>
                 )}
 
@@ -1059,7 +1230,7 @@ export default function App() {
                           disabled={busy}
                           onClick={() => void connectGoogle()}
                         >
-                          Connect
+                          Connect Google
                         </button>
                       ) : null}
                     </div>
@@ -1070,6 +1241,71 @@ export default function App() {
                       : view.calendar.configured
                         ? "Not connected. Cooper is using its own calendar, which works on its own."
                         : "Cooper has its own calendar and needs nothing to work. Connect Google Calendar + Gmail when you want both services included."}
+                  </p>
+                </section>
+
+                <section className="group">
+                  <div className="group__label">iCloud Calendar</div>
+                  {view.icloud.connected ? (
+                    <div className="inset">
+                      <div className="field">
+                        <span className="field__label">Account</span>
+                        <span className="tag">{view.icloud.email ?? "Connected"}</span>
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          disabled={busy}
+                          onClick={() => void act(() => api.disconnectICloud())}
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form
+                      className="inset"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void connectICloud();
+                      }}
+                    >
+                      <label className="field">
+                        <span className="field__label">Apple ID</span>
+                        <input
+                          type="email"
+                          autoComplete="username"
+                          value={icloudEmail}
+                          onChange={(event) => setIcloudEmail(event.target.value)}
+                          placeholder="you@icloud.com"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field__label">App-specific password</span>
+                        <input
+                          type="password"
+                          autoComplete="current-password"
+                          value={icloudPassword}
+                          onChange={(event) => setIcloudPassword(event.target.value)}
+                          placeholder="xxxx-xxxx-xxxx-xxxx"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="btn btn--quiet"
+                        disabled={busy || !view.icloud.configured}
+                      >
+                        Connect iCloud
+                      </button>
+                    </form>
+                  )}
+                  <p className={`hint ${view.icloud.error ? "hint--error" : ""}`}>
+                    {view.icloud.error
+                      ? view.icloud.error
+                      : view.icloud.connected
+                        ? "Read-only iCloud events now block scheduling through CalDAV."
+                        : view.icloud.configured
+                          ? "Use an Apple app-specific password. Cooper keeps iCloud read-only."
+                          : "Server encryption is required before iCloud can be connected."}
                   </p>
                 </section>
 
@@ -1139,11 +1375,11 @@ export default function App() {
                     <div className="field">
                       <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
                       <span className="tag">
-                        {serverModelAvailable
-                          ? "configured"
-                          : geminiKey.trim()
-                            ? "this browser"
-                            : "no key"}
+                        {geminiKey.trim()
+                          ? firebaseConfigured
+                            ? "this account"
+                            : "this browser"
+                          : "no key"}
                       </span>
                     </div>
                     <div className="field field--stacked">
@@ -1179,7 +1415,7 @@ export default function App() {
                           onClick={() => {
                             setGeminiKey("");
                             setGeminiKeyDraft("");
-                            saveGeminiKey("");
+                            saveGeminiKey("", signedInUid);
                             setGeminiKeyStatus("cleared");
                             setLoadResolved(false);
                             void load();
@@ -1208,7 +1444,7 @@ export default function App() {
                   <p className="hint" id="gemini-key-hint">
                     {canUseAi
                       ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
-                      : "Works fine without a key. Add one for messier sentences. Ranking never uses a model."}
+                      : "Add a Gemini API key to talk to Cooper in Ask. Form stays offline and never needs a key."}
                   </p>
                 </section>
 
@@ -1298,7 +1534,7 @@ export default function App() {
         the free-text box would be a second, contradictory way in — hidden there. Everywhere else
         it stays as quick capture, routing through whatever mode is set.
       */}
-      {workspaceVisible && !(tab === "chat" && mode === "manual") && (
+      {workspaceVisible && canCompose && !(tab === "chat" && mode === "manual") && (
         <div className="composer">
           <div className="composer__inner">
             <div className="composer__field">

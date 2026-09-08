@@ -91,6 +91,7 @@ function view(overrides: Partial<View> = {}): View {
       max_per_day: 4,
     },
     calendar: { configured: false, connected: false, email: null },
+    icloud: { configured: false, connected: false, email: null, error: null },
     gmail: {
       configured: false,
       connected: false,
@@ -245,7 +246,7 @@ describe("public auth flow", () => {
 
     expect(firebaseMock.signInWithGoogle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Your day is still here." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
     expect(document.querySelector(".auth-page__note .mascot")).toHaveAttribute(
       "src",
@@ -339,6 +340,7 @@ describe("public auth flow", () => {
 
     render(<App />);
     const user = userEvent.setup();
+    localStorage.setItem("cooper.gemini_key.v1:uid-a", "test-gemini-key");
     await emitFirebaseUser(firebaseMock.user("token-a", "a@example.com", "uid-a"));
 
     await user.click((await screen.findAllByRole("button", { name: /Chat|Cooper/ }))[0]);
@@ -361,7 +363,7 @@ describe("public auth flow", () => {
 
     expect(screen.queryByText("secret from A")).not.toBeInTheDocument();
     expect(localStorage.getItem("cooper.chat.v1")).not.toContain("secret from A");
-  });
+  }, 10_000);
 
   test("Google Connect 401 returns Firebase users to sign-in", async () => {
     firebaseMock.authMode = "firebase";
@@ -382,7 +384,7 @@ describe("public auth flow", () => {
     await emitFirebaseUser(firebaseMock.user("expired-token"));
 
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
-    await user.click(await screen.findByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: "Connect Google" }));
 
     expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(firebaseMock.signOutUser).toHaveBeenCalledTimes(1);

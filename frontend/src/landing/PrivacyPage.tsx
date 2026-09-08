@@ -20,11 +20,11 @@ export function PrivacyPage() {
       </section>
 
       <section className="legal-page__card">
-        <h2>Google sign-in</h2>
+        <h2>Firebase account sign-in</h2>
         <p>
-          Firebase Authentication receives your Google sign-in and gives Cooper a stable account
-          identity. Cooper uses the identity to protect your hosted workspace; it does not need your
-          Google password.
+          Firebase Authentication receives your Google sign-in or email address and gives Cooper a
+          stable account identity. Email accounts must verify their address. Cooper uses the
+          identity to protect your hosted workspace and never receives your password.
         </p>
       </section>
 
