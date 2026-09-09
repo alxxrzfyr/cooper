@@ -4719,7 +4719,7 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
-    transform: scaleX(-1);
+    transform: scaleY(-1);
     transform-origin: center;
   }
   .landing__start-art { margin-top: 16px; }
@@ -4775,7 +4775,7 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
-    transform: scaleX(-1);
+    transform: scaleY(-1);
     transform-origin: center;
   }
 }
