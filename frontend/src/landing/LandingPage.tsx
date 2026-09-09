@@ -498,7 +498,7 @@ export function LandingPage({
             />
             <div className="landing__setup-note">
               <HandArrow tall />
-              about two minutes to get settled
+              <span className="landing__setup-note-copy">about two minutes to get settled</span>
             </div>
           </div>
             <footer className="landing__footer">

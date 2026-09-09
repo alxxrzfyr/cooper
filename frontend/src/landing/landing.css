@@ -4706,22 +4706,24 @@ html.lenis body {
     top: 72%;
     right: auto;
     bottom: auto;
-    left: -166px;
-    width: 150px;
+    left: -180px;
+    width: 168px;
     margin: 0;
-    padding-top: 80px;
+    padding-top: 84px;
     padding-bottom: 0;
-    font-size: 14px;
+    font-size: 16px;
+    line-height: 1.18;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
   }
   .landing__setup-note .landing__hand-arrow {
     display: block;
     top: 0;
-    left: 66px;
-    width: 116px;
+    left: 98px;
+    width: 94px;
     transform: none;
   }
+  .landing__setup-note-copy { display: block; }
   .landing__start-art { margin-top: 16px; }
   .landing__start-art .mascot { width: 96px; height: 96px; }
   .landing__start-checks { margin-top: 20px; gap: 8px; }
@@ -4761,12 +4763,13 @@ html.lenis body {
     top: 72%;
     right: auto;
     bottom: auto;
-    left: -166px;
-    width: 150px;
+    left: -180px;
+    width: 168px;
     margin: 0;
-    padding-top: 80px;
+    padding-top: 84px;
     padding-bottom: 0;
-    font-size: 14px;
+    font-size: 16px;
+    line-height: 1.18;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
   }
@@ -4774,8 +4777,9 @@ html.lenis body {
   .landing__setup-note .landing__hand-arrow {
     display: block;
     top: 0;
-    left: 66px;
-    width: 116px;
+    left: 98px;
+    width: 94px;
     transform: none;
   }
+  .landing__setup-note-copy { display: block; }
 }
