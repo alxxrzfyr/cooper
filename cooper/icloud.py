@@ -116,6 +116,19 @@ class ICloudCalDAVProvider:
         uid = str(component.get("UID", ""))
         key = hashlib.sha256(f"{calendar_ref}|{uid}|{start.isoformat()}".encode()).hexdigest()
         url = str(component.get("URL", ""))
+        description = component.get("DESCRIPTION")
+        organizer = component.get("ORGANIZER")
+        organizer_email = _mailto(organizer)
+        organizer_name = _param(organizer, "CN")
+        attendees = _attendees(component)
+        self_status = next(
+            (
+                guest["response_status"]
+                for guest in attendees
+                if guest["email"] and guest["email"].lower() == self._email.lower()
+            ),
+            None,
+        )
         return CalendarEvent(
             event_id=key,
             title=str(component.get("SUMMARY", "Busy"))[:300],
@@ -125,11 +138,11 @@ class ICloudCalDAVProvider:
             time_zone=str(self._zone),
             meeting_url=url if url.startswith("https://") else None,
             location=str(component.get("LOCATION", ""))[:500] or None,
-            description=None,
-            organizer_email=None,
-            organizer_name=None,
-            response_status=None,
-            attendees=(),
+            description=(str(description)[:5000].strip() or None) if description else None,
+            organizer_email=organizer_email,
+            organizer_name=organizer_name,
+            response_status=self_status,
+            attendees=tuple(attendees[:100]),
             mine=False,
         )
 
@@ -137,3 +150,55 @@ class ICloudCalDAVProvider:
         if isinstance(value, dt.datetime):
             return (value if value.tzinfo else value.replace(tzinfo=self._zone)).astimezone(dt.UTC)
         return dt.datetime.combine(value, dt.time(), self._zone).astimezone(dt.UTC)
+
+
+def _mailto(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).removeprefix("mailto:").strip()
+    return text or None
+
+
+def _param(value: object, name: str) -> str | None:
+    params = getattr(value, "params", None)
+    if not params:
+        return None
+    raw = params.get(name)
+    if isinstance(raw, (list, tuple)):
+        raw = raw[0] if raw else None
+    text = str(raw).strip() if raw is not None else ""
+    return text or None
+
+
+def _partstat(value: object) -> str | None:
+    raw = (_param(value, "PARTSTAT") or "").upper()
+    mapping = {
+        "ACCEPTED": "accepted",
+        "DECLINED": "declined",
+        "TENTATIVE": "tentative",
+        "NEEDS-ACTION": "needsAction",
+    }
+    return mapping.get(raw)
+
+
+def _attendees(component: Event) -> list[dict[str, str | None]]:
+    raw = component.get("ATTENDEE")
+    if raw is None:
+        items: list[object] = []
+    elif isinstance(raw, list):
+        items = list(raw)
+    else:
+        items = [raw]
+    guests: list[dict[str, str | None]] = []
+    for item in items:
+        email = _mailto(item)
+        if not email:
+            continue
+        guests.append(
+            {
+                "email": email,
+                "name": _param(item, "CN"),
+                "response_status": _partstat(item),
+            }
+        )
+    return guests

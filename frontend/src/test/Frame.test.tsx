@@ -41,8 +41,12 @@ describe("calendar event details", () => {
       <CalendarEventFrame event={event({ description })} timeZone="UTC" onClose={vi.fn()} />,
     );
     const detailBody = container.ownerDocument.querySelector(".frame__description");
+    const scrollBody = container.ownerDocument.querySelector(".frame__body");
+    const rows = container.ownerDocument.querySelector(".event-rows");
 
     expect(detailBody).toHaveTextContent("Detail 1: This event information remains available.");
     expect(detailBody).toHaveTextContent("Detail 24: This event information remains available.");
+    expect(scrollBody).toBeTruthy();
+    expect(rows).toBeTruthy();
   });
 });

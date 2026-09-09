@@ -370,10 +370,10 @@ def icloud_events(owner_id: str, *, days: int = 366) -> list[dict[str, Any]]:
             "time_zone": entry.time_zone,
             "meeting_url": entry.meeting_url,
             "location": entry.location,
-            "description": None,
-            "organizer_name": None,
-            "response_status": None,
-            "attendees": [],
+            "description": entry.description,
+            "organizer_name": entry.organizer_name,
+            "response_status": entry.response_status,
+            "attendees": list(entry.attendees),
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]

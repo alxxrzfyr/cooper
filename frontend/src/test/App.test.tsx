@@ -1199,6 +1199,9 @@ describe("the calendar", () => {
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     expect(await screen.findByText("August 2026")).toBeInTheDocument();
+    expect(
+      [...document.querySelectorAll(".monthgrid__head")].map((node) => node.textContent),
+    ).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
     // A month cell says how much is on that day without showing times. The date part of the
     // label is locale-ordered, so only the count is worth asserting on.
     expect(screen.getByRole("button", { name: /1 thing$/ })).toBeInTheDocument();

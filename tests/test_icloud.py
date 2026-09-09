@@ -65,3 +65,52 @@ def test_transparent_and_cancelled_events_do_not_block_time() -> None:
         event.add(field, value)
 
         assert calendar._event(event, "calendar-a") is None
+
+
+def test_event_details_preserve_description_organizer_and_attendees() -> None:
+    from icalendar import vCalAddress, vText
+
+    calendar = provider()
+    calendar._email = "me@icloud.com"
+    event = Event()
+    event.add("uid", "detail-1")
+    event.add("summary", "Dev Days")
+    event.add("dtstart", dt.datetime(2026, 9, 10, 6, 0, tzinfo=dt.UTC))
+    event.add("dtend", dt.datetime(2026, 9, 10, 9, 0, tzinfo=dt.UTC))
+    event.add("location", "Microsoft Philippines, Inc.")
+    event.add(
+        "description",
+        "Code of Conduct\nWe are committed to providing a welcoming environment. Please review.",
+    )
+    organizer = vCalAddress("mailto:calendar-invite@lu.ma")
+    organizer.params["cn"] = vText("Dev Days")
+    event["organizer"] = organizer
+    guest = vCalAddress("mailto:alex@example.com")
+    guest.params["cn"] = vText("Alex Berin Jr.")
+    guest.params["partstat"] = vText("ACCEPTED")
+    event.add("attendee", guest, encode=0)
+    self_guest = vCalAddress("mailto:me@icloud.com")
+    self_guest.params["partstat"] = vText("ACCEPTED")
+    event.add("attendee", self_guest, encode=0)
+
+    parsed = calendar._event(event, "calendar-a")
+
+    assert parsed is not None
+    assert parsed.location == "Microsoft Philippines, Inc."
+    assert parsed.description is not None
+    assert "Please review" in parsed.description
+    assert parsed.organizer_email == "calendar-invite@lu.ma"
+    assert parsed.organizer_name == "Dev Days"
+    assert parsed.response_status == "accepted"
+    assert parsed.attendees == (
+        {
+            "email": "alex@example.com",
+            "name": "Alex Berin Jr.",
+            "response_status": "accepted",
+        },
+        {
+            "email": "me@icloud.com",
+            "name": None,
+            "response_status": "accepted",
+        },
+    )
