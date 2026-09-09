@@ -4855,16 +4855,17 @@ html.lenis body {
   .landing__start-column { width: 100%; min-width: 0; }
   .landing__start-column .landing__auth-card { width: 100%; padding: 24px 28px; }
   .landing__setup-note {
-    position: relative;
-    top: auto;
+    position: absolute;
+    top: 50%;
     right: auto;
     bottom: auto;
-    left: auto;
-    width: 178px;
-    margin: 12px 14px 0 auto;
-    padding-top: 34px;
+    left: -166px;
+    width: 150px;
+    margin: 0;
+    padding-top: 32px;
     font-size: 14px;
     text-align: center;
+    transform: translateY(-50%) rotate(3deg);
   }
   .landing__setup-note .landing__hand-arrow {
     display: block;
@@ -4896,4 +4897,31 @@ html.lenis body {
 @media (max-width: 899px) {
   .landing__panel--start > .landing__footer { width: 100%; margin-top: 20px; }
   .landing--keeby .landing__panel:not(.landing__panel--meet) h2 { font-size: clamp(34px, 8vw, 52px); }
+}
+
+@media (min-width: 600px) and (max-width: 899px) {
+  .landing__start-column {
+    margin-right: 0;
+    margin-left: auto;
+  }
+
+  .landing__setup-note {
+    position: absolute;
+    top: 50%;
+    right: auto;
+    bottom: auto;
+    left: -166px;
+    width: 150px;
+    margin: 0;
+    padding-top: 32px;
+    font-size: 14px;
+    text-align: center;
+    transform: translateY(-50%) rotate(3deg);
+  }
+
+  .landing__setup-note .landing__hand-arrow {
+    display: block;
+    top: 0;
+    left: calc(50% - 42px);
+  }
 }
