@@ -94,15 +94,26 @@ function ServiceIcon({ service }: { service: Service }) {
   );
 }
 
-function HandArrow({ flip = false }: { flip?: boolean }) {
+function HandArrow({ flip = false, tall = false }: { flip?: boolean; tall?: boolean }) {
   return (
     <svg
-      className={`landing__hand-arrow${flip ? " landing__hand-arrow--flip" : ""}`}
-      viewBox="0 0 90 42"
+      className={`landing__hand-arrow${flip ? " landing__hand-arrow--flip" : ""}${
+        tall ? " landing__hand-arrow--tall" : ""
+      }`}
+      viewBox={tall ? "0 0 112 76" : "0 0 90 42"}
       aria-hidden="true"
     >
-      <path d="M4 10c19-8 46-5 68 16" />
-      <path d="m62 25 12 3-2-12" />
+      {tall ? (
+        <>
+          <path d="M7 62C11 32 39 8 92 12" />
+          <path d="m83 5 13 7-13 9" />
+        </>
+      ) : (
+        <>
+          <path d="M4 10c19-8 46-5 68 16" />
+          <path d="m62 25 12 3-2-12" />
+        </>
+      )}
     </svg>
   );
 }
@@ -486,7 +497,7 @@ export function LandingPage({
               onEmailAuth={onEmailAuth}
             />
             <div className="landing__setup-note">
-              <HandArrow />
+              <HandArrow tall />
               about two minutes to get settled
             </div>
           </div>

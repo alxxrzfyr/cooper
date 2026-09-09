@@ -4709,7 +4709,7 @@ html.lenis body {
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 44px;
+    padding-top: 80px;
     padding-bottom: 0;
     font-size: 14px;
     text-align: center;
@@ -4718,9 +4718,9 @@ html.lenis body {
   .landing__setup-note .landing__hand-arrow {
     display: block;
     top: 0;
-    left: 84px;
-    transform: scaleY(-1);
-    transform-origin: center;
+    left: 66px;
+    width: 116px;
+    transform: none;
   }
   .landing__start-art { margin-top: 16px; }
   .landing__start-art .mascot { width: 96px; height: 96px; }
@@ -4764,7 +4764,7 @@ html.lenis body {
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 44px;
+    padding-top: 80px;
     padding-bottom: 0;
     font-size: 14px;
     text-align: center;
@@ -4774,8 +4774,8 @@ html.lenis body {
   .landing__setup-note .landing__hand-arrow {
     display: block;
     top: 0;
-    left: 84px;
-    transform: scaleY(-1);
-    transform-origin: center;
+    left: 66px;
+    width: 116px;
+    transform: none;
   }
 }
