@@ -764,39 +764,6 @@ html.lenis body {
   text-align: center;
 }
 
-.landing__scroll-cue {
-  position: absolute;
-  z-index: 5;
-  right: clamp(10px, 2vw, 30px);
-  bottom: clamp(20px, 6vh, 48px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: auto;
-  min-height: 44px;
-  padding: 10px 5px;
-  border: 0;
-  border-radius: 20px;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  transform: rotate(2deg);
-  pointer-events: none;
-}
-
-.landing__scroll-cue-label,
-.landing__scroll-cue-destination {
-  position: relative;
-  z-index: 1;
-  display: block;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 .landing__password-control {
   position: relative;
   display: block;
@@ -847,123 +814,6 @@ html.lenis body {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
-}
-
-.landing__scroll-cue-label {
-  margin-bottom: -2px;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  line-height: 1;
-  transform: rotate(-4deg);
-}
-
-.landing__scroll-cue-destination {
-  width: 88px;
-  max-width: 88px;
-  margin-top: -2px;
-  overflow: hidden;
-  color: var(--text);
-  font-family: "Excalifont", "Comic Sans MS", cursive;
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.1;
-  text-align: center;
-  text-overflow: ellipsis;
-  text-transform: none;
-  transform: rotate(-3deg);
-}
-
-.landing__scroll-cue-art {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 80px;
-  height: 30px;
-  margin-block: -3px;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.landing__scroll-cue-trail,
-.landing__scroll-cue-head,
-.landing__scroll-cue-star {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.landing__scroll-cue-trail {
-  stroke-width: 2.2;
-  stroke-dasharray: 4 5;
-  opacity: 0.9;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.landing__scroll-cue-head {
-  stroke-width: 2.4;
-}
-
-.landing__scroll-cue-spark {
-  fill: var(--public-accent-text);
-  opacity: 0.75;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.landing__scroll-cue-star {
-  stroke-width: 1.4;
-  opacity: 0.65;
-}
-
-.landing__panel--meet.is-in-view .landing__scroll-cue-trail {
-  animation: landing-cue-trail 2.8s ease-in-out infinite;
-}
-
-.landing__panel--meet.is-in-view .landing__scroll-cue-spark {
-  animation: landing-cue-spark 2.8s ease-in-out infinite;
-}
-
-@keyframes landing-cue-trail {
-  0%,
-  100% {
-    stroke-dashoffset: 0;
-    transform: translateX(0);
-  }
-  50% {
-    stroke-dashoffset: -18;
-    transform: translateX(3px);
-  }
-}
-
-@keyframes landing-cue-spark {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.25);
-  }
-}
-
-@media (min-width: 900px) and (max-width: 1100px) {
-  .landing__scroll-cue {
-    right: 6px;
-    bottom: 20px;
-    transform: rotate(2deg) scale(0.9);
-    transform-origin: right center;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing__scroll-cue .landing__scroll-cue-trail,
-  .landing__scroll-cue .landing__scroll-cue-spark {
-    animation: none;
-  }
 }
 
 .landing__navigation {
@@ -1239,10 +1089,6 @@ html.lenis body {
   .landing__auth-card {
     width: 100%;
     justify-self: stretch;
-  }
-
-  .landing__scroll-cue {
-    display: none;
   }
 
   .landing__navigation {
@@ -1535,7 +1381,7 @@ html.lenis body {
 
 .landing__service-chip--luma {
   top: 134px;
-  left: -86px;
+  left: -42px;
 }
 
 .landing__service-chip--meetup {
@@ -4838,7 +4684,7 @@ html.lenis body {
   .landing--keeby .landing__panel--start {
     grid-template-columns: minmax(0, 1fr) minmax(400px, 510px);
     grid-template-rows: minmax(min-content, 1fr) auto;
-    gap: var(--layout-gap) clamp(40px, 7vw, 120px);
+    gap: var(--layout-gap) clamp(72px, 10vw, 150px);
   }
 
   .landing--keeby .landing__panel--start > .landing__copy {
@@ -4853,7 +4699,7 @@ html.lenis body {
   }
 
   .landing__start-column { width: 100%; min-width: 0; }
-  .landing__start-column .landing__auth-card { width: 100%; padding: 24px 28px; }
+  .landing__start-column .landing__auth-card { width: 100%; padding: 30px 34px 28px; }
   .landing__setup-note {
     position: absolute;
     top: 50%;
@@ -4862,15 +4708,16 @@ html.lenis body {
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 32px;
+    padding-top: 0;
+    padding-bottom: 38px;
     font-size: 14px;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
   }
   .landing__setup-note .landing__hand-arrow {
     display: block;
-    top: 0;
-    left: calc(50% - 42px);
+    top: 28px;
+    left: 84px;
   }
   .landing__start-art { margin-top: 16px; }
   .landing__start-art .mascot { width: 96px; height: 96px; }
@@ -4885,13 +4732,14 @@ html.lenis body {
     border-top: 1px solid var(--landing-line);
   }
 
-  .landing__panel--start .landing__auth-switch { margin-top: 16px; }
-  .landing__panel--start .landing__auth-divider { margin: 12px 0; }
-  .landing__panel--start .landing__email-form { grid-template-columns: 1fr 1fr; }
+  .landing__panel--start .landing__auth-switch { margin-top: 22px; }
+  .landing__panel--start .landing__google { margin-top: 20px; }
+  .landing__panel--start .landing__auth-divider { margin: 18px 0 16px; }
+  .landing__panel--start .landing__email-form { grid-template-columns: 1fr 1fr; gap: 12px; }
   .landing__panel--start .landing__email-form > button,
   .landing__panel--start .landing__email-form > p { grid-column: 1 / -1; }
   .landing__panel--start .landing__email-form input { min-height: 44px; }
-  .landing__panel--start .landing__fineprint { margin-top: 12px !important; }
+  .landing__panel--start .landing__fineprint { margin-top: 18px !important; }
 }
 
 @media (max-width: 899px) {
@@ -4913,7 +4761,8 @@ html.lenis body {
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 32px;
+    padding-top: 0;
+    padding-bottom: 38px;
     font-size: 14px;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
@@ -4921,7 +4770,7 @@ html.lenis body {
 
   .landing__setup-note .landing__hand-arrow {
     display: block;
-    top: 0;
-    left: calc(50% - 42px);
+    top: 28px;
+    left: 84px;
   }
 }

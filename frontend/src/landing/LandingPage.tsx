@@ -332,18 +332,6 @@ export function LandingPage({
               </div>
             </div>
           </div>
-          <div className="landing__scroll-cue" aria-hidden="true">
-            <span className="landing__scroll-cue-label">Keep going</span>
-            <svg className="landing__scroll-cue-art" viewBox="0 0 116 36" aria-hidden="true">
-              <path
-                className="landing__scroll-cue-trail"
-                d="M6 20C30 4 49 31 70 19s26-5 36-1"
-              />
-              <path className="landing__scroll-cue-head" d="m97 8 12 11-14 6" />
-              <circle className="landing__scroll-cue-spark" cx="6" cy="20" r="2" />
-            </svg>
-            <span className="landing__scroll-cue-destination">{PANELS[1].label}</span>
-          </div>
         </section>
 
         <section className="landing__panel landing__panel--features" id={panelId("features")}>

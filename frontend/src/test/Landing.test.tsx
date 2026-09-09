@@ -61,11 +61,10 @@ describe("public landing", () => {
     expect(onSignIn).toHaveBeenCalledOnce();
   });
 
-  test("keeps the first-panel scroll cue as a non-interactive visual prompt", () => {
+  test("does not render a first-panel scroll cue", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
-    expect(screen.getByText("Keep going")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /next section/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Keep going")).not.toBeInTheDocument();
   });
 
   test("shows an email form and submits the current auth intent", async () => {
