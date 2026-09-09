@@ -351,7 +351,8 @@ export default function App() {
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | CalendarEvent | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const canUseAi = Boolean(geminiKey.trim()) || Boolean(view?.using_model && authState.kind === "local");
+  const canUseAi =
+    Boolean(geminiKey.trim()) || Boolean(view?.using_model && authState.kind === "local");
   const canCompose = canUseAi || authState.kind === "local";
   const canAsk = canUseAi || authState.kind === "local";
   const signedInUser =
@@ -731,13 +732,15 @@ export default function App() {
 
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
-      setAgentSteps([{
-        id: "request",
-        title: "Working on your request",
-        source: "Cooper",
-        icon: "search",
-        status: "running",
-      }]);
+      setAgentSteps([
+        {
+          id: "request",
+          title: "Working on your request",
+          source: "Cooper",
+          icon: "search",
+          status: "running",
+        },
+      ]);
       setBusy(true);
 
       try {
@@ -766,7 +769,8 @@ export default function App() {
             item: result.item,
             lines: [
               ...(result.tools?.map(
-                (tool) => `${tool.ok ? "Checked" : "Could not check"} ${tool.name.replaceAll("_", " ")}`,
+                (tool) =>
+                  `${tool.ok ? "Checked" : "Could not check"} ${tool.name.replaceAll("_", " ")}`,
               ) ?? []),
               ...(result.chip ?? []),
             ],

@@ -111,7 +111,9 @@ describe("public route surface", () => {
 
     expect(onResetPassword).toHaveBeenCalledWith("friend@example.com");
     expect(
-      await screen.findByText("If an account matches that email, check your inbox for a reset link."),
+      await screen.findByText(
+        "If an account matches that email, check your inbox for a reset link.",
+      ),
     ).toBeInTheDocument();
   });
 

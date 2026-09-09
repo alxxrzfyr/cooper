@@ -223,7 +223,9 @@ export function LandingPage({
           },
           { root: horizontal ? track.current : null, threshold: 0.3 },
         );
-        track.current?.querySelectorAll(".landing__panel").forEach((panel) => observer?.observe(panel));
+        track.current
+          ?.querySelectorAll(".landing__panel")
+          .forEach((panel) => observer?.observe(panel));
       }
     };
 
@@ -260,7 +262,11 @@ export function LandingPage({
   }
 
   function trackKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]")) return;
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest("input, textarea, select, [contenteditable]")
+    )
+      return;
     if (event.key === "ArrowRight") {
       event.preventDefault();
       moveBy(1);
@@ -306,7 +312,14 @@ export function LandingPage({
               I&rsquo;ll help turn it into a day you can actually do.
             </p>
             <div className="landing__cta-row">
-              <a className="landing__primary" href="#landing-features" onClick={(event) => { event.preventDefault(); moveTo("features"); }}>
+              <a
+                className="landing__primary"
+                href="#landing-features"
+                onClick={(event) => {
+                  event.preventDefault();
+                  moveTo("features");
+                }}
+              >
                 See how Cooper helps
               </a>
               <a className="landing__secondary" href="/signup">
@@ -501,15 +514,15 @@ export function LandingPage({
               <span className="landing__setup-note-copy">about two minutes to get settled</span>
             </div>
           </div>
-            <footer className="landing__footer">
-              <span>
-                <span className="public-brand-name">Cooper</span> © 2026
-              </span>
-              <nav aria-label="Legal">
-                <a href="/privacy">Privacy</a>
-                <a href="/terms">Terms</a>
-              </nav>
-            </footer>
+          <footer className="landing__footer">
+            <span>
+              <span className="public-brand-name">Cooper</span> © 2026
+            </span>
+            <nav aria-label="Legal">
+              <a href="/privacy">Privacy</a>
+              <a href="/terms">Terms</a>
+            </nav>
+          </footer>
         </section>
       </div>
     </div>

@@ -24,9 +24,7 @@ describe("calendar event details", () => {
       response_status: "accepted",
     }));
 
-    render(
-      <CalendarEventFrame event={event({ attendees })} timeZone="UTC" onClose={vi.fn()} />,
-    );
+    render(<CalendarEventFrame event={event({ attendees })} timeZone="UTC" onClose={vi.fn()} />);
 
     expect(screen.getByText("Guest 1")).toBeInTheDocument();
     expect(screen.getByText("Guest 10")).toBeInTheDocument();

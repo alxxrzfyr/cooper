@@ -788,7 +788,9 @@ html.lenis body {
   color: var(--muted);
   cursor: pointer;
   transform: translateY(-50%);
-  transition: color 0.16s ease, background-color 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease;
 }
 
 .landing__password-toggle:hover:not(:disabled),
@@ -4662,12 +4664,20 @@ html.lenis body {
 }
 
 @keyframes landing-enter {
-  from { opacity: 0.4; translate: 0 16px; }
-  to { opacity: 1; translate: 0 0; }
+  from {
+    opacity: 0.4;
+    translate: 0 16px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 
 @media (min-width: 900px) {
-  .landing { height: 100dvh; }
+  .landing {
+    height: 100dvh;
+  }
 
   .landing--keeby .landing__header {
     flex: none;
@@ -4699,8 +4709,14 @@ html.lenis body {
     font-size: clamp(28px, 3vw, 36px);
   }
 
-  .landing__start-column { width: 100%; min-width: 0; }
-  .landing__start-column .landing__auth-card { width: 100%; padding: 30px 34px 28px; }
+  .landing__start-column {
+    width: 100%;
+    min-width: 0;
+  }
+  .landing__start-column .landing__auth-card {
+    width: 100%;
+    padding: 30px 34px 28px;
+  }
   .landing__setup-note {
     position: absolute;
     top: 72%;
@@ -4723,10 +4739,20 @@ html.lenis body {
     width: 94px;
     transform: none;
   }
-  .landing__setup-note-copy { display: block; }
-  .landing__start-art { margin-top: 16px; }
-  .landing__start-art .mascot { width: 96px; height: 96px; }
-  .landing__start-checks { margin-top: 20px; gap: 8px; }
+  .landing__setup-note-copy {
+    display: block;
+  }
+  .landing__start-art {
+    margin-top: 16px;
+  }
+  .landing__start-art .mascot {
+    width: 96px;
+    height: 96px;
+  }
+  .landing__start-checks {
+    margin-top: 20px;
+    gap: 8px;
+  }
 
   .landing__panel--start > .landing__footer {
     grid-column: 1 / -1;
@@ -4737,19 +4763,39 @@ html.lenis body {
     border-top: 1px solid var(--landing-line);
   }
 
-  .landing__panel--start .landing__auth-switch { margin-top: 22px; }
-  .landing__panel--start .landing__google { margin-top: 20px; }
-  .landing__panel--start .landing__auth-divider { margin: 18px 0 16px; }
-  .landing__panel--start .landing__email-form { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .landing__panel--start .landing__auth-switch {
+    margin-top: 22px;
+  }
+  .landing__panel--start .landing__google {
+    margin-top: 20px;
+  }
+  .landing__panel--start .landing__auth-divider {
+    margin: 18px 0 16px;
+  }
+  .landing__panel--start .landing__email-form {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
   .landing__panel--start .landing__email-form > button,
-  .landing__panel--start .landing__email-form > p { grid-column: 1 / -1; }
-  .landing__panel--start .landing__email-form input { min-height: 44px; }
-  .landing__panel--start .landing__fineprint { margin-top: 18px !important; }
+  .landing__panel--start .landing__email-form > p {
+    grid-column: 1 / -1;
+  }
+  .landing__panel--start .landing__email-form input {
+    min-height: 44px;
+  }
+  .landing__panel--start .landing__fineprint {
+    margin-top: 18px !important;
+  }
 }
 
 @media (max-width: 899px) {
-  .landing__panel--start > .landing__footer { width: 100%; margin-top: 20px; }
-  .landing--keeby .landing__panel:not(.landing__panel--meet) h2 { font-size: clamp(34px, 8vw, 52px); }
+  .landing__panel--start > .landing__footer {
+    width: 100%;
+    margin-top: 20px;
+  }
+  .landing--keeby .landing__panel:not(.landing__panel--meet) h2 {
+    font-size: clamp(34px, 8vw, 52px);
+  }
 }
 
 @media (min-width: 600px) and (max-width: 899px) {
@@ -4781,5 +4827,7 @@ html.lenis body {
     width: 94px;
     transform: none;
   }
-  .landing__setup-note-copy { display: block; }
+  .landing__setup-note-copy {
+    display: block;
+  }
 }

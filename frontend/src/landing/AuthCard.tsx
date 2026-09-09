@@ -222,58 +222,54 @@ export function AuthCard({
       </div>
 
       <form className="landing__email-form" onSubmit={submitEmail}>
-          <label>
-            Email address
+        <label>
+          Email address
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={disabled}
+            required
+          />
+        </label>
+        <label>
+          Password
+          <span className="landing__password-control">
             <input
-              type="email"
-              name="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type={passwordVisible ? "text" : "password"}
+              name="password"
+              autoComplete={intent === "login" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
               disabled={disabled}
+              minLength={6}
               required
             />
-          </label>
-          <label>
-            Password
-            <span className="landing__password-control">
-              <input
-                type={passwordVisible ? "text" : "password"}
-                name="password"
-                autoComplete={intent === "login" ? "current-password" : "new-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={disabled}
-                minLength={6}
-                required
-              />
-              <button
-                type="button"
-                className="landing__password-toggle"
-                aria-label={passwordVisible ? "Hide password" : "Show password"}
-                aria-pressed={passwordVisible}
-                disabled={disabled}
-                onClick={() => setPasswordVisible((visible) => !visible)}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
-                  <circle cx="12" cy="12" r="2.75" />
-                </svg>
-              </button>
-            </span>
-          </label>
-          <button type="submit" className="landing__email-submit" disabled={disabled}>
-            {busy ? "Working…" : emailAction}
-          </button>
-          {intent === "login" && (
             <button
               type="button"
-              className="landing__text-button"
-              onClick={() => setResetMode(true)}
+              className="landing__password-toggle"
+              aria-label={passwordVisible ? "Hide password" : "Show password"}
+              aria-pressed={passwordVisible}
+              disabled={disabled}
+              onClick={() => setPasswordVisible((visible) => !visible)}
             >
-              Forgot password?
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                <circle cx="12" cy="12" r="2.75" />
+              </svg>
             </button>
-          )}
+          </span>
+        </label>
+        <button type="submit" className="landing__email-submit" disabled={disabled}>
+          {busy ? "Working…" : emailAction}
+        </button>
+        {intent === "login" && (
+          <button type="button" className="landing__text-button" onClick={() => setResetMode(true)}>
+            Forgot password?
+          </button>
+        )}
       </form>
 
       {!authEnabled && (
