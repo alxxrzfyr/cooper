@@ -30,4 +30,19 @@ describe("calendar event details", () => {
     expect(screen.getByText("Guest 10")).toBeInTheDocument();
     expect(screen.getByText("10 guests")).toBeInTheDocument();
   });
+
+  test("keeps the end of a long event description available in the detail frame", () => {
+    const description = Array.from(
+      { length: 24 },
+      (_, index) => `Detail ${index + 1}: This event information remains available.`,
+    ).join("\n");
+
+    const { container } = render(
+      <CalendarEventFrame event={event({ description })} timeZone="UTC" onClose={vi.fn()} />,
+    );
+    const detailBody = container.ownerDocument.querySelector(".frame__description");
+
+    expect(detailBody).toHaveTextContent("Detail 1: This event information remains available.");
+    expect(detailBody).toHaveTextContent("Detail 24: This event information remains available.");
+  });
 });
