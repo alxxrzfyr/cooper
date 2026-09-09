@@ -4702,21 +4702,21 @@ html.lenis body {
   .landing__start-column .landing__auth-card { width: 100%; padding: 30px 34px 28px; }
   .landing__setup-note {
     position: absolute;
-    top: 50%;
+    top: 60%;
     right: auto;
     bottom: auto;
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 0;
-    padding-bottom: 38px;
+    padding-top: 44px;
+    padding-bottom: 0;
     font-size: 14px;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
   }
   .landing__setup-note .landing__hand-arrow {
     display: block;
-    top: 28px;
+    top: 0;
     left: 84px;
   }
   .landing__start-art { margin-top: 16px; }
@@ -4755,14 +4755,14 @@ html.lenis body {
 
   .landing__setup-note {
     position: absolute;
-    top: 50%;
+    top: 60%;
     right: auto;
     bottom: auto;
     left: -166px;
     width: 150px;
     margin: 0;
-    padding-top: 0;
-    padding-bottom: 38px;
+    padding-top: 44px;
+    padding-bottom: 0;
     font-size: 14px;
     text-align: center;
     transform: translateY(-50%) rotate(3deg);
@@ -4770,7 +4770,7 @@ html.lenis body {
 
   .landing__setup-note .landing__hand-arrow {
     display: block;
-    top: 28px;
+    top: 0;
     left: 84px;
   }
 }
