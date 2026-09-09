@@ -106,7 +106,66 @@ export function AuthCard({
     event.preventDefault();
     if (!onResetPassword) return;
     setResetSent(false);
-    void onResetPassword(email.trim()).then(() => setResetSent(true));
+    void onResetPassword(email.trim()).then(
+      () => setResetSent(true),
+      () => setResetSent(false),
+    );
+  }
+
+  if (resetMode) {
+    return (
+      <section className="landing__auth-card" aria-labelledby="auth-card-title">
+        <h2 id="auth-card-title">Reset your password</h2>
+        <p>Enter your email and we&rsquo;ll send a link to choose a new password.</p>
+        <form className="landing__email-form" onSubmit={submitReset}>
+          <label>
+            Email address
+            <input
+              type="email"
+              name="reset-email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </label>
+          <button
+            type="submit"
+            className="landing__email-submit"
+            disabled={disabled || !onResetPassword}
+          >
+            {busy ? "Sending…" : "Send reset link"}
+          </button>
+          <button
+            type="button"
+            className="landing__text-button"
+            disabled={disabled}
+            onClick={() => {
+              setResetMode(false);
+              setResetSent(false);
+            }}
+          >
+            Back to log in
+          </button>
+          {resetSent && (
+            <p className="landing__success" role="status">
+              If an account matches that email, check your inbox for a reset link.
+            </p>
+          )}
+        </form>
+        {!authEnabled && (
+          <p className="landing__availability">
+            You can enter your email now. Connect Firebase to send a reset link.
+          </p>
+        )}
+        {error && (
+          <p className="landing__error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+    );
   }
 
   return (
@@ -162,45 +221,7 @@ export function AuthCard({
         <span>or continue with email</span>
       </div>
 
-      {resetMode ? (
-        <form className="landing__email-form" onSubmit={submitReset}>
-          <label>
-            Email address
-            <input
-              type="email"
-              name="reset-email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              disabled={disabled}
-              required
-            />
-          </label>
-          <button
-            type="submit"
-            className="landing__email-submit"
-            disabled={disabled || !onResetPassword}
-          >
-            {busy ? "Sending…" : "Send reset email"}
-          </button>
-          <button
-            type="button"
-            className="landing__text-button"
-            onClick={() => {
-              setResetMode(false);
-              setResetSent(false);
-            }}
-          >
-            Back to sign in
-          </button>
-          {resetSent && (
-            <p className="landing__success" role="status">
-              If an account exists, check your email for a reset link.
-            </p>
-          )}
-        </form>
-      ) : (
-        <form className="landing__email-form" onSubmit={submitEmail}>
+      <form className="landing__email-form" onSubmit={submitEmail}>
           <label>
             Email address
             <input
@@ -253,8 +274,7 @@ export function AuthCard({
               Forgot password?
             </button>
           )}
-        </form>
-      )}
+      </form>
 
       {!authEnabled && (
         <p className="landing__availability">

@@ -562,7 +562,14 @@ export default function App() {
         typeof error === "object" && error !== null && "code" in error
           ? String((error as { code: unknown }).code)
           : "";
-      if (code && !code.includes("user-not-found")) setFailure(firebaseAuthMessage(error));
+      if (code.includes("user-not-found")) return;
+      const message = error instanceof Error ? error.message : "";
+      setFailure(
+        message.includes("Firebase is not configured")
+          ? "Password reset needs Firebase configuration in this local app."
+          : firebaseAuthMessage(error),
+      );
+      throw error;
     } finally {
       setBusy(false);
     }

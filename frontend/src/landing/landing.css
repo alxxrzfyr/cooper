@@ -695,8 +695,9 @@ html.lenis body {
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--card) 72%, var(--sunken));
   color: var(--text);
-  font: inherit;
+  font-family: inherit;
   font-size: 15px;
+  font-weight: 400;
   outline: none;
   transition:
     border-color 0.14s ease,
@@ -4853,8 +4854,23 @@ html.lenis body {
 
   .landing__start-column { width: 100%; min-width: 0; }
   .landing__start-column .landing__auth-card { width: 100%; padding: 24px 28px; }
-  .landing__setup-note { position: static; margin: 10px 0 0; font-size: 14px; text-align: right; }
-  .landing__setup-note .landing__hand-arrow { display: none; }
+  .landing__setup-note {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 178px;
+    margin: 12px 14px 0 auto;
+    padding-top: 34px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .landing__setup-note .landing__hand-arrow {
+    display: block;
+    top: 0;
+    left: calc(50% - 42px);
+  }
   .landing__start-art { margin-top: 16px; }
   .landing__start-art .mascot { width: 96px; height: 96px; }
   .landing__start-checks { margin-top: 20px; gap: 8px; }

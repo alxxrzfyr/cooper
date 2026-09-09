@@ -97,4 +97,36 @@ describe("public route surface", () => {
     expect(email).toHaveValue("friend@example.com");
     expect(password).toHaveValue("cooper-secret");
   });
+
+  test("opens a focused reset flow and confirms only after the reset request succeeds", async () => {
+    const onResetPassword = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    render(<PublicRoutes route="login" {...props} onResetPassword={onResetPassword} />);
+
+    await user.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByRole("heading", { name: "Reset your password" })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Email address"), "friend@example.com");
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    expect(onResetPassword).toHaveBeenCalledWith("friend@example.com");
+    expect(
+      await screen.findByText("If an account matches that email, check your inbox for a reset link."),
+    ).toBeInTheDocument();
+  });
+
+  test("does not claim a reset email was sent when the request fails", async () => {
+    const onResetPassword = vi.fn(async () => {
+      throw new Error("reset unavailable");
+    });
+    const user = userEvent.setup();
+    render(<PublicRoutes route="login" {...props} onResetPassword={onResetPassword} />);
+
+    await user.click(screen.getByRole("button", { name: "Forgot password?" }));
+    await user.type(screen.getByLabelText("Email address"), "friend@example.com");
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    await screen.findByRole("button", { name: "Send reset link" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });
