@@ -131,19 +131,24 @@ class ICloudCalDAVProvider:
         )
         return CalendarEvent(
             event_id=key,
-            title=str(component.get("SUMMARY", "Busy"))[:300],
+            title=str(component.get("SUMMARY", "Busy")),
             start=start,
             end=end,
             all_day=all_day,
-            time_zone=str(self._zone),
+            time_zone=_param(component.get("DTSTART"), "TZID") or str(self._zone),
             meeting_url=url if url.startswith("https://") else None,
-            location=str(component.get("LOCATION", ""))[:500] or None,
-            description=(str(description)[:5000].strip() or None) if description else None,
+            location=str(component.get("LOCATION", "")).strip() or None,
+            description=(str(description).strip() or None) if description else None,
             organizer_email=organizer_email,
             organizer_name=organizer_name,
             response_status=self_status,
-            attendees=tuple(attendees[:100]),
+            attendees=tuple(attendees),
             mine=False,
+            calendar_name=calendar_ref,
+            links=_links(component, url),
+            reminders=_reminders(component),
+            attachments=_attachments(component),
+            metadata=_metadata(component),
         )
 
     def _moment(self, value: dt.date) -> dt.datetime:
@@ -202,3 +207,47 @@ def _attendees(component: Event) -> list[dict[str, str | None]]:
             }
         )
     return guests
+
+
+def _values(component: Event, key: str) -> list[object]:
+    value = component.get(key)
+    if value is None:
+        return []
+    return list(value) if isinstance(value, list) else [value]
+
+
+def _links(component: Event, url: str) -> tuple[dict[str, str], ...]:
+    values = [url, *[str(value) for value in _values(component, "URL")]]
+    return tuple(
+        {"label": "Event link", "url": value}
+        for value in dict.fromkeys(values)
+        if value.startswith(("https://", "http://"))
+    )
+
+
+def _reminders(component: Event) -> tuple[dict[str, str | int | bool | None], ...]:
+    reminders: list[dict[str, str | int | bool | None]] = []
+    for alarm in getattr(component, "subcomponents", []):
+        if getattr(alarm, "name", "") != "VALARM":
+            continue
+        trigger = alarm.get("TRIGGER")
+        reminders.append(
+            {
+                "method": str(alarm.get("ACTION", "display")).lower(),
+                "minutes": None,
+                "use_default": False,
+                "trigger": trigger.to_ical().decode("utf-8") if trigger is not None else None,
+            }
+        )
+    return tuple(reminders)
+
+
+def _attachments(component: Event) -> tuple[dict[str, str | None], ...]:
+    return tuple(
+        {"title": None, "url": str(value), "mime_type": None}
+        for value in _values(component, "ATTACH")
+    )
+
+
+def _metadata(component: Event) -> tuple[dict[str, str], ...]:
+    return ({"label": "Original calendar event", "value": component.to_ical().decode("utf-8")},)

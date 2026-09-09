@@ -26,22 +26,36 @@ function longDay(iso: string): string {
 }
 
 function eventWhen(event: CalendarEvent, timeZone: string): string {
-  const zone = event.time_zone ?? timeZone;
+  let zone = event.time_zone ?? timeZone;
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone });
+  } catch {
+    zone = timeZone;
+  }
   if (event.all_day) {
-    return new Date(event.start_at).toLocaleDateString(undefined, {
-      timeZone: zone,
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: event.source === "google" ? "UTC" : zone,
       weekday: "long",
       day: "numeric",
       month: "long",
       year: "numeric",
-    });
+    };
+    const start = new Date(event.start_at).toLocaleDateString(undefined, options);
+    const end = new Date(new Date(event.end_at).getTime() - 1).toLocaleDateString(
+      undefined,
+      options,
+    );
+    return `${start}${start === end ? "" : ` – ${end}`} · All day`;
   }
   return `${new Date(event.start_at).toLocaleString(undefined, {
     timeZone: zone,
     dateStyle: "full",
     timeStyle: "short",
-  })}–${new Date(event.end_at).toLocaleTimeString(undefined, {
+  })} – ${new Date(event.end_at).toLocaleString(undefined, {
     timeZone: zone,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
@@ -90,8 +104,11 @@ function safeUrl(value: string): string | null {
 }
 
 function parseDescription(html: string): ParsedDescription {
-  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
-  const root = parsed.body.firstElementChild;
+  if (!/<\/?(?:a|br|p|div|b|strong|i|em|u|ul|ol|li|span|table)\b/i.test(html)) {
+    return { nodes: [html], links: [], text: html };
+  }
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const root = parsed.body;
   const links: string[] = [];
 
   function renderChildren(parent: Node, path: string): ReactNode[] {
@@ -346,13 +363,26 @@ export function CalendarEventFrame({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const organizer = event.organizer_name;
-  const description = event.description ? parseDescription(event.description) : null;
+  const organizer = [event.organizer_name, event.organizer_email]
+    .filter(
+      (value, index, values): value is string => Boolean(value) && values.indexOf(value) === index,
+    )
+    .join(" · ");
+  const description = event.description
+    ? event.source === "icloud"
+      ? { nodes: [event.description], links: [], text: event.description }
+      : parseDescription(event.description)
+    : null;
   const meeting = meetingFromDescription(description ?? { nodes: [], links: [], text: "" });
-  const meetingUrl = event.meeting_url ?? meeting.url;
+  const meetingUrl = safeUrl(event.meeting_url ?? meeting.url ?? "");
+  const links = (event.links ?? []).filter(
+    (link, index, values) =>
+      safeUrl(link.url) !== null &&
+      values.findIndex((candidate) => candidate.url === link.url) === index,
+  );
 
   function copyLink(url: string) {
-    navigator.clipboard.writeText(url).then(
+    navigator.clipboard?.writeText(url).then(
       () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -392,6 +422,24 @@ export function CalendarEventFrame({
             <span className="event-row__primary">{eventWhen(event, timeZone)}</span>
           </span>
         </div>
+
+        {(event.time_zone ?? timeZone) && (
+          <div className="event-row">
+            <span className="event-row__body">
+              <span className="event-row__label">Timezone</span>
+              <span className="event-row__primary">{event.time_zone ?? timeZone}</span>
+            </span>
+          </div>
+        )}
+
+        {event.calendar_name && (
+          <div className="event-row">
+            <span className="event-row__body">
+              <span className="event-row__label">Calendar</span>
+              <span className="event-row__primary">{event.calendar_name}</span>
+            </span>
+          </div>
+        )}
 
         {/* Meeting / video row */}
         {meetingUrl && (
@@ -456,6 +504,31 @@ export function CalendarEventFrame({
               )}
               <span className="visually-hidden">{copied ? "Copied" : "Copy"}</span>
             </button>
+          </div>
+        )}
+
+        {links.filter((link) => link.url !== meetingUrl).length > 0 && (
+          <div className="event-row">
+            <div className="event-row__body">
+              <span className="event-row__label">Event links</span>
+              <ul className="event-detail-list">
+                {links
+                  .filter((link) => link.url !== meetingUrl)
+                  .map((link) => (
+                    <li key={`${link.label}-${link.url}`}>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="event-row__link"
+                      >
+                        {link.label}
+                      </a>
+                      <span className="event-row__sub">{link.url}</span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
           </div>
         )}
 
@@ -541,10 +614,11 @@ export function CalendarEventFrame({
                 {event.attendees.length} guest{event.attendees.length === 1 ? "" : "s"}
               </span>
               <ul className="event-guests">
-                {event.attendees.map((g) => (
-                  <li key={g.email} className="event-guest">
+                {event.attendees.map((g, index) => (
+                  <li key={`${g.email}-${index}`} className="event-guest">
                     <span className="event-guest__name">{g.name ?? g.email}</span>
-                    {g.response_status && g.response_status !== "accepted" && (
+                    {g.name && g.name !== g.email && <span>{g.email}</span>}
+                    {g.response_status && (
                       <span className="event-guest__status">
                         {responseLabel(g.response_status)}
                       </span>
@@ -604,6 +678,56 @@ export function CalendarEventFrame({
           </div>
         )}
 
+        {event.reminders && event.reminders.length > 0 && (
+          <div className="event-row">
+            <div className="event-row__body">
+              <span className="event-row__label">Reminders</span>
+              <ul className="event-detail-list">
+                {event.reminders.map((reminder, index) => (
+                  <li
+                    key={`${reminder.method}-${reminder.minutes}-${index}`}
+                    className="event-row__primary"
+                  >
+                    {reminder.use_default
+                      ? "Default calendar reminders"
+                      : `${reminder.method ?? "Notification"}${
+                          reminder.minutes === null ? "" : ` · ${reminder.minutes} minutes before`
+                        }${reminder.trigger ? ` · ${reminder.trigger}` : ""}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {event.attachments && event.attachments.length > 0 && (
+          <div className="event-row">
+            <div className="event-row__body">
+              <span className="event-row__label">Attachments</span>
+              <ul className="event-detail-list">
+                {event.attachments.map((attachment, index) => {
+                  const href = attachment.url ? safeUrl(attachment.url) : null;
+                  const label = attachment.title ?? attachment.url ?? "Attachment";
+                  return (
+                    <li key={`${label}-${index}`}>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noreferrer" className="event-row__link">
+                          {label}
+                        </a>
+                      ) : (
+                        <span className="event-row__primary">{label}</span>
+                      )}
+                      {attachment.mime_type && (
+                        <span className="event-row__sub">{attachment.mime_type}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* Description row */}
         {description && description.nodes.length > 0 && (
           <div className="event-row event-row--description">
@@ -620,6 +744,22 @@ export function CalendarEventFrame({
               </svg>
             </span>
             <div className="event-row__body frame__description">{description.nodes}</div>
+          </div>
+        )}
+
+        {event.metadata && event.metadata.length > 0 && (
+          <div className="event-row event-row--metadata">
+            <div className="event-row__body">
+              <span className="event-row__label">Additional event information</span>
+              <dl className="event-metadata">
+                {event.metadata.map((entry, index) => (
+                  <div key={`${entry.label}-${index}`}>
+                    <dt>{entry.label}</dt>
+                    <dd>{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </div>
         )}
       </div>

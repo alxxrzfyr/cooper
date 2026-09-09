@@ -114,3 +114,27 @@ def test_event_details_preserve_description_organizer_and_attendees() -> None:
             "response_status": "accepted",
         },
     )
+
+
+def test_event_details_do_not_truncate_long_icalendar_values() -> None:
+    from icalendar import vCalAddress
+
+    calendar = provider()
+    event = Event()
+    event.add("uid", "long-detail-1")
+    event.add("summary", "T" * 301)
+    event.add("dtstart", dt.datetime(2026, 9, 10, 6, 0, tzinfo=dt.UTC))
+    event.add("dtend", dt.datetime(2026, 9, 10, 9, 0, tzinfo=dt.UTC))
+    event.add("location", "L" * 501)
+    event.add("description", "D" * 5001)
+    for index in range(101):
+        event.add("attendee", vCalAddress(f"mailto:guest-{index}@example.com"), encode=0)
+
+    parsed = calendar._event(event, "calendar-a")
+
+    assert parsed is not None
+    assert parsed.title == "T" * 301
+    assert parsed.location == "L" * 501
+    assert parsed.description == "D" * 5001
+    assert len(parsed.attendees) == 101
+    assert parsed.metadata[0]["value"] == event.to_ical().decode("utf-8")

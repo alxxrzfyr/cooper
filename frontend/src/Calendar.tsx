@@ -28,7 +28,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
 const DAY_START = 7;
 const DAY_END = 22;
 const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + DAY_START);
-const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const MONTH_ROWS = 6;
 
 /** Field getters below all read a `Date` as wall-clock time in a named zone, not the browser's
@@ -516,7 +516,7 @@ export function Calendar({
         </p>
       </footer>
 
-      {picked && !chosen && (
+      {picked && !chosen && !chosenEvent && (
         <Frame
           title={dayLabel(picked, today, zone)}
           subtitle={`${on(picked).length} ${on(picked).length === 1 ? "thing" : "things"}`}

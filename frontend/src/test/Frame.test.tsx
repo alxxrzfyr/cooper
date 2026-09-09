@@ -17,6 +17,37 @@ function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 }
 
 describe("calendar event details", () => {
+  test("shows both dates for a multi-day all-day event without shifting Google's date", () => {
+    render(
+      <CalendarEventFrame
+        event={event({
+          all_day: true,
+          start_at: "2026-09-09T00:00:00Z",
+          end_at: "2026-09-12T00:00:00Z",
+          time_zone: "America/Los_Angeles",
+        })}
+        timeZone="UTC"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/September 9, 2026.*September 11, 2026.*All day/)).toBeInTheDocument();
+  });
+
+  test("preserves literal Apple description text and rejects unsafe meeting links", () => {
+    render(
+      <CalendarEventFrame
+        event={event({
+          source: "icloud",
+          description: "Bring <agenda> and <notes>",
+          meeting_url: "javascript:alert(1)",
+        })}
+        timeZone="UTC"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Bring <agenda> and <notes>")).toBeInTheDocument();
+    expect(screen.queryByText("Join meeting")).not.toBeInTheDocument();
+  });
   test("keeps every attendee available in the scrollable detail frame", () => {
     const attendees = Array.from({ length: 10 }, (_, index) => ({
       email: `guest-${index + 1}@example.com`,
@@ -28,6 +59,8 @@ describe("calendar event details", () => {
 
     expect(screen.getByText("Guest 1")).toBeInTheDocument();
     expect(screen.getByText("Guest 10")).toBeInTheDocument();
+    expect(screen.getByText("guest-10@example.com")).toBeInTheDocument();
+    expect(screen.getAllByText("Accepted")).toHaveLength(10);
     expect(screen.getByText("10 guests")).toBeInTheDocument();
   });
 
@@ -48,5 +81,36 @@ describe("calendar event details", () => {
     expect(detailBody).toHaveTextContent("Detail 24: This event information remains available.");
     expect(scrollBody).toBeTruthy();
     expect(rows).toBeTruthy();
+  });
+
+  test("renders provider links, reminders, attachments, and metadata without clipping them", () => {
+    render(
+      <CalendarEventFrame
+        event={event({
+          calendar_name: "Primary calendar",
+          organizer_name: "Calendar owner",
+          organizer_email: "owner@example.com",
+          links: [{ label: "Event link", url: "https://calendar.google.com/event" }],
+          reminders: [{ method: "email", minutes: 30, use_default: false }],
+          attachments: [
+            {
+              title: "Launch brief.pdf",
+              url: "https://drive.google.com/brief",
+              mime_type: "application/pdf",
+            },
+          ],
+          metadata: [{ label: "visibility", value: "private" }],
+        })}
+        timeZone="UTC"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Primary calendar")).toBeInTheDocument();
+    expect(screen.getByText(/owner@example\.com/)).toBeInTheDocument();
+    expect(screen.getByText("Event link")).toBeInTheDocument();
+    expect(screen.getByText("email · 30 minutes before")).toBeInTheDocument();
+    expect(screen.getByText("Launch brief.pdf")).toBeInTheDocument();
+    expect(screen.getByText("visibility")).toBeInTheDocument();
   });
 });

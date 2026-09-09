@@ -340,9 +340,15 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
             "meeting_url": getattr(entry, "meeting_url", None),
             "location": getattr(entry, "location", None),
             "description": getattr(entry, "description", None),
+            "organizer_email": getattr(entry, "organizer_email", None),
             "organizer_name": getattr(entry, "organizer_name", None),
             "response_status": getattr(entry, "response_status", None),
             "attendees": list(getattr(entry, "attendees", ())),
+            "calendar_name": getattr(entry, "calendar_name", None),
+            "links": list(getattr(entry, "links", ())),
+            "reminders": list(getattr(entry, "reminders", ())),
+            "attachments": list(getattr(entry, "attachments", ())),
+            "metadata": list(getattr(entry, "metadata", ())),
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]
@@ -371,9 +377,15 @@ def icloud_events(owner_id: str, *, days: int = 366) -> list[dict[str, Any]]:
             "meeting_url": entry.meeting_url,
             "location": entry.location,
             "description": entry.description,
+            "organizer_email": entry.organizer_email,
             "organizer_name": entry.organizer_name,
             "response_status": entry.response_status,
             "attendees": list(entry.attendees),
+            "calendar_name": entry.calendar_name,
+            "links": list(entry.links),
+            "reminders": list(entry.reminders),
+            "attachments": list(entry.attachments),
+            "metadata": list(entry.metadata),
         }
         for entry in sorted(entries, key=lambda entry: entry.start)
     ]

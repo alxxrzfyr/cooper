@@ -618,12 +618,30 @@ class TestGoogleTransport:
                             }
                         ],
                         "attendeesOmitted": False,
+                        "htmlLink": "https://calendar.google.com/calendar/event?eid=event-42",
+                        "reminders": {
+                            "useDefault": False,
+                            "overrides": [{"method": "email", "minutes": 30}],
+                        },
+                        "attachments": [
+                            {
+                                "title": "Launch brief.pdf",
+                                "fileUrl": "https://drive.google.com/file/d/brief",
+                                "mimeType": "application/pdf",
+                            }
+                        ],
+                        "visibility": "private",
                     }
                 ]
             },
         )
 
         events = calendar.events(days=14)
+
+        metadata = {entry["label"]: entry["value"] for entry in events[0].metadata}
+        assert json.loads(metadata["start"])["timeZone"] == "Asia/Singapore"
+        assert json.loads(metadata["attendees"])[0]["responseStatus"] == "accepted"
+        assert json.loads(metadata["attachments"])[0]["mimeType"] == "application/pdf"
 
         assert events == [
             CalendarEvent(
@@ -647,6 +665,23 @@ class TestGoogleTransport:
                     },
                 ),
                 mine=False,
+                calendar_name="primary",
+                links=(
+                    {
+                        "label": "Event link",
+                        "url": "https://calendar.google.com/calendar/event?eid=event-42",
+                    },
+                    {"label": "Meeting link", "url": "https://meet.google.com/design-review"},
+                ),
+                reminders=({"method": "email", "minutes": 30, "use_default": False},),
+                attachments=(
+                    {
+                        "title": "Launch brief.pdf",
+                        "url": "https://drive.google.com/file/d/brief",
+                        "mime_type": "application/pdf",
+                    },
+                ),
+                metadata=events[0].metadata,
             )
         ]
 

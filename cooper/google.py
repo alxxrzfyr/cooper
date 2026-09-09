@@ -63,6 +63,11 @@ class CalendarEvent:
     response_status: str | None
     attendees: tuple[dict[str, str | None], ...]
     mine: bool
+    calendar_name: str | None = None
+    links: tuple[dict[str, str], ...] = ()
+    reminders: tuple[dict[str, str | int | bool | None], ...] = ()
+    attachments: tuple[dict[str, str | None], ...] = ()
+    metadata: tuple[dict[str, str], ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -214,7 +219,13 @@ class Calendar:
             query = urllib.parse.urlencode(params)
             payload = self._call("GET", f"/calendars/{self._encoded}/events?{query}")
             for raw in payload.get("items") or []:
-                event = _calendar_event(raw)
+                event = _calendar_event(
+                    raw,
+                    calendar_name=payload.get("summary") or self._calendar,
+                    calendar_metadata={
+                        key: value for key, value in payload.items() if key != "items"
+                    },
+                )
                 if event is not None:
                     out.append(event)
             next_token = payload.get("nextPageToken")
@@ -436,7 +447,9 @@ def _gmail_body(payload: dict) -> str:
     return ""
 
 
-def _calendar_event(raw: dict) -> CalendarEvent | None:
+def _calendar_event(
+    raw: dict, *, calendar_name: str | None = None, calendar_metadata: dict | None = None
+) -> CalendarEvent | None:
     begins = _moment(raw.get("start"))
     finishes = _moment(raw.get("end"))
     event_id = raw.get("id")
@@ -470,9 +483,11 @@ def _calendar_event(raw: dict) -> CalendarEvent | None:
         if attendee.get("self") is True:
             response_status = attendee_data["response_status"]
 
+    meeting_url = _meeting_url(raw)
+    links = _event_links(raw, meeting_url)
     return CalendarEvent(
         event_id=event_id,
-        title=str(raw.get("summary") or "Busy")[:200],
+        title=str(raw.get("summary") or "Busy"),
         start=begins,
         end=finishes,
         all_day="date" in start,
@@ -481,26 +496,100 @@ def _calendar_event(raw: dict) -> CalendarEvent | None:
             if isinstance(start.get("timeZone"), str)
             else end.get("timeZone")
             if isinstance(end.get("timeZone"), str)
-            else None
+            else (calendar_metadata or {}).get("timeZone")
         ),
-        meeting_url=_meeting_url(raw),
-        location=_bounded_text(raw.get("location"), 500),
-        description=_bounded_text(raw.get("description"), 5000),
+        meeting_url=meeting_url,
+        location=_text(raw.get("location")),
+        description=_text(raw.get("description")),
         organizer_email=organizer.get("email") if isinstance(organizer.get("email"), str) else None,
         organizer_name=(
             organizer.get("displayName") if isinstance(organizer.get("displayName"), str) else None
         ),
         response_status=response_status,
-        attendees=tuple(attendees[:100]),
+        attendees=tuple(attendees),
         mine=TAG in private,
+        calendar_name=calendar_name,
+        links=links,
+        reminders=_reminders(raw.get("reminders")),
+        attachments=_attachments(raw.get("attachments")),
+        metadata=_metadata(raw)
+        + tuple(
+            {"label": f"Calendar {key}", "value": json.dumps(value, ensure_ascii=False)}
+            for key, value in (calendar_metadata or {}).items()
+            if key not in {"nextPageToken", "nextSyncToken"}
+        ),
     )
 
 
-def _bounded_text(value: object, limit: int) -> str | None:
+def _text(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     text = value.strip()
-    return text[:limit] or None
+    return text or None
+
+
+def _event_links(raw: dict, meeting_url: str | None) -> tuple[dict[str, str], ...]:
+    candidates = [("Event link", raw.get("htmlLink")), ("Meeting link", meeting_url)]
+    source = raw.get("source")
+    if isinstance(source, dict):
+        candidates.append(("Source link", source.get("url")))
+    links: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for label, candidate in candidates:
+        if not isinstance(candidate, str) or candidate in seen:
+            continue
+        parsed = urllib.parse.urlparse(candidate)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            links.append({"label": label, "url": candidate})
+            seen.add(candidate)
+    return tuple(links)
+
+
+def _reminders(value: object) -> tuple[dict[str, str | int | bool | None], ...]:
+    if not isinstance(value, dict):
+        return ()
+    overrides = value.get("overrides")
+    if isinstance(overrides, list):
+        return tuple(
+            {
+                "method": entry.get("method") if isinstance(entry.get("method"), str) else None,
+                "minutes": entry.get("minutes") if isinstance(entry.get("minutes"), int) else None,
+                "use_default": False,
+            }
+            for entry in overrides
+            if isinstance(entry, dict)
+        )
+    if value.get("useDefault") is True:
+        return ({"method": None, "minutes": None, "use_default": True},)
+    return ()
+
+
+def _attachments(value: object) -> tuple[dict[str, str | None], ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        {
+            "title": entry.get("title") if isinstance(entry.get("title"), str) else None,
+            "url": entry.get("fileUrl") if isinstance(entry.get("fileUrl"), str) else None,
+            "mime_type": entry.get("mimeType") if isinstance(entry.get("mimeType"), str) else None,
+        }
+        for entry in value
+        if isinstance(entry, dict)
+    )
+
+
+def _metadata(raw: dict) -> tuple[dict[str, str], ...]:
+    omitted = {
+        "summary",
+        "location",
+        "hangoutLink",
+        "htmlLink",
+    }
+    return tuple(
+        {"label": key, "value": json.dumps(value, ensure_ascii=False, sort_keys=True)}
+        for key, value in raw.items()
+        if key not in omitted and value is not None
+    )
 
 
 def _meeting_url(raw: dict) -> str | None:
@@ -517,7 +606,7 @@ def _meeting_url(raw: dict) -> str | None:
             continue
         parsed = urllib.parse.urlparse(candidate)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
-            return candidate[:2000]
+            return candidate
     return None
 
 

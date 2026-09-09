@@ -60,6 +60,29 @@ export interface CalendarEventAttendee {
   response_status: string | null;
 }
 
+export interface CalendarEventLink {
+  label: string;
+  url: string;
+}
+
+export interface CalendarEventReminder {
+  method: string | null;
+  minutes: number | null;
+  use_default: boolean;
+  trigger?: string | null;
+}
+
+export interface CalendarEventAttachment {
+  title: string | null;
+  url: string | null;
+  mime_type: string | null;
+}
+
+export interface CalendarEventMetadata {
+  label: string;
+  value: string;
+}
+
 export interface CalendarEvent {
   event_id?: string;
   title: string;
@@ -73,9 +96,15 @@ export interface CalendarEvent {
   meeting_url?: string | null;
   location?: string | null;
   description?: string | null;
+  organizer_email?: string | null;
   organizer_name?: string | null;
   response_status?: string | null;
   attendees?: CalendarEventAttendee[];
+  calendar_name?: string | null;
+  links?: CalendarEventLink[];
+  reminders?: CalendarEventReminder[];
+  attachments?: CalendarEventAttachment[];
+  metadata?: CalendarEventMetadata[];
 }
 
 export interface GmailHealth {

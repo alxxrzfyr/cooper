@@ -2561,6 +2561,7 @@ button.slot:active {
 }
 
 .frame__title {
+  overflow-wrap: anywhere;
   font-size: 19px;
   line-height: 1.2;
 }
@@ -2589,8 +2590,7 @@ button.slot:active {
 }
 
 .frame__body {
-  /* flex-basis 0 keeps the panel at max-height so overflow scrolls here. */
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2601,6 +2601,10 @@ button.slot:active {
   gap: 14px;
   scrollbar-width: thin;
   scrollbar-color: var(--hair) transparent;
+}
+
+.frame__body > * {
+  flex-shrink: 0;
 }
 
 .frame__body::-webkit-scrollbar {
@@ -2671,6 +2675,13 @@ button.slot:active {
   margin-bottom: 0;
 }
 
+.frame__description,
+.event-row__primary,
+.event-row__sub,
+.event-metadata dd {
+  overflow-wrap: anywhere;
+}
+
 .frame__description ul,
 .frame__description ol {
   margin: 0 0 10px;
@@ -2686,6 +2697,22 @@ button.slot:active {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.framelist .slot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.framelist .slot__title,
+.framelist .slot__detail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.framelist .slot__detail {
+  grid-column: 1 / -1;
+  margin-left: 0;
 }
 
 /* Label and value, one per line, because a task has more facts than a row can hold. */
@@ -2812,6 +2839,48 @@ button.slot:active {
 .event-row__sub {
   font-size: 12px;
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.event-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-detail-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.event-metadata {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+
+.event-metadata > div {
+  display: grid;
+  gap: 2px;
+}
+
+.event-metadata dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.event-metadata dd {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-guest {
+  flex-wrap: wrap;
   overflow-wrap: anywhere;
 }
 

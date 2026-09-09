@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import App from "../App";
+import App, { initialAgentSteps } from "../App";
 import type { CalendarEvent, Item, Ranked, Reply, View } from "../types";
 
 interface TestFirebaseUser {
@@ -125,6 +125,14 @@ function reply(overrides: Partial<Reply> = {}): Reply {
     ...overrides,
   };
 }
+
+test("Ask starts with all three intended loading statuses", () => {
+  const steps = initialAgentSteps();
+
+  expect(steps).toHaveLength(3);
+  expect(steps.map((step) => step.icon)).toEqual(["search", "connect", "calc"]);
+  expect(steps.every((step) => step.status === "running")).toBe(true);
+});
 
 /** Navigate from the dashboard to the conversation. */
 async function openChat(user = userEvent.setup()) {
@@ -1201,7 +1209,7 @@ describe("the calendar", () => {
     expect(await screen.findByText("August 2026")).toBeInTheDocument();
     expect(
       [...document.querySelectorAll(".monthgrid__head")].map((node) => node.textContent),
-    ).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    ).toEqual(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]);
     // A month cell says how much is on that day without showing times. The date part of the
     // label is locale-ordered, so only the count is worth asserting on.
     expect(screen.getByRole("button", { name: /1 thing$/ })).toBeInTheDocument();
@@ -1237,6 +1245,40 @@ describe("the calendar", () => {
     await user.click(screen.getAllByRole("button", { name: /0 things$/ })[0]);
     expect((await screen.findByRole("dialog")).textContent).toContain("Nothing on this day");
   });
+
+  test.each(["google", "icloud"] as const)(
+    "Month opens only one %s detail dialog",
+    async (source) => {
+      stub({
+        view: view({
+          events: [
+            {
+              title: "Source event",
+              source,
+              category: "work",
+              mine: false,
+              start_at: "2026-08-31T02:00:00Z",
+              end_at: "2026-08-31T03:00:00Z",
+            },
+          ],
+        }),
+      });
+      render(<App />);
+      const user = await openCalendar();
+      await user.click(screen.getByRole("button", { name: "Month" }));
+      await user.click(screen.getAllByRole("button", { name: /1 thing$/ })[0]);
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: /Source event/ }),
+      );
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
+      expect(screen.getByRole("dialog")).toHaveAccessibleName("Source event");
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Open this day" })).toBeInTheDocument();
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+      expect(document.body.style.overflow).not.toBe("hidden");
+    },
+  );
 
   test("stepping away from today, and coming back", async () => {
     stub({

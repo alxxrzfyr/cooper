@@ -119,6 +119,33 @@ function googleEventMessage(event: CalendarEvent, timeZone: string): string {
   return `Google Calendar: ${event.title} · ${when}`;
 }
 
+/** The three local phases are always truthful: none claims an external integration ran. */
+export function initialAgentSteps(): AgentStep[] {
+  return [
+    {
+      id: "understand",
+      title: "Understanding your request",
+      source: "Cooper",
+      icon: "search",
+      status: "running",
+    },
+    {
+      id: "check",
+      title: "Checking your plan",
+      source: "Tasks",
+      icon: "connect",
+      status: "running",
+    },
+    {
+      id: "answer",
+      title: "Preparing your response",
+      source: "Cooper",
+      icon: "calc",
+      status: "running",
+    },
+  ];
+}
+
 function formatChecked(value: string): string {
   const checked = new Date(value);
   if (Number.isNaN(checked.getTime())) return value;
@@ -324,7 +351,6 @@ export default function App() {
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [aiProgress, setAiProgress] = useState("Thinking…");
   const [agentSteps, setAgentSteps] = useState<AgentStep[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
@@ -732,15 +758,7 @@ export default function App() {
 
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
-      setAgentSteps([
-        {
-          id: "request",
-          title: "Working on your request",
-          source: "Cooper",
-          icon: "search",
-          status: "running",
-        },
-      ]);
+      setAgentSteps(initialAgentSteps());
       setBusy(true);
 
       try {
