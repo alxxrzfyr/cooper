@@ -11,6 +11,7 @@
   --auth-bg: #f2f5f1;
   --auth-glow: color-mix(in srgb, var(--accent) 10%, transparent);
   --auth-copy: #5f645f;
+  min-height: 100dvh;
   background: radial-gradient(circle at 78% 16%, var(--auth-glow), transparent 31%), var(--auth-bg);
 }
 
@@ -68,11 +69,11 @@
 }
 
 .auth-page__main {
-  grid-template-columns: minmax(0, 0.92fr) minmax(360px, 440px);
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 510px);
   align-items: center;
-  gap: clamp(54px, 8rem, 124px);
-  width: min(1080px, calc(100% - 48px));
-  padding: clamp(46px, 7rem, 82px) 0 clamp(50px, 8rem, 88px);
+  gap: clamp(40px, 6vw, 100px);
+  width: min(1180px, calc(100% - var(--page-gutter) * 2));
+  padding: var(--layout-gap) 0;
 }
 
 .auth-page__intro {
@@ -90,9 +91,9 @@
 .auth-page__intro h1 {
   max-width: 10ch;
   margin: 0;
-  font-size: clamp(46px, 5.1rem, 70px);
+  font-size: var(--public-heading);
   line-height: 0.98;
-  letter-spacing: -0.065em;
+  letter-spacing: -0.04em;
 }
 
 .auth-page__intro > p:last-of-type {
@@ -132,13 +133,11 @@
 .auth-page .landing__auth-card {
   width: 100%;
   justify-self: stretch;
-  padding: clamp(26px, 3.3rem, 38px);
+  padding: 24px 28px;
   border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
   border-radius: 20px;
   background: color-mix(in srgb, var(--card) 94%, transparent);
-  box-shadow: 0 24px 70px color-mix(in srgb, var(--text) 13%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-md);
 }
 
 .auth-page .landing__auth-card::before,
@@ -155,8 +154,8 @@
 }
 
 .auth-page .landing__auth-card h2 {
-  max-width: 11ch;
-  font-size: clamp(30px, 3.2rem, 42px);
+  max-width: 18ch;
+  font-size: clamp(28px, 2.8vw, 36px);
   line-height: 1;
 }
 
@@ -167,7 +166,19 @@
 }
 
 .auth-page .landing__auth-switch {
-  margin-top: 22px;
+  margin-top: 16px;
+}
+
+.auth-page .landing__auth-divider { margin: 12px 0; }
+.auth-page .landing__email-form input { min-height: 44px; }
+
+@media (min-width: 900px) {
+  .auth-page .public-page__header,
+  .auth-page .public-page__footer { flex: none; padding-inline: var(--page-gutter); }
+  .auth-page .public-page__footer { padding-block: 14px; }
+  .auth-page .landing__email-form { grid-template-columns: 1fr 1fr; }
+  .auth-page .landing__email-form > button,
+  .auth-page .landing__email-form > p { grid-column: 1 / -1; }
 }
 
 .auth-page .landing__google {

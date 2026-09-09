@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import Lenis from "lenis";
 
 import { Mascot } from "../Mascot";
-import { AuthCard } from "./AuthCard";
+import { AuthCard, type AuthIntent } from "./AuthCard";
 
 interface LandingProps {
   busy: boolean;
@@ -10,6 +10,7 @@ interface LandingProps {
   authEnabled?: boolean;
   authLoading?: boolean;
   onSignIn: () => void;
+  onEmailAuth?: (email: string, password: string, intent: AuthIntent) => Promise<void>;
 }
 
 const PANELS = [
@@ -26,7 +27,7 @@ function panelId(id: string): string {
 function ProductCapture({ source, alt }: { source: string; alt: string }) {
   return (
     <div className="landing__product-window landing__product-window--capture">
-      <img src={source} alt={alt} loading="eager" decoding="async" />
+      <img src={source} alt={alt} loading="lazy" decoding="async" width="1440" height="900" />
     </div>
   );
 }
@@ -148,10 +149,12 @@ export function LandingPage({
   authEnabled = true,
   authLoading = false,
   onSignIn,
+  onEmailAuth,
 }: LandingProps) {
   const track = useRef<HTMLDivElement>(null);
   const lenis = useRef<Lenis | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndex = useRef(0);
+  const wakeScroll = useRef(() => {});
 
   useEffect(() => {
     const matchMedia = window.matchMedia?.bind(window);
@@ -159,10 +162,21 @@ export function LandingPage({
     const media = matchMedia("(min-width: 900px)");
     let frame = 0;
     let unsubscribe = (): void => {};
+    let observer: IntersectionObserver | undefined;
+
+    const animate = (time: number): void => {
+      lenis.current?.raf(time);
+      frame = lenis.current?.isScrolling ? requestAnimationFrame(animate) : 0;
+    };
+    const wake = (): void => {
+      if (!frame) frame = requestAnimationFrame(animate);
+    };
+    wakeScroll.current = wake;
 
     const setupScroll = (): void => {
       unsubscribe();
       lenis.current?.destroy();
+      observer?.disconnect();
 
       const horizontal = media.matches;
       const wrapper = horizontal ? track.current : window;
@@ -175,7 +189,7 @@ export function LandingPage({
         orientation: horizontal ? "horizontal" : "vertical",
         gestureOrientation: horizontal ? "both" : "vertical",
         smoothWheel: true,
-        syncTouch: true,
+        syncTouch: false,
         lerp: 0.075,
         syncTouchLerp: 0.06,
         anchors: true,
@@ -184,50 +198,58 @@ export function LandingPage({
       });
 
       lenis.current = instance;
-      unsubscribe = instance.on("scroll", ({ scroll }) => {
-        const element = track.current;
-        if (!horizontal || !element || element.clientWidth <= 0) return;
-        const nextIndex = Math.round(scroll / element.clientWidth);
-        setActiveIndex(Math.min(Math.max(nextIndex, 0), PANELS.length - 1));
-      });
-    };
-
-    const animate = (time: number): void => {
-      lenis.current?.raf(time);
-      frame = requestAnimationFrame(animate);
+      unsubscribe = instance.on("virtual-scroll", wake);
+      if (typeof IntersectionObserver !== "undefined") {
+        observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              entry.target.classList.toggle("is-in-view", entry.isIntersecting);
+              if (!entry.isIntersecting) continue;
+              entry.target.classList.add("has-entered");
+              const index = PANELS.findIndex((panel) => panelId(panel.id) === entry.target.id);
+              if (index >= 0) activeIndex.current = index;
+            }
+          },
+          { root: horizontal ? track.current : null, threshold: 0.3 },
+        );
+        track.current?.querySelectorAll(".landing__panel").forEach((panel) => observer?.observe(panel));
+      }
     };
 
     setupScroll();
-    frame = requestAnimationFrame(animate);
     media.addEventListener("change", setupScroll);
 
     return () => {
       cancelAnimationFrame(frame);
       media.removeEventListener("change", setupScroll);
       unsubscribe();
+      observer?.disconnect();
       lenis.current?.destroy();
       lenis.current = null;
+      wakeScroll.current = () => {};
     };
   }, []);
 
   function moveTo(id: string): void {
     const nextIndex = PANELS.findIndex((panel) => panel.id === id);
-    if (nextIndex >= 0) setActiveIndex(nextIndex);
+    if (nextIndex >= 0) activeIndex.current = nextIndex;
     const target = document.getElementById(panelId(id));
     if (!target) return;
     if (lenis.current) {
       lenis.current.scrollTo(target, { immediate: lenis.current.prefersReducedMotion });
+      wakeScroll.current();
       return;
     }
     target.scrollIntoView({ behavior: "auto", block: "nearest", inline: "start" });
   }
 
   function moveBy(delta: number): void {
-    const nextIndex = Math.min(Math.max(activeIndex + delta, 0), PANELS.length - 1);
+    const nextIndex = Math.min(Math.max(activeIndex.current + delta, 0), PANELS.length - 1);
     moveTo(PANELS[nextIndex].id);
   }
 
   function trackKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]")) return;
     if (event.key === "ArrowRight") {
       event.preventDefault();
       moveBy(1);
@@ -273,7 +295,7 @@ export function LandingPage({
               I&rsquo;ll help turn it into a day you can actually do.
             </p>
             <div className="landing__cta-row">
-              <a className="landing__primary" href="#landing-features">
+              <a className="landing__primary" href="#landing-features" onClick={(event) => { event.preventDefault(); moveTo("features"); }}>
                 See how Cooper helps
               </a>
               <a className="landing__secondary" href="/signup">
@@ -310,6 +332,23 @@ export function LandingPage({
               </div>
             </div>
           </div>
+          <button
+            type="button"
+            className="landing__scroll-cue"
+            aria-label={`Next section: ${PANELS[1].label}`}
+            onClick={() => moveBy(1)}
+          >
+            <span className="landing__scroll-cue-label">Keep going</span>
+            <svg className="landing__scroll-cue-art" viewBox="0 0 116 36" aria-hidden="true">
+              <path
+                className="landing__scroll-cue-trail"
+                d="M6 20C30 4 49 31 70 19s26-5 36-1"
+              />
+              <path className="landing__scroll-cue-head" d="m97 8 12 11-14 6" />
+              <circle className="landing__scroll-cue-spark" cx="6" cy="20" r="2" />
+            </svg>
+            <span className="landing__scroll-cue-destination">{PANELS[1].label}</span>
+          </button>
         </section>
 
         <section className="landing__panel landing__panel--features" id={panelId("features")}>
@@ -446,7 +485,7 @@ export function LandingPage({
             <ul className="landing__start-checks" aria-label="What you get">
               <li>Private workspace</li>
               <li>Works before you connect Google</li>
-              <li>No password to remember</li>
+              <li>Google sign-in or email access</li>
             </ul>
             <div className="landing__start-art">
               <Mascot name="cooper_waving" size="md" decorative />
@@ -461,11 +500,13 @@ export function LandingPage({
               authEnabled={authEnabled}
               authLoading={authLoading}
               onSignIn={onSignIn}
+              onEmailAuth={onEmailAuth}
             />
             <div className="landing__setup-note">
               <HandArrow />
               about two minutes to get settled
             </div>
+          </div>
             <footer className="landing__footer">
               <span>
                 <span className="public-brand-name">Cooper</span> © 2026
@@ -475,7 +516,6 @@ export function LandingPage({
                 <a href="/terms">Terms</a>
               </nav>
             </footer>
-          </div>
         </section>
       </div>
     </div>

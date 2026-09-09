@@ -54,7 +54,7 @@ export function Form({
   onSubmit,
 }: {
   busy: boolean;
-  onSubmit: (item: NewItem) => Promise<void>;
+  onSubmit: (item: NewItem) => Promise<boolean | void>;
 }) {
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState("");
@@ -87,7 +87,8 @@ export function Form({
       notes: notes.trim() || null,
     };
 
-    await onSubmit(item);
+    const saved = await onSubmit(item);
+    if (saved === false) return;
 
     setTitle("");
     setMinutes("");
@@ -104,8 +105,10 @@ export function Form({
     <div className="scroll scroll--form">
       <div className="opening opening--form">
         <Mascot name="cooper_reading" size="lg" decorative />
-        <h2 className="opening__title">Add something</h2>
-        <p className="opening__text">Fields, not a sentence. Nothing here leaves your machine.</p>
+        <div>
+          <h2 className="opening__title">Add something</h2>
+          <p className="opening__text">A task, a deadline, or a time to be somewhere.</p>
+        </div>
       </div>
 
       <form
@@ -161,7 +164,7 @@ export function Form({
                 title={due ? undefined : "Pick a day first"}
                 onChange={(event) => setTime(event.target.value)}
               >
-                <option value="">No time (a task, not an event)</option>
+                <option value="">No fixed time</option>
                 {TIME_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -181,7 +184,7 @@ export function Form({
                 min={1}
                 max={1440}
                 value={minutes}
-                placeholder="minutes — leave blank for an errand"
+                placeholder="Minutes (optional)"
                 onChange={(event) => setMinutes(event.target.value)}
               />
             </div>
@@ -189,7 +192,9 @@ export function Form({
           <p className="hint">
             {time
               ? "A date and a time make an event, booked at that moment."
-              : "A deadline without a time stays a task, ranked and scheduled into your hours."}
+              : minutes
+                ? "A deadline without a time stays a task, ranked and scheduled into your hours."
+                : "Without a duration, this stays on your list until you give it time."}
           </p>
         </section>
 

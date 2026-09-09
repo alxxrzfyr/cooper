@@ -60,4 +60,17 @@ describe("public landing", () => {
 
     expect(onSignIn).toHaveBeenCalledOnce();
   });
+
+  test("shows an email form and submits the current auth intent", async () => {
+    const onEmailAuth = vi.fn(async () => undefined);
+    render(<Landing busy={false} error={null} onSignIn={vi.fn()} onEmailAuth={onEmailAuth} />);
+
+    expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    await userEvent.setup().type(screen.getByLabelText("Email address"), "friend@example.com");
+    await userEvent.setup().type(screen.getByLabelText("Password"), "password");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Register with email" }));
+
+    expect(onEmailAuth).toHaveBeenCalledWith("friend@example.com", "password", "signup");
+  });
 });
