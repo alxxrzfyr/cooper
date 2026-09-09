@@ -4703,7 +4703,7 @@ html.lenis body {
   .landing__start-column .landing__auth-card { width: 100%; padding: 30px 34px 28px; }
   .landing__setup-note {
     position: absolute;
-    top: 68%;
+    top: 72%;
     right: auto;
     bottom: auto;
     left: -166px;
@@ -4719,7 +4719,7 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
-    transform: scaleY(-1);
+    transform: scaleX(-1);
     transform-origin: center;
   }
   .landing__start-art { margin-top: 16px; }
@@ -4758,7 +4758,7 @@ html.lenis body {
 
   .landing__setup-note {
     position: absolute;
-    top: 68%;
+    top: 72%;
     right: auto;
     bottom: auto;
     left: -166px;
@@ -4775,7 +4775,7 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
-    transform: scaleY(-1);
+    transform: scaleX(-1);
     transform-origin: center;
   }
 }
