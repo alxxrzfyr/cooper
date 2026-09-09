@@ -4123,7 +4123,7 @@ html.lenis body {
 
 @media (min-width: 1200px) {
   .landing--keeby .landing__panel--meet .landing__copy {
-    padding: 44px 48px 46px;
+    padding: 44px 40px 46px 60px;
   }
 
   .landing--keeby .landing__panel--meet .landing__copy::before {
@@ -4145,17 +4145,18 @@ html.lenis body {
     left: 54px;
     width: 78px;
     height: 15px;
+    border-radius: 0;
     background: rgb(220 205 158 / 70%);
     transform: rotate(-2deg);
   }
 
   .landing--keeby .landing__panel--meet .landing__copy h1 {
-    margin-left: -20px;
+    margin-left: 0;
     white-space: nowrap;
   }
 
   .landing--keeby .landing__panel--meet .landing__lede {
-    margin-left: -20px;
+    margin-left: 0;
   }
 
   .landing__paper-doodles {
@@ -4702,7 +4703,7 @@ html.lenis body {
   .landing__start-column .landing__auth-card { width: 100%; padding: 30px 34px 28px; }
   .landing__setup-note {
     position: absolute;
-    top: 60%;
+    top: 68%;
     right: auto;
     bottom: auto;
     left: -166px;
@@ -4718,6 +4719,8 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
+    transform: scaleY(-1);
+    transform-origin: center;
   }
   .landing__start-art { margin-top: 16px; }
   .landing__start-art .mascot { width: 96px; height: 96px; }
@@ -4755,7 +4758,7 @@ html.lenis body {
 
   .landing__setup-note {
     position: absolute;
-    top: 60%;
+    top: 68%;
     right: auto;
     bottom: auto;
     left: -166px;
@@ -4772,5 +4775,7 @@ html.lenis body {
     display: block;
     top: 0;
     left: 84px;
+    transform: scaleY(-1);
+    transform-origin: center;
   }
 }
