@@ -17,8 +17,15 @@ export interface Turn {
   at: number;
 }
 
-export type StepStatus = "running" | "done" | "error";
-export type StepIcon = "search" | "connect" | "calc" | "write" | "calendar" | "mail";
+export type StepStatus = "pending" | "running" | "done" | "error";
+export type StepIcon =
+  | "spark"
+  | "search"
+  | "connect"
+  | "calc"
+  | "write"
+  | "calendar"
+  | "mail";
 
 /** One step shown in the agent trace while thinking. */
 export interface AgentStep {
@@ -426,6 +433,22 @@ function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) =>
 
 function StepActionIcon({ icon }: { icon: StepIcon }) {
   switch (icon) {
+    case "spark":
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6 8 8Z" />
+        </svg>
+      );
     case "search":
       return (
         <svg
@@ -530,6 +553,9 @@ function StepActionIcon({ icon }: { icon: StepIcon }) {
 }
 
 function StepStatusIndicator({ status }: { status: StepStatus }) {
+  if (status === "pending") {
+    return <span className="agent-step__pending" aria-label="Waiting" />;
+  }
   if (status === "running") {
     return (
       <span className="agent-step__spinner" aria-label="In progress">

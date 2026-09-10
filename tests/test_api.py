@@ -261,7 +261,7 @@ def test_plan_preview_does_not_write_and_apply_requires_confirmation(client, mon
         assert item.start_at is not None
 
 
-def test_confirmed_plan_avoids_commitment_mirrors_to_google_and_refreshes_view(client, monkeypatch):
+def test_confirmed_plan_avoids_commitment_stays_local_and_refreshes_view(client, monkeypatch):
     import cooper.app as module
 
     fixed = dt.datetime(2026, 9, 9, 0, 0, tzinfo=dt.UTC)
@@ -324,10 +324,8 @@ def test_confirmed_plan_avoids_commitment_mirrors_to_google_and_refreshes_view(c
 
     slot = result["structuredContent"]["slots"][0]
     assert dt.datetime.fromisoformat(slot["start"]) >= meetup_end
-    assert written == [
-        (dt.datetime.fromisoformat(slot["start"]), dt.datetime.fromisoformat(slot["end"]))
-    ]
-    assert result["structuredContent"]["google_calendar"] == {"cs-project": True}
+    assert written == []
+    assert result["structuredContent"]["destination"] == "cooper"
     assert any(item["id"] == "cs-project" for item in refreshed["scheduled"])
 
 
@@ -627,7 +625,7 @@ class TestTheTwoModes:
         body = response.json()
         assert body["kind"] == "added"
         assert body["item"]["title"] == "AI planning session"
-        assert body["item"]["google_event_id"] is not None
+        assert body["item"]["google_event_id"] is None
         assert [item["title"] for item in body["view"]["scheduled"]] == ["AI planning session"]
 
     def test_manual_request_ignores_a_browser_gemini_key(
@@ -1329,7 +1327,7 @@ class TestRequestOwnership:
         assert module.store.get_setting("local", module.GOOGLE_SETTING) == {"token": "local-token"}
         assert calls == ["firebase-user"]
 
-    def test_firebase_item_action_removes_only_owner_calendar_block(
+    def test_firebase_item_action_preserves_legacy_calendar_block(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         with configured_client(
@@ -1366,9 +1364,9 @@ class TestRequestOwnership:
             response = client.post(f"/api/items/{item_id}/complete", headers=auth_headers)
 
         assert response.status_code == 200
-        assert calls == ["global-event"]
+        assert calls == []
 
-    def test_firebase_bulk_removes_only_owner_calendar_blocks(
+    def test_firebase_bulk_preserves_legacy_calendar_blocks(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         with configured_client(
@@ -1411,9 +1409,9 @@ class TestRequestOwnership:
             )
 
         assert response.status_code == 200
-        assert calls == ["global-event-0", "global-event-1"]
+        assert calls == []
 
-    def test_firebase_undo_removes_only_owner_calendar_block(
+    def test_firebase_undo_preserves_legacy_calendar_block(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         with configured_client(
@@ -1453,7 +1451,7 @@ class TestRequestOwnership:
             response = client.post("/api/undo", headers=auth_headers)
 
         assert response.status_code == 200
-        assert calls == ["global-event"]
+        assert calls == []
 
 
 class TestSecurity:
@@ -1953,7 +1951,7 @@ class TestManualForm:
         assert body["item"]["source_ref"] is None
         assert body["item"]["notes"] is None
 
-    def test_optional_details_are_stored_and_sent_to_google_for_an_event(
+    def test_optional_details_are_stored_locally_for_an_event(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import cooper.app as module
@@ -1982,9 +1980,8 @@ class TestManualForm:
             "Location: Studio 3\n\nMeeting link: https://meet.google.com/example-room\n\n"
             "Notes:\nBring the draft."
         )
-        assert body["item"]["google_event_id"] == "google-event"
-        assert calls[0]["location"] == "Studio 3"
-        assert "Bring the draft." in str(calls[0]["description"])
+        assert body["item"]["google_event_id"] is None
+        assert calls == []
 
     def test_a_sized_task_is_booked_into_hours_like_a_parsed_one(self, client: TestClient) -> None:
         body = self.form(client, title="revise notes", minutes=45)
@@ -2320,3 +2317,128 @@ def brain_module_prompt_text() -> str:
     import cooper.brain as brain_mod
 
     return brain_mod.PROMPT[:40]
+
+
+def test_failed_calendar_keeps_new_task_waiting(client, monkeypatch):
+    import cooper.app as module
+
+    class FailedCalendar:
+        connected = True
+
+        def busy(self, **kwargs):
+            raise CalendarError("Unavailable")
+
+    monkeypatch.setattr(module, "connected_calendar", lambda owner: FailedCalendar())
+    result = client.post(
+        "/api/items", json={"title": "Keep my work", "minutes": 30}, headers=HEADERS
+    )
+    assert result.status_code == 200
+    assert result.json()["item"]["start_at"] is None
+    assert "calendar" in result.json()["message"].lower()
+
+
+def test_retry_schedules_same_item(client):
+    result = client.post("/api/items", json={"title": "Retry me"}, headers=HEADERS).json()
+    item_id = result["item"]["id"]
+    client.patch(f"/api/items/{item_id}", json={"minutes": 30}, headers=HEADERS)
+    retry = client.post(f"/api/items/{item_id}/schedule", headers=HEADERS)
+    assert retry.status_code == 200
+    assert retry.json()["item"]["id"] == item_id
+    assert retry.json()["item"]["start_at"]
+
+
+def test_item_mutations_never_write_to_provider(client, monkeypatch):
+    import cooper.app as module
+
+    class ReadOnlyCalendar:
+        connected = True
+
+        def busy(self, **kwargs):
+            return []
+
+        def add_block(self, **kwargs):
+            pytest.fail("Local mutations must never create remote events")
+
+        def remove_block(self, *args):
+            pytest.fail("Local mutations must never delete remote events")
+
+    monkeypatch.setattr(module, "connected_calendar", lambda owner: ReadOnlyCalendar())
+    body = client.post(
+        "/api/items", json={"title": "Local work", "minutes": 30}, headers=HEADERS
+    ).json()
+    item_id = body["item"]["id"]
+    with module.store.session() as session:
+        module.store.get_item(session, "local", item_id).google_event_id = "legacy-copy"
+    for verb in ("complete", "drop"):
+        assert client.post(f"/api/items/{item_id}/{verb}", headers=HEADERS).status_code == 200
+        assert client.post("/api/undo", headers=HEADERS).status_code == 200
+    assert (
+        client.post(
+            "/api/bulk", json={"verb": "drop", "ids": [item_id]}, headers=HEADERS
+        ).status_code
+        == 200
+    )
+    assert client.post("/api/undo", headers=HEADERS).status_code == 200
+    assert client.post("/api/undo", headers=HEADERS).status_code == 200
+
+
+def test_rich_hours_atomic_validation_and_legacy_guard(client):
+    hours = {
+        "start_hour": 9,
+        "end_hour": 18,
+        "weekdays": [0],
+        "max_per_day": 4,
+        "windows": [[0, 0, 0], [1, 1320, 120]],
+        "break_minutes": 15,
+        "max_minutes_per_day": 180,
+    }
+    assert client.put("/api/hours", json=hours, headers=HEADERS).status_code == 200
+    bad = {**hours, "windows": [[7, 0, 60]]}
+    assert client.put("/api/hours", json=bad, headers=HEADERS).status_code == 422
+    saved = client.get("/api/today", headers=HEADERS).json()["hours"]
+    assert saved["windows"] == hours["windows"]
+    legacy = {key: hours[key] for key in ("start_hour", "end_hour", "weekdays", "max_per_day")}
+    assert client.put("/api/hours", json=legacy, headers=HEADERS).status_code == 409
+
+
+def test_concurrent_scheduling_serializes_same_owner(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    import cooper.app as module
+
+    fixed = dt.datetime(2026, 9, 7, 0, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(module, "now", lambda: fixed)
+    module.store.set_setting(
+        "local",
+        module.HOURS_SETTING,
+        {"start_hour": 9, "end_hour": 18, "weekdays": [0], "max_per_day": 4},
+    )
+    with module.store.session() as session:
+        for index in range(2):
+            session.add(
+                module.Item(
+                    id=f"concurrent-{index}",
+                    owner_id="local",
+                    source="me",
+                    title=f"Task {index}",
+                    kind="task",
+                    minutes=60,
+                    created_at=fixed,
+                )
+            )
+    barrier = Barrier(2)
+    original = module._external_availability
+
+    def synchronized_read(owner_id, **kwargs):
+        result = original(owner_id, **kwargs)
+        barrier.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(module, "_external_availability", synchronized_read)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda i: module.place_one("local", f"concurrent-{i}"), range(2)))
+    first, second = sorted(results, key=lambda item: item["start_at"])
+    assert dt.datetime.fromisoformat(second["start_at"]) >= dt.datetime.fromisoformat(
+        first["end_at"]
+    ) + dt.timedelta(minutes=10)

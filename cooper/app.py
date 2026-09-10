@@ -27,7 +27,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import AnyHttpUrl, BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from cooper import mcp, sources
 from cooper.auth import AuthFailure, AuthIdentity, check_allowed_email, verify_firebase_token
@@ -168,6 +168,9 @@ class HoursIn(BaseModel):
     end_hour: int = Field(ge=1, le=24)
     weekdays: list[int]
     max_per_day: int = Field(ge=1, le=10)
+    windows: list[tuple[int, int, int]] | None = None
+    break_minutes: int = Field(default=10, ge=0, le=1440)
+    max_minutes_per_day: int | None = Field(default=None, ge=1, le=1440)
 
 
 class ItemIn(BaseModel):
@@ -309,7 +312,9 @@ def find(session: Any, owner_id: str, words: str) -> Item | None:
     return loose[0] if len(loose) == 1 else None
 
 
-def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
+def google_events(
+    owner_id: str, *, days: int = 14, health: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     """Your real calendar events for display. Empty when Google is off.
 
     The display window is wider than the planner window so Calendar can show a complete month
@@ -324,15 +329,44 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
             events(days=366, lookback_hours=0) if callable(events) else calendar.busy(days=days)
         )
     except CalendarError:
-        # A calendar problem must never break the page. It just means less on screen.
+        if health is not None:
+            health.append(
+                {
+                    "source": "google",
+                    "status": "unavailable",
+                    "message": "Google calendar could not be refreshed.",
+                }
+            )
         return []
+    if health is not None:
+        health.append({"source": "google", "status": "ok"})
+    with store.session() as session:
+        linked = {
+            item.google_event_id: item
+            for item in store.open_items(session, owner_id)
+            if item.google_event_id and _is_local_item(item, owner_id)
+        }
+
+    def matches(entry: Any) -> bool:
+        item = linked.get(getattr(entry, "event_id", None))
+        return bool(
+            item
+            and item.title == entry.title
+            and item.start_at == entry.start
+            and item.end_at == entry.end
+            and (item.notes or "") == (getattr(entry, "description", None) or "")
+        )
+
     return [
         {
             "title": entry.title,
             "start_at": entry.start.isoformat(),
             "end_at": entry.end.isoformat(),
             "category": guess_category(entry.title),
-            "mine": entry.mine,
+            "mine": matches(entry),
+            "legacy_difference": bool(
+                getattr(entry, "event_id", None) in linked and not matches(entry)
+            ),
             "source": "google",
             "event_id": getattr(entry, "event_id", None),
             "all_day": getattr(entry, "all_day", False),
@@ -354,15 +388,26 @@ def google_events(owner_id: str, *, days: int = 14) -> list[dict[str, Any]]:
     ]
 
 
-def icloud_events(owner_id: str, *, days: int = 366) -> list[dict[str, Any]]:
+def icloud_events(
+    owner_id: str, *, days: int = 366, health: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     calendar = icloud_calendar(owner_id)
     if not calendar.connected:
         return []
     try:
         entries = calendar.events(days=days)
-    except CalendarError as error:
-        store.set_setting(owner_id, ICLOUD_STATUS_SETTING, {"error": str(error)})
+    except CalendarError:
+        if health is not None:
+            health.append(
+                {
+                    "source": "icloud",
+                    "status": "unavailable",
+                    "message": "iCloud calendar could not be refreshed.",
+                }
+            )
         return []
+    if health is not None:
+        health.append({"source": "icloud", "status": "ok"})
     return [
         {
             "title": entry.title,
@@ -624,16 +669,36 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
     icloud = icloud_calendar(owner_id)
     icloud_status = store.get_setting(owner_id, ICLOUD_STATUS_SETTING) or {}
 
+    source_health: list[dict[str, Any]] = []
+    events = [
+        *google_events(owner_id, health=source_health),
+        *icloud_events(owner_id, health=source_health),
+    ]
+    availability = {
+        "complete": all(entry["status"] == "ok" for entry in source_health),
+        "source_health": source_health,
+    }
     return {
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
         "timezone": settings.timezone,
         "shortlist": [
-            {**entry.item.to_dict(), "score": entry.score, "why": entry.why} for entry in ranked
+            {
+                **entry.item.to_dict(),
+                "score": entry.score,
+                "why": entry.why,
+                **(
+                    {"waiting_reason": _waiting_reason(entry.item.to_dict(), availability)}
+                    if entry.item.kind == "task" and not entry.item.start_at
+                    else {}
+                ),
+            }
+            for entry in ranked
         ],
         "scheduled": scheduled,
         "hours": hours.as_setting(),
-        "events": [*google_events(owner_id), *icloud_events(owner_id)],
+        "events": events,
+        "source_health": source_health,
         "undo": undo_label,
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
@@ -685,35 +750,25 @@ def execute_tool(owner_id: str, name: str, arguments: object) -> dict[str, Any]:
         return mcp.tool_result(str(error), error=True)
 
     if isinstance(parsed, mcp.AvailabilityArgs):
-        zone = ZoneInfo(settings.timezone)
+        availability = _external_availability(owner_id, days=parsed.days + 1)
         windows = [
-            *sources.collect_gmail(store, owner_id, at=now()),
+            *availability.pop("busy"),
             *sources.collect_local(store, owner_id, at=now()),
+            *sources.collect_gmail(store, owner_id, at=now()),
         ]
-        unavailable: list[str] = []
-        for name, provider in (
-            ("google", connected_calendar(owner_id)),
-            ("icloud", icloud_calendar(owner_id)),
-        ):
-            if provider is None or not provider.connected:
-                continue
-            try:
-                windows.extend(
-                    (entry.start, entry.end) for entry in provider.busy(days=parsed.days)
-                )
-            except CalendarError:
-                unavailable.append(name)
         return mcp.tool_result(
             {
+                **availability,
                 "timezone": settings.timezone,
                 "working_hours": current_hours(owner_id).as_setting(),
-                "unavailable_sources": unavailable,
+                "unavailable_sources": [
+                    entry["source"]
+                    for entry in availability["source_health"]
+                    if entry["status"] == "unavailable"
+                ],
                 "busy": [
-                    {
-                        "start": start.astimezone(zone).isoformat(),
-                        "end": end.astimezone(zone).isoformat(),
-                    }
-                    for start, end in sorted(windows)[:200]
+                    {"start": start.isoformat(), "end": end.isoformat()}
+                    for start, end in sources.merge_intervals(windows)
                 ],
             }
         )
@@ -755,18 +810,9 @@ def execute_tool(owner_id: str, name: str, arguments: object) -> dict[str, Any]:
             return mcp.tool_result(
                 "No selected task can be placed in the available hours.", error=True
             )
-        applied = apply_slots(owner_id, slots)
-        with store.session() as session:
-            mirrored = {
-                item_id: bool(item and item.google_event_id)
-                for item_id in [slot.item_id for slot in applied]
-                for item in [store.get_item(session, owner_id, item_id)]
-            }
+        applied = apply_slots(owner_id, slots, days=parsed.days)
         return mcp.tool_result(
-            {
-                "slots": [_slot_payload(slot) for slot in applied],
-                "google_calendar": mirrored,
-            }
+            {"slots": [_slot_payload(slot) for slot in applied], "destination": "cooper"}
         )
 
     return mcp.tool_result("Unknown tool.", error=True)
@@ -874,12 +920,12 @@ def answer_with_tools(
             "parameters": tool["inputSchema"],
         }
         for tool in mcp.TOOLS
-        if tool["name"] != "apply_plan"
+        if tool["name"] not in ("apply_plan", "gmail_confirmations")
     ]
     prompt = (
         f"{COOPER_IDENTITY}\n\n"
         "Answer only about the person's tasks and calendar. Use a tool when current availability, "
-        "Gmail confirmations, or a proposed work plan is needed. Never claim a write occurred. "
+        "or a proposed work plan is needed. Never claim a write occurred. "
         "Calendar tool output intentionally contains no event titles. Be concise and explain why "
         "suggested times fit.\n\n"
         f"Timezone: {settings.timezone}\n"
@@ -899,7 +945,11 @@ def answer_with_tools(
             return None, steps
         response_parts: list[dict[str, Any]] = []
         for call in turn.calls[:3]:
-            result = execute_tool(owner_id, call.name, call.arguments)
+            result = (
+                execute_tool(owner_id, call.name, call.arguments)
+                if call.name in {tool["name"] for tool in declarations}
+                else mcp.tool_result("This question cannot change data.", error=True)
+            )
             failed = bool(result.get("isError"))
             payload = result.get("structuredContent")
             if payload is None:
@@ -943,16 +993,17 @@ def _summarise(item: Item) -> str:
 
 def _busy_time_context(owner_id: str) -> list[str]:
     """Give Ask only calendar occupancy, never the contents of external events."""
-    zone = ZoneInfo(settings.timezone)
-    try:
-        windows = busy_windows(owner_id)
-    except Exception:
-        return []
-    return [
-        f"{start.astimezone(zone).strftime('%a %d %b %H:%M')}–"
-        f"{end.astimezone(zone).strftime('%H:%M')}"
-        for start, end in windows[:32]
-    ]
+    availability = _external_availability(owner_id)
+    if not availability["complete"]:
+        return ["Calendar availability is unavailable. Do not claim any time is free."]
+    windows = sources.merge_intervals(
+        [
+            *availability["busy"],
+            *sources.collect_local(store, owner_id, at=now()),
+            *sources.collect_gmail(store, owner_id, at=now()),
+        ]
+    )
+    return [f"{start.isoformat()}–{end.isoformat()}" for start, end in windows]
 
 
 def run(owner_id: str, action: Action) -> dict[str, Any]:
@@ -1017,33 +1068,10 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
         )
         payload = item.to_dict()
 
-    calendar = connected_calendar(owner_id)
-    if action.kind == "event" and action.start and action.end and calendar is not None:
-        try:
-            event_id = calendar.add_block(
-                item_id=payload["id"],
-                title=payload["title"],
-                start=action.start,
-                end=action.end,
-                description=payload["notes"],
-                location=action.location,
-            )
-            with store.session() as session:
-                stored = store.get_item(session, owner_id, payload["id"])
-                if stored:
-                    stored.google_event_id = event_id
-                    payload = stored.to_dict()
-        except CalendarError as error:
-            return {
-                "kind": "added",
-                "message": f"Added, but Google said: {error}",
-                "item": payload,
-            }
-
     # Sized tasks are placed immediately when they have no fixed start.
     if action.kind == "task" and not action.start:
         booked = place_one(owner_id, payload["id"])
-        if booked is not None:
+        if booked is not None and booked.get("start_at"):
             payload = booked
             when = to_local(booked["start_at"])
             return {
@@ -1051,9 +1079,13 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
                 "message": f"Added “{payload['title']}”, {when}.",
                 "item": payload,
             }
+        payload = booked or payload
         return {
             "kind": "added",
-            "message": f"Added “{payload['title']}”. No room in your hours this week.",
+            "message": (
+                f"Saved “{payload['title']}”. "
+                f"{payload.get('waiting_reason', 'Waiting for scheduling.')}"
+            ),
             "item": payload,
         }
 
@@ -1067,59 +1099,129 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
 
 
+def _external_availability(owner_id: str, *, days: int = 14) -> dict[str, Any]:
+    checked = now()
+    spans = []
+    health = []
+    for name, provider in (
+        ("google", connected_calendar(owner_id)),
+        ("icloud", icloud_calendar(owner_id)),
+    ):
+        if provider is None or not provider.connected:
+            continue
+        try:
+            spans.extend(sources.collect_google(provider, days=days))
+            health.append({"source": name, "status": "ok"})
+        except CalendarError:
+            health.append(
+                {
+                    "source": name,
+                    "status": "unavailable",
+                    "message": f"{name.title()} calendar could not be checked.",
+                }
+            )
+    return {
+        "busy": spans,
+        "source_health": health,
+        "checked_at": checked.isoformat(),
+        "range_start": checked.isoformat(),
+        "range_end": (checked + dt.timedelta(days=days)).isoformat(),
+        "complete": all(entry["status"] == "ok" for entry in health),
+    }
+
+
+def _locked_hours(session: Any, owner_id: str) -> Hours:
+    # Updating the existing settings anchor obtains a write lock on SQLite and a row
+    # lock on Postgres, before any local availability is read. No network runs here.
+    session.execute(
+        update(Setting)
+        .where(Setting.owner_id == owner_id, Setting.key == HOURS_SETTING)
+        .values(value=Setting.value)
+    )
+    saved = session.get(Setting, {"owner_id": owner_id, "key": HOURS_SETTING})
+    return Hours.from_setting({**(saved.value if saved else {}), "timezone": settings.timezone})
+
+
+def _ensure_hours(owner_id: str) -> None:
+    if store.get_setting(owner_id, HOURS_SETTING) is None:
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            with store.session() as session:
+                session.add(
+                    Setting(
+                        owner_id=owner_id,
+                        key=HOURS_SETTING,
+                        value=current_hours(owner_id).as_setting(),
+                    )
+                )
+        except IntegrityError:
+            pass  # Another first request established this owner's anchor.
+
+
+def _waiting_reason(payload: dict[str, Any], availability: dict[str, Any]) -> str:
+    if not payload.get("minutes"):
+        return "Add a duration to schedule this task."
+    if not availability["complete"]:
+        names = ", ".join(
+            entry["source"].title()
+            for entry in availability["source_health"]
+            if entry["status"] == "unavailable"
+        )
+        return f"Waiting for {names} calendar availability."
+    return "No suitable slot within your availability and deadline."
+
+
 def place_one(
-    owner_id: str, item_id: str, *, earliest: dt.datetime | None = None
+    owner_id: str,
+    item_id: str,
+    *,
+    earliest: dt.datetime | None = None,
+    availability: dict[str, Any] | None = None,
+    record_undo: bool = False,
 ) -> dict[str, Any] | None:
-    """Book one task into the first gap in your hours, no earlier than `earliest`.
-
-    Returns the stored item, or None if it would not fit inside the week.
-
-    Uses the same `place` as a whole scheduling run, so there is still exactly one piece of code
-    that decides when something may happen, and it still only ever looks at working hours.
-
-    `earliest` is how a batch sequences its steps without a dependency graph: each step after the
-    first is floored to the previous step's booked end, so "research, then slides" cannot come
-    back with slides before research even when research lands the busier of the two days.
-    """
-    at = now()
-    if earliest is not None and earliest > at:
-        at = earliest
-    hours = current_hours(owner_id)
-    busy = busy_windows(owner_id)
-
+    at = max(now(), earliest) if earliest is not None else now()
+    availability = availability if availability is not None else _external_availability(owner_id)
+    _ensure_hours(owner_id)
     with store.session() as session:
+        hours = _locked_hours(session, owner_id)
         item = store.get_item(session, owner_id, item_id)
-        if item is None or not _is_local_item(item, owner_id) or item.start_at is not None:
+        if item is None or not _is_local_item(item, owner_id) or item.status != "open":
             return None
-
-        slots = place(rank([item], at=at), busy=busy, hours=hours, at=at, days=7)
-        if not slots:
-            return None
-
-        slot = slots[0]
-        item.start_at = slot.start
-        item.end_at = slot.end
+        if item.start_at is not None:
+            return item.to_dict()
+        items = store.open_items(session, owner_id)
+        busy = [
+            *availability["busy"],
+            *((entry.start_at, entry.end_at) for entry in items if entry.start_at and entry.end_at),
+        ]
+        slots = (
+            place(
+                rank([item], at=at),
+                busy=busy,
+                hours=hours,
+                at=at,
+                days=7,
+                scheduled=[entry for entry in items if _is_local_item(entry, owner_id)],
+            )
+            if availability["complete"]
+            else []
+        )
+        if slots:
+            if record_undo:
+                store.record(
+                    session,
+                    owner_id,
+                    label=f"Scheduled “{item.title}”",
+                    item=item,
+                    before=item.to_dict(),
+                )
+            item.start_at, item.end_at = slots[0].start, slots[0].end
         session.flush()
         payload = item.to_dict()
-
-    calendar = connected_calendar(owner_id)
-    if calendar is not None:
-        with contextlib.suppress(CalendarError):
-            event_id = calendar.add_block(
-                item_id=slot.item_id,
-                title=slot.title,
-                start=slot.start,
-                end=slot.end,
-                description=payload["notes"],
-                location=item_location(payload["notes"]),
-            )
-            with store.session() as session:
-                stored = store.get_item(session, owner_id, item_id)
-                if stored:
-                    stored.google_event_id = event_id
-                    payload = stored.to_dict()
-
-    return payload
+        if not slots:
+            payload["waiting_reason"] = _waiting_reason(payload, availability)
+        return payload
 
 
 def to_local(iso: str) -> str:
@@ -1177,9 +1279,18 @@ def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
                 payloads[item_id] = item.to_dict()
 
     booked: list[dict[str, Any]] = []
+    availability = _external_availability(owner_id)
+    blocked = False
     for item_id in created:
-        result = place_one(owner_id, item_id, earliest=floor)
+        result = (
+            None
+            if blocked
+            else place_one(owner_id, item_id, earliest=floor, availability=availability)
+        )
         payload = result if result is not None else payloads[item_id]
+        if blocked:
+            payload["waiting_reason"] = "Waiting for the earlier batch step to be scheduled."
+        blocked = blocked or not payload["start_at"]
         booked.append(payload)
         if payload["start_at"]:
             # Sequence the next step after the slot just placed.
@@ -1190,7 +1301,7 @@ def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
     message = f"Added {len(booked)} tasks, starting with “{first['title']}”"
     message += f", {to_local(first['start_at'])}." if first["start_at"] else "."
     if unplaced:
-        message += f" {unplaced} could not fit in your hours this week."
+        message += f" {unplaced} saved and waiting for scheduling."
 
     return {
         "kind": "added",
@@ -1199,7 +1310,7 @@ def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
         "chip": [
             f"{payload['title']} · {to_local(payload['start_at'])}"
             if payload["start_at"]
-            else f"{payload['title']} · no room this week"
+            else f"{payload['title']} · {payload.get('waiting_reason', 'waiting')}"
             for payload in booked
         ],
     }
@@ -1238,79 +1349,73 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
 
         store.record(session, owner_id, label=label, item=item, before=before)
         payload = item.to_dict()
-        event_id = item.google_event_id if item.status != "open" else None
-
-    calendar = connected_calendar(owner_id) if event_id else None
-    if event_id and calendar is not None:
-        with contextlib.suppress(CalendarError):
-            calendar.remove_block(event_id)
 
     return {"kind": kind, "message": label + ".", "item": payload}
 
 
 def schedule_now(owner_id: str) -> list[Slot]:
-    slots = plan_tasks(owner_id)
-    return apply_slots(owner_id, slots)
+    return apply_slots(owner_id, None)
 
 
 def plan_tasks(owner_id: str, *, item_ids: list[str] | None = None, days: int = 7) -> list[Slot]:
-    at = now()
-    hours = current_hours(owner_id)
-    busy = busy_windows(owner_id, days=days)
-    selected = set(item_ids or [])
-
-    with store.session() as session:
-        ranked = rank(
-            [
-                item
-                for item in store.open_items(session, owner_id)
-                if _is_local_item(item, owner_id) and (not selected or item.id in selected)
-            ],
-            at=at,
-        )
-    return place(ranked, busy=busy, hours=hours, at=at, days=days)
-
-
-def apply_slots(owner_id: str, slots: list[Slot]) -> list[Slot]:
-    if not slots:
+    availability = _external_availability(owner_id, days=days + 1)
+    if not availability["complete"]:
         return []
-    applied: list[Slot] = []
     with store.session() as session:
-        for slot in slots:
-            item = store.get_item(session, owner_id, slot.item_id)
-            if item is None or not _is_local_item(item, owner_id) or item.scheduled:
-                continue
-            item.start_at = slot.start
-            item.end_at = slot.end
-            applied.append(slot)
-        if not applied:
-            return []
-        store.record(
+        return _plan_in_session(
+            session, owner_id, current_hours(owner_id), availability, item_ids, days
+        )
+
+
+def _plan_in_session(
+    session: Any,
+    owner_id: str,
+    hours: Hours,
+    availability: dict[str, Any],
+    item_ids: list[str] | None,
+    days: int,
+) -> list[Slot]:
+    at = now()
+    items = store.open_items(session, owner_id)
+    local = [item for item in items if _is_local_item(item, owner_id)]
+    selected = set(item_ids or [])
+    ranked = rank([item for item in local if not selected or item.id in selected], at=at)
+    busy = [
+        *availability["busy"],
+        *((item.start_at, item.end_at) for item in items if item.start_at and item.end_at),
+    ]
+    return place(ranked, busy=busy, hours=hours, at=at, days=days, scheduled=local)
+
+
+def apply_slots(owner_id: str, slots: list[Slot] | None, *, days: int = 7) -> list[Slot]:
+    if slots == []:
+        return []
+    availability = _external_availability(owner_id, days=days + 1)
+    if not availability["complete"]:
+        return []
+    _ensure_hours(owner_id)
+    with store.session() as session:
+        hours = _locked_hours(session, owner_id)
+        applied = _plan_in_session(
             session,
             owner_id,
-            label=f"Scheduled {len(applied)} task{'s' if len(applied) != 1 else ''}",
-            item=None,
-            before={"scheduled": [slot.item_id for slot in applied]},
+            hours,
+            availability,
+            [slot.item_id for slot in slots] if slots is not None else None,
+            days,
         )
-
-    calendar = connected_calendar(owner_id)
-    if calendar is not None:
         for slot in applied:
-            try:
-                event_id = calendar.add_block(
-                    item_id=slot.item_id,
-                    title=slot.title,
-                    start=slot.start,
-                    end=slot.end,
-                )
-                with store.session() as session:
-                    item = store.get_item(session, owner_id, slot.item_id)
-                    if item:
-                        item.google_event_id = event_id
-            except CalendarError:
-                # Leave it scheduled locally. The calendar can catch up next time.
-                continue
-    return applied
+            item = store.get_item(session, owner_id, slot.item_id)
+            item.start_at, item.end_at = slot.start, slot.end
+        if applied:
+            store.record(
+                session,
+                owner_id,
+                label=f"Scheduled {len(applied)} tasks",
+                item=None,
+                before={"scheduled": [slot.item_id for slot in applied]},
+            )
+        return applied
 
 
 def undo_last(owner_id: str) -> dict[str, Any]:
@@ -1324,12 +1429,7 @@ def undo_last(owner_id: str) -> dict[str, Any]:
             # The change created the item, so undoing means removing it.
             item = store.get_item(session, owner_id, change.item_id)
             if item is not None:
-                event_id = item.google_event_id
                 session.delete(item)
-                calendar = connected_calendar(owner_id) if event_id else None
-                if event_id and calendar is not None:
-                    with contextlib.suppress(CalendarError):
-                        calendar.remove_block(event_id)
         elif change.item_id:
             item = store.get_item(session, owner_id, change.item_id)
             if item is not None:
@@ -1339,13 +1439,8 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                 item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
-                calendar = connected_calendar(owner_id) if item.google_event_id else None
-                if item.google_event_id and calendar is not None:
-                    with contextlib.suppress(CalendarError):
-                        calendar.remove_block(item.google_event_id)
                 item.start_at = None
                 item.end_at = None
-                item.google_event_id = None
         elif "bulk" in before:
             # A bulk complete or drop, restored item by item to exactly what each was before.
             for snapshot in before["bulk"]:
@@ -1362,12 +1457,7 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                 item = store.get_item(session, owner_id, item_id)
                 if item is None:
                     continue
-                event_id = item.google_event_id
                 session.delete(item)
-                calendar = connected_calendar(owner_id) if event_id else None
-                if event_id and calendar is not None:
-                    with contextlib.suppress(CalendarError):
-                        calendar.remove_block(event_id)
 
         change.undone = 1
         label = change.label
@@ -1492,7 +1582,6 @@ def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
     precisely what was shown and nothing that arrived since.
     """
     owner_id = request_owner(request).uid
-    done_google: list[str] = []
     touched: list[str] = []
     with store.session() as session:
         before: list[dict[str, Any]] = []
@@ -1506,8 +1595,6 @@ def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
                 item.done_at = now()
             else:
                 item.status = "dropped"
-            if item.google_event_id:
-                done_google.append(item.google_event_id)
             touched.append(item.title)
 
         if not touched:
@@ -1521,12 +1608,6 @@ def bulk(body: BulkIn, request: Request) -> dict[str, Any]:
         label = f"{verb_past} {len(touched)} item{'s' if len(touched) != 1 else ''}"
         # One change row for the batch: undo puts the whole set back in a single step.
         store.record(session, owner_id, label=label, item=None, before={"bulk": before})
-
-    calendar = connected_calendar(owner_id)
-    if calendar is not None:
-        for event_id in done_google:
-            with contextlib.suppress(CalendarError):
-                calendar.remove_block(event_id)
 
     kind = "completed" if body.verb == "complete" else "dropped"
     return {
@@ -1568,6 +1649,21 @@ def edit(item_id: str, body: ItemIn, request: Request) -> dict[str, Any]:
 @app.post("/api/items/{item_id}/{verb}")
 def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
+    if verb == "schedule":
+        result = place_one(owner_id, item_id, record_undo=True)
+        if result is None:
+            raise HTTPException(status_code=404, detail="No such open local item.")
+        message = (
+            f"Scheduled “{result['title']}”, {to_local(result['start_at'])}."
+            if result.get("start_at")
+            else result["waiting_reason"]
+        )
+        return {
+            "kind": "scheduled" if result.get("start_at") else "note",
+            "message": message,
+            "item": result,
+            "view": today_view(owner_id),
+        }
     if verb not in ("complete", "drop", "pin"):
         raise HTTPException(status_code=404, detail="Unknown action.")
     with store.session() as session:
@@ -1608,22 +1704,21 @@ def do_undo(request: Request) -> dict[str, Any]:
 @app.put("/api/hours")
 def set_hours(body: HoursIn, request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
-    if body.end_hour <= body.start_hour:
+    if body.windows is None and body.end_hour <= body.start_hour:
         raise HTTPException(status_code=422, detail="Your day has to end after it starts.")
-    if not body.weekdays:
+    if body.windows is None and not body.weekdays:
         raise HTTPException(status_code=422, detail="Pick at least one day.")
     if any(day < 0 or day > 6 for day in body.weekdays):
         raise HTTPException(status_code=422, detail="Days must be 0 (Monday) to 6 (Sunday).")
-    store.set_setting(
-        owner_id,
-        HOURS_SETTING,
-        {
-            "start_hour": body.start_hour,
-            "end_hour": body.end_hour,
-            "weekdays": sorted(set(body.weekdays)),
-            "max_per_day": body.max_per_day,
-        },
-    )
+    if body.windows is not None and any(
+        day < 0 or day > 6 or start < 0 or start >= 1440 or end < 0 or end > 1440
+        for day, start, end in body.windows
+    ):
+        raise HTTPException(status_code=422, detail="Invalid availability window.")
+    previous = store.get_setting(owner_id, HOURS_SETTING) or {}
+    if previous.get("windows") is not None and "windows" not in body.model_fields_set:
+        raise HTTPException(status_code=409, detail="Reload Settings before changing availability.")
+    store.set_setting(owner_id, HOURS_SETTING, body.model_dump())
     return {"view": today_view(owner_id)}
 
 

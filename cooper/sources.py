@@ -19,13 +19,12 @@ Two rules this file must keep:
 
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from cooper.db import aware
-from cooper.google import Busy, CalendarError
+from cooper.google import Busy
 
 if TYPE_CHECKING:
     from cooper.db import Store
@@ -45,11 +44,7 @@ def collect_google(calendar: CalendarProvider | None, *, days: int) -> list[Inte
     """Busy intervals from Google Calendar, or nothing if it is off or unreachable."""
     if calendar is None or not calendar.connected:
         return []
-    spans: list[Interval] = []
-    # A calendar problem must not stop planning; it only means less awareness of what is booked.
-    with contextlib.suppress(CalendarError):
-        spans.extend((entry.start, entry.end) for entry in calendar.busy(days=days))
-    return spans
+    return [(entry.start, entry.end) for entry in calendar.busy(days=days)]
 
 
 def collect_local(store: Store, owner_id: str, *, at: dt.datetime) -> list[Interval]:  # noqa: ARG001
@@ -99,3 +94,13 @@ def busy_windows(
     spans.extend(collect_gmail(store, owner_id, at=at))
     spans.extend(collect_local(store, owner_id, at=at))
     return spans
+
+
+def merge_intervals(spans: list[Interval]) -> list[Interval]:
+    merged: list[Interval] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged

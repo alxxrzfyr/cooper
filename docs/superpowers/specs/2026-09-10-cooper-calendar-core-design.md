@@ -1,8 +1,9 @@
 # Cooper calendar core repair
 
 Date: 2026-09-10
-Status: Design direction approved in conversation; written specification awaiting review.
-Review status: CEO review pending. Implementation has not started.
+Status: Design direction and written specification approved in conversation.
+Review status: CEO Hold scope review complete with engineering concerns. Implementation has not started.
+Review: ../plans/2026-09-10-cooper-calendar-core-ceo-review.md
 
 ## Purpose
 
@@ -65,9 +66,10 @@ Manual, AI, batch, schedule, tool application, and undo. Removing only the add c
 is insufficient. Keep provider authentication and token storage unchanged in this work.
 
 Existing Google copies must not be deleted automatically. Preserve their identifiers
-so the application can recognize links. Their display and conflict treatment after a
-local item moves needs an explicit CEO-review decision; do not hide a real external
-commitment simply because it was originally written by Cooper.
+so the application can recognize links. Combine display only when the owner-scoped provider link, times, title, and
+comparable user-authored details match. Otherwise display both with a difference
+notice. Orphans remain external events. Their real external times remain busy.
+Never hide an external commitment based only on its Cooper-origin marker.
 
 ### Capture and placement
 
@@ -79,7 +81,7 @@ A task with an explicit duration is saved and automatically considered for place
 A task without a duration remains ranked and visible with a missing-duration reason.
 Never invent an estimate or silently shorten or lengthen the requested duration.
 
-Implementation default proposed for review: preserve one continuous work session per
+Reviewed decision: preserve one continuous work session per
 task in this repair. If the whole duration cannot fit, leave it waiting; do not silently
 split it. Automatic multi-session task splitting is not included in the approved scope.
 
@@ -131,8 +133,8 @@ If previously displayed data is retained, label it as stale and do not use it to
 a newly scheduled slot is conflict-free.
 
 Recovery must retry placement for the existing item, not create another task. A
-successful refresh alone must not unexpectedly rearrange the day. The exact recovery
-interaction is a CEO-review decision. No retry daemon or second watcher is proposed.
+successful refresh alone must not unexpectedly rearrange the day. Use Retry scheduling on the existing waiting item; already scheduled retries are
+no-ops, and current source health/settings must be checked before applying a slot. No retry daemon or second watcher is proposed.
 
 ### AI boundaries and replies
 
@@ -227,10 +229,13 @@ a compatible rollback target rather than blindly reverting to the current writer
 - Automatic task splitting, broad reranking changes, new agents, queues, dashboards,
   and wholesale interface redesign: not part of the approved repair.
 
-## Review checkpoints
+## Review outcome
 
-The high-level direction is approved. The written specification is awaiting the
-user's review. CEO review should hold this repair scope and examine its unresolved
-details, including legacy Google copies, recovery interaction, and long-task handling.
-Those defaults are recommendations, not claims of separate user approval. Complete
-the review before describing the plan as implementation-ready.
+The user approved this specification and Hold scope, then delegated routine review
+choices to the reviewer. The linked CEO report resolves those choices and specifies
+exact-duration tasks, explicit existing-item retry, legacy-copy handling, read-only
+AI questions, ordered batch waiting, owner-serialized placement, and compatible rollback.
+The report governs these refinements. Eight implementation tasks remain unimplemented.
+Engineering review must verify SQLite/Postgres reservation safety, concrete provider
+exception handling, and release compatibility before shipping. No live acceptance
+is implied by specification approval.

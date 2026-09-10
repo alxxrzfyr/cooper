@@ -352,11 +352,10 @@ class TestPlacing:
 
         assert place(rank([booked], at=NOW), busy=[], hours=self.hours(), at=NOW) == []
 
-    def test_a_long_task_is_capped_to_one_sitting(self) -> None:
+    def test_a_long_task_waits_for_a_complete_session(self) -> None:
         slots = place(rank([task(minutes=600)], at=NOW), busy=[], hours=self.hours(), at=NOW)
 
-        assert slots
-        assert slots[0].minutes <= 90
+        assert slots == []
 
     def test_with_no_working_days_nothing_is_placed(self) -> None:
         slots = place(
@@ -1562,3 +1561,93 @@ class TestNotEverythingImperativeIsATask:
 
         assert action.question is not None
         assert "calendar" in action.question.lower() or "task" in action.question.lower()
+
+
+class TestCalendarCoreRepair:
+    @pytest.mark.parametrize("minutes", [5, 120])
+    def test_preserves_exact_duration(self, minutes):
+        at = dt.datetime(2026, 9, 10, 9, tzinfo=dt.UTC)
+        slots = place(
+            rank([task(minutes=minutes, due=None)], at=at),
+            busy=[],
+            hours=Hours(start_hour=0, end_hour=23, weekdays=tuple(range(7)), timezone="UTC"),
+            at=at,
+        )
+        assert slots[0].minutes == minutes
+
+    def test_full_day_ends_at_next_midnight(self):
+        at = dt.datetime(2026, 9, 10, 23, tzinfo=dt.UTC)
+        slots = place(
+            rank([task(minutes=30, due=None)], at=at),
+            busy=[],
+            hours=Hours(start_hour=0, end_hour=24, weekdays=tuple(range(7)), timezone="UTC"),
+            at=at,
+        )
+        assert slots[0].start == at + dt.timedelta(minutes=15)
+
+    def test_task_must_finish_before_deadline(self):
+        at = dt.datetime(2026, 9, 10, 9, tzinfo=dt.UTC)
+        slots = place(
+            rank([task(minutes=120, due=at + dt.timedelta(hours=1))], at=at),
+            busy=[],
+            hours=Hours(start_hour=0, end_hour=23, weekdays=tuple(range(7)), timezone="UTC"),
+            at=at,
+        )
+        assert slots == []
+
+    def test_overnight_tail_is_available(self):
+        at = dt.datetime(2026, 9, 11, 0, tzinfo=dt.UTC)
+        hours = Hours(timezone="UTC", windows=((3, 22 * 60, 2 * 60),))
+        slots = place(rank([task(minutes=60, due=None)], at=at), busy=[], hours=hours, at=at)
+        assert slots[0].start == at + dt.timedelta(minutes=15)
+
+    def test_daily_limits_include_existing_tasks(self):
+        at = dt.datetime(2026, 9, 10, 9, tzinfo=dt.UTC)
+        existing = task(minutes=45, start_at=at, end_at=at + dt.timedelta(minutes=45))
+        hours = Hours(
+            timezone="UTC",
+            start_hour=0,
+            end_hour=24,
+            weekdays=tuple(range(7)),
+            max_minutes_per_day=60,
+        )
+        slots = place(
+            rank([task(minutes=30, due=None)], at=at),
+            busy=[],
+            hours=hours,
+            at=at,
+            scheduled=[existing],
+        )
+        assert slots[0].start.date() == (at + dt.timedelta(days=1)).date()
+
+    def test_existing_task_has_break_on_both_sides(self):
+        at = dt.datetime(2026, 9, 10, 9, tzinfo=dt.UTC)
+        existing = task(
+            minutes=30, start_at=at + dt.timedelta(minutes=30), end_at=at + dt.timedelta(hours=1)
+        )
+        hours = Hours(
+            timezone="UTC", start_hour=0, end_hour=24, weekdays=tuple(range(7)), break_minutes=20
+        )
+        slots = place(
+            rank([task(minutes=15, due=None)], at=at),
+            busy=[],
+            hours=hours,
+            at=at,
+            scheduled=[existing],
+        )
+        assert slots[0].start == at + dt.timedelta(minutes=80)
+
+    def test_dst_keeps_elapsed_duration(self):
+        at = dt.datetime(2026, 11, 1, 4, tzinfo=dt.UTC)
+        hours = Hours(timezone="America/New_York", windows=((6, 0, 240),))
+        slots = place(rank([task(minutes=180, due=None)], at=at), busy=[], hours=hours, at=at)
+        assert slots[0].minutes == 180
+
+    def test_model_failure_does_not_guess_a_mutation(self, monkeypatch):
+        reader = brain.Brain(api_key="test", model="test", timezone=TZ)
+
+        def fail(*args, **kwargs):
+            raise TimeoutError()
+
+        monkeypatch.setattr(reader, "_call_gemini", fail)
+        assert reader.read("maybe arrange something for tomorrow", []).verb == "ask"

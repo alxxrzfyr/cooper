@@ -256,6 +256,7 @@ export function TaskFrame({
   onComplete,
   onPin,
   onDrop,
+  onSchedule,
 }: {
   item: Item | Ranked;
   today: string;
@@ -264,6 +265,7 @@ export function TaskFrame({
   onComplete: () => void;
   onPin: () => void;
   onDrop: () => void;
+  onSchedule?: () => void;
 }) {
   const late = item.due !== null && item.due.slice(0, 10) < today;
   const details = item.notes ? localDetails(item.notes) : null;
@@ -284,7 +286,8 @@ export function TaskFrame({
     facts.push([late ? "Overdue" : "Due", longDay(item.due)]);
   }
   if (item.pinned) facts.push(["Pinned", "Kept at the top of today"]);
-  if (item.google_event_id) facts.push(["Calendar", "In Google Calendar"]);
+  facts.push(["Calendar", item.source === "me" ? "Cooper" : "Imported from Gmail"]);
+  if (item.waiting_reason) facts.push(["Waiting", item.waiting_reason]);
   if (item.status !== "open") facts.push(["Status", item.status === "done" ? "Done" : "Dropped"]);
   if (details?.location) facts.push(["Location", details.location]);
   if (details?.meetingUrl) {
@@ -303,6 +306,9 @@ export function TaskFrame({
       footer={
         item.status === "open" ? (
           <>
+            {item.kind === "task" && !item.start_at && item.minutes && onSchedule && (
+              <button type="button" className="btn" disabled={busy} onClick={onSchedule}>Try scheduling</button>
+            )}
             <button
               type="button"
               className="btn btn--good"

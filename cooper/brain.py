@@ -267,6 +267,10 @@ class Brain:
                     continue
                 except Exception:
                     break
+            return Action(
+                verb="ask",
+                question="I could not understand that reliably. Please try again or use the form.",
+            )
 
         return rules_action
 

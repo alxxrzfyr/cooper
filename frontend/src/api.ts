@@ -100,7 +100,7 @@ export const api = {
   bulk: (verb: "complete" | "drop", ids: string[]) => call<Reply>("/api/bulk", post({ verb, ids })),
   schedule: () => call<{ placed: unknown[]; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
-  act: (id: string, verb: "complete" | "drop" | "pin") =>
+  act: (id: string, verb: "complete" | "drop" | "pin" | "schedule") =>
     call<Reply>(`/api/items/${id}/${verb}`, post()),
   edit: (id: string, changes: Partial<Pick<Item, "title" | "minutes" | "importance">>) =>
     call<{ item: Item; view: View }>(`/api/items/${id}`, {

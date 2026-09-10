@@ -20,6 +20,7 @@ export interface Item {
   start_at: string | null;
   end_at: string | null;
   google_event_id: string | null;
+  waiting_reason?: string | null;
   status: Status;
   pinned: boolean;
   created_at: string;
@@ -50,6 +51,9 @@ export interface Hours {
   end_hour: number;
   weekdays: number[];
   max_per_day: number;
+  windows?: [number, number, number][] | null;
+  break_minutes?: number;
+  max_minutes_per_day?: number | null;
   timezone?: string;
 }
 
@@ -125,6 +129,7 @@ export interface SyncSummary {
 }
 
 export interface View {
+  source_health?: { source: string; status: "ok" | "unavailable"; message?: string }[];
   now: string;
   today: string;
   timezone: string;

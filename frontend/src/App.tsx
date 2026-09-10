@@ -4,6 +4,7 @@ import "./theme.css";
 import { applyAppearance, type Appearance, readAppearance, saveAppearance } from "./appearance";
 import { api } from "./api";
 import { Calendar } from "./Calendar";
+import { AvailabilitySettings } from "./AvailabilitySettings";
 import {
   Chat,
   loadMode,
@@ -52,7 +53,6 @@ import {
   type View,
 } from "./types";
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Appearance choices shown in Settings. */
 const APPEARANCES: Array<{ id: Appearance; label: string }> = [
@@ -126,22 +126,22 @@ export function initialAgentSteps(): AgentStep[] {
       id: "understand",
       title: "Understanding your request",
       source: "Cooper",
-      icon: "search",
+      icon: "spark",
       status: "running",
     },
     {
       id: "check",
       title: "Checking your plan",
       source: "Tasks",
-      icon: "connect",
-      status: "running",
+      icon: "search",
+      status: "pending",
     },
     {
       id: "answer",
       title: "Preparing your response",
       source: "Cooper",
-      icon: "calc",
-      status: "running",
+      icon: "write",
+      status: "pending",
     },
   ];
 }
@@ -366,6 +366,7 @@ export default function App() {
   const [guideSessionDismissed, setGuideSessionDismissed] = useState(false);
   const [hasCreatedItem, setHasCreatedItem] = useState(false);
   const noticeTimer = useRef<number | null>(null);
+  const agentPhaseTimers = useRef<number[]>([]);
   const observedGoogleEvents = useRef<Set<string> | null>(null);
   const firebaseSubject = useRef<string | null>(null);
   const authEpoch = useRef(0);
@@ -761,6 +762,22 @@ export default function App() {
       setAgentSteps(initialAgentSteps());
       setBusy(true);
 
+      const advanceAgentStep = (completedId: string, runningId: string) => {
+        setAgentSteps((current) =>
+          current?.map((step) =>
+            step.id === completedId
+              ? { ...step, status: "done" }
+              : step.id === runningId
+                ? { ...step, status: "running" }
+                : step,
+          ) ?? null,
+        );
+      };
+      agentPhaseTimers.current = [
+        window.setTimeout(() => advanceAgentStep("understand", "check"), 650),
+        window.setTimeout(() => advanceAgentStep("check", "answer"), 1_300),
+      ];
+
       try {
         const result = await api.say(said, openAsk ? "ai" : "manual", geminiKey);
         if (requestEpoch !== authEpoch.current) return;
@@ -810,6 +827,8 @@ export default function App() {
           announce("note", message);
         }
       } finally {
+        agentPhaseTimers.current.forEach((timer) => window.clearTimeout(timer));
+        agentPhaseTimers.current = [];
         setAgentSteps(null);
         setBusy(false);
       }
@@ -1148,92 +1167,10 @@ export default function App() {
                 )}
 
                 <section className="group">
-                  <div className="group__label">Working hours</div>
-                  <div className="inset">
-                    <div className="field">
-                      <span className="field__label">Start</span>
-                      <select
-                        aria-label="Day starts at"
-                        value={hours.start_hour}
-                        onChange={(event) =>
-                          void act(() =>
-                            api.setHours({
-                              ...hours,
-                              start_hour: Number(event.target.value),
-                            }),
-                          )
-                        }
-                      >
-                        {Array.from({ length: 24 }, (_, hour) => (
-                          <option key={hour} value={hour}>
-                            {String(hour).padStart(2, "0")}:00
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <span className="field__label">End</span>
-                      <select
-                        aria-label="Day ends at"
-                        value={hours.end_hour}
-                        onChange={(event) =>
-                          void act(() =>
-                            api.setHours({
-                              ...hours,
-                              end_hour: Number(event.target.value),
-                            }),
-                          )
-                        }
-                      >
-                        {Array.from({ length: 24 }, (_, index) => index + 1).map((hour) => (
-                          <option key={hour} value={hour}>
-                            {String(hour).padStart(2, "0")}:00
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="daypick">
-                      {DAYS.map((name, index) => (
-                        <button
-                          key={name}
-                          type="button"
-                          className="day"
-                          aria-pressed={hours.weekdays.includes(index)}
-                          onClick={() =>
-                            void act(() =>
-                              api.setHours({
-                                ...hours,
-                                weekdays: hours.weekdays.includes(index)
-                                  ? hours.weekdays.filter((day) => day !== index)
-                                  : [...hours.weekdays, index].sort((a, b) => a - b),
-                              }),
-                            )
-                          }
-                        >
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="field">
-                      <span className="field__label">Most blocks a day</span>
-                      <input
-                        type="number"
-                        aria-label="Most blocks a day"
-                        min={1}
-                        max={10}
-                        value={hours.max_per_day}
-                        onChange={(event) =>
-                          void act(() =>
-                            api.setHours({
-                              ...hours,
-                              max_per_day: Number(event.target.value),
-                            }),
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                  <p className="hint">Nothing is ever booked outside these hours.</p>
+                  <AvailabilitySettings hours={hours} busy={busy} onSave={(next) => act(() => api.setHours(next))} />
+                  {view.source_health?.filter((source) => source.status === "unavailable").map((source) => (
+                    <p className="hint" key={source.source}>{source.source}: {source.message ?? "Calendar unavailable. New tasks are saved and wait for a reliable availability check."}</p>
+                  ))}
                 </section>
 
                 <section className="group">
@@ -1553,6 +1490,7 @@ export default function App() {
             onComplete={() => void act(() => api.act(detail.id, "complete"))}
             onPin={() => void act(() => api.act(detail.id, "pin"))}
             onDrop={() => void act(() => api.act(detail.id, "drop"))}
+            onSchedule={() => { void act(() => api.act(detail.id, "schedule")); setDetail(null); }}
           />
         ) : (
           <CalendarEventFrame

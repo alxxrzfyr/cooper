@@ -884,6 +884,10 @@ select {
   color: var(--accent);
 }
 
+.agent-step--pending .agent-step__icon {
+  color: var(--faint);
+}
+
 .agent-step--done .agent-step__icon {
   background: color-mix(in srgb, var(--tone-good, #22c55e) 15%, transparent);
   color: var(--tone-good, #22c55e);
@@ -958,6 +962,14 @@ select {
   place-items: center;
   color: var(--accent);
   animation: spin 0.9s linear infinite;
+  flex: none;
+}
+
+.agent-step__pending {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--hair);
+  border-radius: 50%;
   flex: none;
 }
 

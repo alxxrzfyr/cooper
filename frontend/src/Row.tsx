@@ -63,7 +63,7 @@ export function Row({
               {late ? "overdue" : dueToday ? "due today" : `due ${shortDay(item.due)}`}
             </span>
           )}
-          {item.google_event_id && <span className="tag">Google</span>}
+          {item.waiting_reason && <span className="tag">{item.waiting_reason}</span>}
         </div>
       </button>
 

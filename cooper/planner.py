@@ -21,8 +21,6 @@ W_AGE = 0.15
 W_QUICK = 0.25
 
 HORIZON_DAYS = 14
-MIN_SLOT = 20
-MAX_SLOT = 90
 GAP = 10
 LEAD = 15
 
@@ -101,6 +99,9 @@ class Hours:
     weekdays: tuple[int, ...] = (0, 1, 2, 3, 4)
     timezone: str = "Asia/Singapore"
     max_per_day: int = 4
+    windows: tuple[tuple[int, int, int], ...] | None = None
+    break_minutes: int = GAP
+    max_minutes_per_day: int | None = None
 
     @classmethod
     def from_setting(cls, value: dict | None) -> Hours:
@@ -112,6 +113,13 @@ class Hours:
             weekdays=tuple(value.get("weekdays", [0, 1, 2, 3, 4])),
             timezone=str(value.get("timezone", "Asia/Singapore")),
             max_per_day=int(value.get("max_per_day", 4)),
+            windows=(
+                tuple(tuple(w) for w in value["windows"])
+                if value.get("windows") is not None
+                else None
+            ),
+            break_minutes=int(value.get("break_minutes", GAP)),
+            max_minutes_per_day=value.get("max_minutes_per_day"),
         )
 
     def as_setting(self) -> dict:
@@ -121,6 +129,9 @@ class Hours:
             "weekdays": list(self.weekdays),
             "timezone": self.timezone,
             "max_per_day": self.max_per_day,
+            "windows": [list(w) for w in self.windows] if self.windows is not None else None,
+            "break_minutes": self.break_minutes,
+            "max_minutes_per_day": self.max_minutes_per_day,
         }
 
 
@@ -131,80 +142,97 @@ def place(
     hours: Hours,
     at: dt.datetime,
     days: int = 7,
+    scheduled: list[Item] | None = None,
 ) -> list[Slot]:
-    """Fit the ranked tasks into working hours, around whatever is already booked.
-
-    Nothing lands outside your hours, because the only candidate times are built from them.
-
-    A task with no estimate is skipped rather than given an invented length. This used to assume
-    half an hour, on the grounds that skipping silently left an item stranded with nothing on
-    screen explaining why. The dashboard's "waiting for a time" group is that explanation, so the
-    guess is no longer buying anything — and an errand like "buy milk" should be on a list, not
-    holding a booking.
-    """
+    """Place exact continuous sessions within availability and before deadlines."""
     zone = ZoneInfo(hours.timezone)
-    earliest = at + dt.timedelta(minutes=LEAD)
-    taken = sorted(busy)
-    per_day: dict[dt.date, int] = {}
-    slots: list[Slot] = []
-
-    for entry in ranked:
-        if entry.item.scheduled or entry.item.minutes is None:
+    earliest = at.astimezone(dt.UTC) + dt.timedelta(minutes=LEAD)
+    taken = [(a.astimezone(dt.UTC), b.astimezone(dt.UTC)) for a, b in busy]
+    counts: dict[dt.date, int] = {}
+    minutes: dict[dt.date, int] = {}
+    gap = dt.timedelta(minutes=hours.break_minutes)
+    for item in scheduled or []:
+        if item.status != "open" or item.kind != "task" or not item.scheduled:
             continue
-        length = max(MIN_SLOT, min(entry.item.minutes, MAX_SLOT))
-
-        placed = _first_gap(
-            length=length,
-            zone=zone,
-            hours=hours,
-            earliest=earliest,
-            taken=taken,
-            per_day=per_day,
-            days=days,
-        )
-        if placed is None:
+        start, end = aware(item.start_at), aware(item.end_at)
+        if start is None or end is None:
             continue
-
-        start, end = placed
-        slots.append(Slot(item_id=entry.item.id, title=entry.item.title, start=start, end=end))
-        taken.append((start, end + dt.timedelta(minutes=GAP)))
-        taken.sort()
+        taken.append((start - gap, end + gap))
         day = start.astimezone(zone).date()
-        per_day[day] = per_day.get(day, 0) + 1
-
+        counts[day] = counts.get(day, 0) + 1
+        minutes[day] = minutes.get(day, 0) + int((end - start).total_seconds() / 60)
+    taken.sort()
+    windows = _windows(hours, earliest, days)
+    slots: list[Slot] = []
+    for entry in ranked:
+        item = entry.item
+        if item.scheduled or item.minutes is None or item.minutes <= 0:
+            continue
+        duration = dt.timedelta(minutes=item.minutes)
+        deadline = aware(item.due)
+        for window_start, window_end in windows:
+            cursor = max(window_start, earliest)
+            limit = min(window_end, deadline) if deadline else window_end
+            while cursor + duration <= limit:
+                day = cursor.astimezone(zone).date()
+                if counts.get(day, 0) >= hours.max_per_day or (
+                    hours.max_minutes_per_day is not None
+                    and minutes.get(day, 0) + item.minutes > hours.max_minutes_per_day
+                ):
+                    cursor = dt.datetime.combine(
+                        day + dt.timedelta(days=1), dt.time(), tzinfo=zone
+                    ).astimezone(dt.UTC)
+                    continue
+                end = cursor + duration
+                clash = next(((a, b) for a, b in taken if a < end and cursor < b), None)
+                if clash:
+                    cursor = clash[1]
+                    continue
+                slots.append(Slot(item_id=item.id, title=item.title, start=cursor, end=end))
+                taken.append((cursor - gap, end + gap))
+                taken.sort()
+                counts[day] = counts.get(day, 0) + 1
+                minutes[day] = minutes.get(day, 0) + item.minutes
+                break
+            else:
+                continue
+            break
     return slots
 
 
-def _first_gap(
-    *,
-    length: int,
-    zone: ZoneInfo,
-    hours: Hours,
-    earliest: dt.datetime,
-    taken: list[tuple[dt.datetime, dt.datetime]],
-    per_day: dict[dt.date, int],
-    days: int,
-) -> tuple[dt.datetime, dt.datetime] | None:
+def _windows(
+    hours: Hours, earliest: dt.datetime, days: int
+) -> list[tuple[dt.datetime, dt.datetime]]:
+    """Expand local windows, including yesterday's overnight tail, into UTC."""
+    zone = ZoneInfo(hours.timezone)
     today = earliest.astimezone(zone).date()
-
-    for offset in range(days):
+    rules = (
+        hours.windows
+        if hours.windows is not None
+        else tuple((day, hours.start_hour * 60, hours.end_hour * 60) for day in hours.weekdays)
+    )
+    windows = []
+    horizon = dt.datetime.combine(
+        today + dt.timedelta(days=days), dt.time(), tzinfo=zone
+    ).astimezone(dt.UTC)
+    for offset in range(-1, days):
         day = today + dt.timedelta(days=offset)
-        if day.weekday() not in hours.weekdays:
-            continue
-        if per_day.get(day, 0) >= hours.max_per_day:
-            continue
-
-        window_start = dt.datetime.combine(day, dt.time(hours.start_hour), tzinfo=zone)
-        window_end = dt.datetime.combine(day, dt.time(hours.end_hour), tzinfo=zone)
-        cursor = max(window_start, earliest)
-
-        while cursor + dt.timedelta(minutes=length) <= window_end:
-            candidate_end = cursor + dt.timedelta(minutes=length)
-            clash = next(
-                ((start, end) for start, end in taken if start < candidate_end and cursor < end),
-                None,
-            )
-            if clash is None:
-                return (cursor, candidate_end)
-            cursor = clash[1]
-    return None
+        midnight = dt.datetime.combine(day, dt.time(), tzinfo=zone)
+        for weekday, start_minute, end_minute in rules:
+            if day.weekday() != weekday:
+                continue
+            start = (midnight + dt.timedelta(minutes=start_minute)).astimezone(dt.UTC)
+            end = (
+                midnight
+                + dt.timedelta(minutes=end_minute + (1440 if end_minute <= start_minute else 0))
+            ).astimezone(dt.UTC)
+            end = min(end, horizon)
+            if end > max(start, earliest):
+                windows.append((start, end))
+    merged: list[tuple[dt.datetime, dt.datetime]] = []
+    for start, end in sorted(windows):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged

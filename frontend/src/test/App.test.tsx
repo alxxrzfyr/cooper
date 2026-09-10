@@ -126,12 +126,12 @@ function reply(overrides: Partial<Reply> = {}): Reply {
   };
 }
 
-test("Ask starts with all three intended loading statuses", () => {
+test("Ask starts with only the first loading status active", () => {
   const steps = initialAgentSteps();
 
   expect(steps).toHaveLength(3);
-  expect(steps.map((step) => step.icon)).toEqual(["search", "connect", "calc"]);
-  expect(steps.every((step) => step.status === "running")).toBe(true);
+  expect(steps.map((step) => step.icon)).toEqual(["spark", "search", "write"]);
+  expect(steps.map((step) => step.status)).toEqual(["running", "pending", "pending"]);
 });
 
 /** Navigate from the dashboard to the conversation. */
