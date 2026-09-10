@@ -18,14 +18,7 @@ export interface Turn {
 }
 
 export type StepStatus = "pending" | "running" | "done" | "error";
-export type StepIcon =
-  | "spark"
-  | "search"
-  | "connect"
-  | "calc"
-  | "write"
-  | "calendar"
-  | "mail";
+export type StepIcon = "spark" | "search" | "connect" | "calc" | "write" | "calendar" | "mail";
 
 /** One step shown in the agent trace while thinking. */
 export interface AgentStep {

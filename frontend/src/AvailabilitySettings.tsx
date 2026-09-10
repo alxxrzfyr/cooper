@@ -201,8 +201,7 @@ export function AvailabilitySettings({
               value={clock(end === 1440 ? 0 : end)}
               required
               onChange={(event) => {
-                if (event.target.value)
-                  updateWindow(index, 2, minutes(event.target.value) || 1440);
+                if (event.target.value) updateWindow(index, 2, minutes(event.target.value) || 1440);
               }}
             />
             <button

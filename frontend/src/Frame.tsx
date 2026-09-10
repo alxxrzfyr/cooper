@@ -307,7 +307,9 @@ export function TaskFrame({
         item.status === "open" ? (
           <>
             {item.kind === "task" && !item.start_at && item.minutes && onSchedule && (
-              <button type="button" className="btn" disabled={busy} onClick={onSchedule}>Try scheduling</button>
+              <button type="button" className="btn" disabled={busy} onClick={onSchedule}>
+                Try scheduling
+              </button>
             )}
             <button
               type="button"

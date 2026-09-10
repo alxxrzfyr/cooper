@@ -53,7 +53,6 @@ import {
   type View,
 } from "./types";
 
-
 /** Appearance choices shown in Settings. */
 const APPEARANCES: Array<{ id: Appearance; label: string }> = [
   { id: "light", label: "Light" },
@@ -763,14 +762,15 @@ export default function App() {
       setBusy(true);
 
       const advanceAgentStep = (completedId: string, runningId: string) => {
-        setAgentSteps((current) =>
-          current?.map((step) =>
-            step.id === completedId
-              ? { ...step, status: "done" }
-              : step.id === runningId
-                ? { ...step, status: "running" }
-                : step,
-          ) ?? null,
+        setAgentSteps(
+          (current) =>
+            current?.map((step) =>
+              step.id === completedId
+                ? { ...step, status: "done" }
+                : step.id === runningId
+                  ? { ...step, status: "running" }
+                  : step,
+            ) ?? null,
         );
       };
       agentPhaseTimers.current = [
@@ -1167,10 +1167,20 @@ export default function App() {
                 )}
 
                 <section className="group">
-                  <AvailabilitySettings hours={hours} busy={busy} onSave={(next) => act(() => api.setHours(next))} />
-                  {view.source_health?.filter((source) => source.status === "unavailable").map((source) => (
-                    <p className="hint" key={source.source}>{source.source}: {source.message ?? "Calendar unavailable. New tasks are saved and wait for a reliable availability check."}</p>
-                  ))}
+                  <AvailabilitySettings
+                    hours={hours}
+                    busy={busy}
+                    onSave={(next) => act(() => api.setHours(next))}
+                  />
+                  {view.source_health
+                    ?.filter((source) => source.status === "unavailable")
+                    .map((source) => (
+                      <p className="hint" key={source.source}>
+                        {source.source}:{" "}
+                        {source.message ??
+                          "Calendar unavailable. New tasks are saved and wait for a reliable availability check."}
+                      </p>
+                    ))}
                 </section>
 
                 <section className="group">
@@ -1490,7 +1500,10 @@ export default function App() {
             onComplete={() => void act(() => api.act(detail.id, "complete"))}
             onPin={() => void act(() => api.act(detail.id, "pin"))}
             onDrop={() => void act(() => api.act(detail.id, "drop"))}
-            onSchedule={() => { void act(() => api.act(detail.id, "schedule")); setDetail(null); }}
+            onSchedule={() => {
+              void act(() => api.act(detail.id, "schedule"));
+              setDetail(null);
+            }}
           />
         ) : (
           <CalendarEventFrame
