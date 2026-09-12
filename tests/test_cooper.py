@@ -71,7 +71,7 @@ class TestReadingSentences:
         assert action.due == today + dt.timedelta(days=ahead)
 
     def test_a_clock_time_makes_it_an_event(self) -> None:
-        action = read("dentist thursday 3pm")
+        action = read("dentist thursday 3pm 60m")
 
         assert action.kind == "event"
         assert action.title == "dentist"
@@ -80,7 +80,7 @@ class TestReadingSentences:
         assert action.end == action.start + dt.timedelta(minutes=60)
 
     def test_a_twenty_four_hour_time_works(self) -> None:
-        action = read("standup tomorrow 09:30")
+        action = read("standup tomorrow 09:30 30m")
 
         assert action.start is not None
         assert (action.start.astimezone(ZONE).hour, action.start.astimezone(ZONE).minute) == (9, 30)
@@ -90,6 +90,12 @@ class TestReadingSentences:
 
         assert action.end is not None and action.start is not None
         assert action.end - action.start == dt.timedelta(hours=2)
+
+    def test_a_fixed_time_without_a_duration_asks(self) -> None:
+        action = read("dentist thursday 3pm")
+
+        assert action.verb == "ask"
+        assert "long" in (action.question or "").lower()
 
     def test_a_day_without_a_time_stays_a_task(self) -> None:
         assert read("call the dentist on thursday").kind == "task"
@@ -920,7 +926,7 @@ class TestAQuestionIsNotATask:
         "sentence",
         [
             "write the quarterly report, 90m",
-            "dentist thursday 3pm",
+            "dentist thursday 3pm 60m",
             "whatsapp the client back",  # starts with "what" but is an instruction
         ],
     )
@@ -1308,7 +1314,7 @@ class TestOneSentenceIntoManyTasks:
         assert action.verb == "ask"
         assert action.question
 
-    def test_steps_with_blank_titles_are_dropped_not_created(
+    def test_blank_batch_step_asks_instead_of_silently_dropping_it(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         cooper = _brain()
@@ -1322,9 +1328,27 @@ class TestOneSentenceIntoManyTasks:
 
         action = cooper.read("research, then nothing", [])
 
-        assert action.verb == "batch"
-        assert action.steps is not None
-        assert len(action.steps) == 1
+        assert action.verb == "ask"
+        assert action.question
+
+    def test_invalid_batch_duration_asks_before_saving_any_step(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cooper = _brain()
+        monkeypatch.setattr(
+            cooper,
+            "_generate",
+            lambda prompt, **kwargs: (
+                '{"verb": "batch", "steps": ['
+                '{"title": "research", "minutes": 60},'
+                '{"title": "slides", "minutes": 1500}]}'
+            ),
+        )
+
+        action = cooper.read("research then slides", [])
+
+        assert action.verb == "ask"
+        assert action.question
 
     def test_a_plan_bigger_than_the_cap_asks_to_split_it(
         self, monkeypatch: pytest.MonkeyPatch

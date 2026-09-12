@@ -483,7 +483,7 @@ def validate(action: Action) -> Action:
 
     Manual mode's form builds an Action by hand and needs the identical guardrails: an add with
     no title becomes a question, an event that ends before it starts becomes one, a start with no
-    end gets a default duration. Keeping this the one validator means the form cannot smuggle an
+    end asks for a duration. Keeping this the one validator means the form cannot smuggle an
     unexecutable item past the rules the sentence path obeys.
     """
     return _sanity_check(action)
@@ -516,8 +516,15 @@ def _sanity_check(action: Action) -> Action:
             source=action.source,
         )
     if action.start and not action.end:
-        minutes = action.minutes or 60
-        action = dataclasses.replace(action, end=action.start + dt.timedelta(minutes=minutes))
+        if action.minutes is None:
+            return Action(
+                verb="ask",
+                question="How long does that appointment last?",
+                source=action.source,
+            )
+        action = dataclasses.replace(
+            action, end=action.start + dt.timedelta(minutes=action.minutes)
+        )
     if action.start:
         action = dataclasses.replace(action, kind="event")
     return action
@@ -528,13 +535,16 @@ MAX_BATCH = 8
 
 
 def _sanity_check_batch(action: Action) -> Action:
-    if any(step.verb != "add" for step in action.steps or ()):
+    steps = action.steps or ()
+    if any(step.verb != "add" or not step.title for step in steps):
         return Action(
             verb="ask",
-            question="Each part needs a task title and a duration of 24 hours or less.",
+            question=(
+                "I could not safely add every part. Please give each task a title "
+                "and a valid duration."
+            ),
             source=action.source,
         )
-    steps = tuple(step for step in (action.steps or ()) if step.title)
     if not steps:
         return Action(
             verb="ask",
