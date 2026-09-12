@@ -149,7 +149,7 @@ def place(
     earliest = at.astimezone(dt.UTC) + dt.timedelta(minutes=LEAD)
     taken = [(a.astimezone(dt.UTC), b.astimezone(dt.UTC)) for a, b in busy]
     counts: dict[dt.date, int] = {}
-    minutes: dict[dt.date, int] = {}
+    minutes: dict[dt.date, float] = {}
     gap = dt.timedelta(minutes=hours.break_minutes)
     for item in scheduled or []:
         if item.status != "open" or item.kind != "task" or not item.scheduled:
@@ -160,7 +160,8 @@ def place(
         taken.append((start - gap, end + gap))
         day = start.astimezone(zone).date()
         counts[day] = counts.get(day, 0) + 1
-        minutes[day] = minutes.get(day, 0) + int((end - start).total_seconds() / 60)
+        for work_day, work_minutes in _day_minutes(start, end, zone).items():
+            minutes[work_day] = minutes.get(work_day, 0) + work_minutes
     taken.sort()
     windows = _windows(hours, earliest, days)
     slots: list[Slot] = []
@@ -175,15 +176,19 @@ def place(
             limit = min(window_end, deadline) if deadline else window_end
             while cursor + duration <= limit:
                 day = cursor.astimezone(zone).date()
+                end = cursor + duration
+                usage = _day_minutes(cursor, end, zone)
                 if counts.get(day, 0) >= hours.max_per_day or (
                     hours.max_minutes_per_day is not None
-                    and minutes.get(day, 0) + item.minutes > hours.max_minutes_per_day
+                    and any(
+                        minutes.get(work_day, 0) + work_minutes > hours.max_minutes_per_day
+                        for work_day, work_minutes in usage.items()
+                    )
                 ):
                     cursor = dt.datetime.combine(
                         day + dt.timedelta(days=1), dt.time(), tzinfo=zone
                     ).astimezone(dt.UTC)
                     continue
-                end = cursor + duration
                 clash = next(((a, b) for a, b in taken if a < end and cursor < b), None)
                 if clash:
                     cursor = clash[1]
@@ -192,12 +197,29 @@ def place(
                 taken.append((cursor - gap, end + gap))
                 taken.sort()
                 counts[day] = counts.get(day, 0) + 1
-                minutes[day] = minutes.get(day, 0) + item.minutes
+                for work_day, work_minutes in usage.items():
+                    minutes[work_day] = minutes.get(work_day, 0) + work_minutes
                 break
             else:
                 continue
             break
     return slots
+
+
+def _day_minutes(start: dt.datetime, end: dt.datetime, zone: ZoneInfo) -> dict[dt.date, float]:
+    """Charge elapsed work to every local date it actually occupies."""
+    usage: dict[dt.date, float] = {}
+    cursor = start.astimezone(dt.UTC)
+    end = end.astimezone(dt.UTC)
+    while cursor < end:
+        day = cursor.astimezone(zone).date()
+        next_midnight = dt.datetime.combine(
+            day + dt.timedelta(days=1), dt.time(), tzinfo=zone
+        ).astimezone(dt.UTC)
+        boundary = min(end, next_midnight)
+        usage[day] = usage.get(day, 0) + (boundary - cursor).total_seconds() / 60
+        cursor = boundary
+    return usage
 
 
 def _windows(

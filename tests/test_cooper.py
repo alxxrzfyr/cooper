@@ -1661,6 +1661,39 @@ class TestCalendarCoreRepair:
         )
         assert slots[0].start == at + dt.timedelta(minutes=80)
 
+    def test_overnight_existing_work_counts_on_both_dates(self):
+        at = dt.datetime(2026, 9, 11, 0, tzinfo=dt.UTC)
+        existing = task(
+            minutes=120,
+            start_at=at - dt.timedelta(hours=1),
+            end_at=at + dt.timedelta(hours=1),
+        )
+        hours = Hours(
+            timezone="UTC",
+            start_hour=0,
+            end_hour=24,
+            weekdays=tuple(range(7)),
+            max_minutes_per_day=90,
+        )
+        slots = place(
+            rank([task(minutes=60, due=None)], at=at),
+            busy=[],
+            hours=hours,
+            at=at,
+            scheduled=[existing],
+        )
+        assert slots[0].start.date() == (at + dt.timedelta(days=1)).date()
+
+    def test_new_overnight_work_splits_daily_minutes(self):
+        at = dt.datetime(2026, 9, 10, 23, tzinfo=dt.UTC)
+        hours = Hours(
+            timezone="UTC",
+            windows=((3, 23 * 60 + 15, 45),),
+            max_minutes_per_day=60,
+        )
+        slots = place(rank([task(minutes=90, due=None)], at=at), busy=[], hours=hours, at=at)
+        assert slots[0].start == at + dt.timedelta(minutes=15)
+
     def test_dst_keeps_elapsed_duration(self):
         at = dt.datetime(2026, 11, 1, 4, tzinfo=dt.UTC)
         hours = Hours(timezone="America/New_York", windows=((6, 0, 240),))
