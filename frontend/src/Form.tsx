@@ -66,7 +66,7 @@ export function Form({
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
 
-  const canSubmit = title.trim().length > 0 && !busy;
+  const canSubmit = title.trim().length > 0 && (!time || Number(minutes) > 0) && !busy;
 
   async function submit() {
     if (!canSubmit) return;
@@ -126,6 +126,7 @@ export function Form({
               </label>
               <input
                 id="f-title"
+                data-tour="form-title"
                 className="field__input"
                 value={title}
                 maxLength={300}
@@ -191,7 +192,9 @@ export function Form({
           </div>
           <p className="hint">
             {time
-              ? "A date and a time make an event, booked at that moment."
+              ? minutes
+                ? "A date, time, and duration make a fixed event in Cooper."
+                : "Add a duration to save this fixed event."
               : minutes
                 ? "A deadline without a time stays a task, ranked and scheduled into your hours."
                 : "Without a duration, this stays on your list until you give it time."}
