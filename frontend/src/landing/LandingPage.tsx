@@ -438,14 +438,14 @@ export function LandingPage({
                 <path d="M 176 274 C 176 290, 168 305, 158 316" markerEnd="url(#service-arrow)" />
                 <path d="M 362 274 C 366 290, 370 305, 370 316" markerEnd="url(#service-arrow)" />
               </svg>
-              <ServiceChip service="luma" note="via Gmail" />
-              <ServiceChip service="meetup" note="via Gmail" />
+              <ServiceChip service="luma" note="planned" />
+              <ServiceChip service="meetup" note="planned" />
               <ServiceChip service="teams" note="planned" />
               <ServiceChip service="classroom" note="planned" />
             </div>
             <div className="landing__hand-note landing__hand-note--connected">
               <HandArrow />
-              these block time automatically
+              connected calendars protect busy time
             </div>
             <Mascot name="cooper_syncing" size="md" decorative />
           </div>
@@ -455,7 +455,7 @@ export function LandingPage({
             <div className="landing__use-list">
               <article>
                 <strong>Classes &amp; deadlines</strong>
-                <span>Keep assignments visible without booking over lectures.</span>
+                <span>Keep your tasks visible without booking over connected events.</span>
               </article>
               <article>
                 <strong>Work &amp; errands</strong>
@@ -463,14 +463,14 @@ export function LandingPage({
               </article>
               <article>
                 <strong>Events from your inbox</strong>
-                <span>Luma, Meetup, and Eventbrite confirmations can reserve their time.</span>
+                <span>Supported Gmail confirmations can reserve their time when connected.</span>
               </article>
             </div>
             <div className="landing__privacy-note">
               <Mascot name="cooper_secure" size="xs" decorative />
               <div>
                 <strong>Private by design</strong>
-                <span>Gmail is read-only. Cooper writes only blocks it scheduled.</span>
+                <span>Connected calendars are read-only. New blocks stay in Cooper.</span>
               </div>
             </div>
           </div>
