@@ -5,11 +5,11 @@ Instructions for anyone changing this code, human or model.
 ## What this is
 
 One place for everything that takes your time — tasks, events, and errands — that you talk to.
-Six backend files, three tables. Runs on one machine for one person today, built so other people
-can use it later.
+Three owner-scoped tables and a small set of backend files. Runs locally and can use hosted
+authentication for approved users.
 
-Read `PRD.md`, then `ARCHITECTURE.md`. Both are short on purpose. `PRD.md` has seven
-requirements; four of them work and three are the build. Know which is which before you start.
+Read `PRD.md`, then `ARCHITECTURE.md`. `PRD.md` has seven requirements; the provider requirement
+is only partly built. Know which sources are live before you start.
 
 ## Commands
 
@@ -54,13 +54,14 @@ These are in `PRD.md` as product rules. Here is what they mean in code.
   An event parsed out of an email is not a shortcut past this: it becomes an `Action` and goes
   through `_sanity_check` like anything else. There is no second write path.
 - **An AI answer is text.** The answer path returns a string and writes nothing.
-- **Cooper writes to exactly one remote place:** blocks it placed, in Google Calendar. Microsoft
-  and the mail watcher are read-only. No RSVP, no creating Teams meetings, no posting anywhere.
+- **Cooper writes new calendar items only locally.** Google Calendar and iCloud are read-only
+  inputs. Legacy Google copies stay in place; do not delete them as a side effect of local edits.
 
 ### Time
 
-- **Placement only uses working hours.** Never widen `_first_gap` to consider other time. Busy
-  intervals from remote sources subtract from candidate times; they never add to them.
+- **Placement only uses configured availability.** `planner.place()` expands weekday and overnight
+  windows. Busy intervals from remote sources subtract from candidate times; they never add to
+  them. Respect exact duration, deadlines, breaks, and daily limits.
 - **Times are UTC in the database.** Use the `Utc` column type for any new timestamp, including
   anything read from a remote calendar. A naive datetime in SQLite silently shifts by your offset.
 
@@ -81,10 +82,11 @@ These are in `PRD.md` as product rules. Here is what they mean in code.
 
 - **It must work with no Gemini key, no Google account and no Microsoft account.** If your change
   breaks that, it is the wrong change. Every integration is additive.
-- **Manual mode never touches the network.** `Brain.read(use_model=False)` is the whole contract.
-  Manual is a form now, which makes this easier, not optional.
-- **A failed remote never blocks the user.** Wrap every call. The item is still captured, still
-  ranked, still scheduled locally. Local is the source of truth; every remote is a mirror.
+- **Manual form input never calls a model.** `Brain.read(use_model=False)` is the rule parser
+  contract. Placing a submitted task may read connected calendars for safe availability.
+- **A failed connected calendar never invents free time.** The item is captured and ranked, but
+  waits unscheduled with a visible reason until the source can be checked. No connected calendars
+  means normal local scheduling. Gmail watcher health is reported separately.
 
 ### The watcher
 
@@ -111,8 +113,9 @@ These are in `PRD.md` as product rules. Here is what they mean in code.
   version of this change.
 - **No database-specific SQL.** Everything through SQLAlchemy, so Postgres is a connection string.
   `_add_new_columns()` is the existing violation and is documented as such — do not add a second.
-- **`google_event_id` and `source_ref` are different things.** One is an event Cooper wrote, one
-  is an event Cooper read. Merging them looks tidy and quietly corrupts data.
+- **`google_event_id` and `source_ref` are different things.** The former links a legacy Google
+  copy Cooper wrote before local-only scheduling; the latter is an event Cooper read. Merging them
+  quietly corrupts data.
 - **The shared key is a placeholder, not authentication.** Do not extend it into a pretend
   version of one.
 

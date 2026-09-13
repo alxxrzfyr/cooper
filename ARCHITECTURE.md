@@ -23,12 +23,13 @@ cooper/
 
 ## Backend, future
 
-Microsoft/Teams remains a deliberately separate future integration. It will add a read-only
-producer without changing the planner or the existing Google/Gmail boundaries.
+Microsoft Teams and Google Classroom remain separate future read-only integrations. Meetings
+would add busy intervals; assignments would add ranked tasks.
 
 ```
 cooper/
-  microsoft.py Graph over REST; meetings and class assignments when an Azure app is configured
+  microsoft.py Graph over REST; meetings when an Azure app is configured
+  classroom.py assignments when a Google Classroom grant is configured
 ```
 
 `sources.py` turns every commitment into one list of busy intervals the planner routes around.
@@ -53,6 +54,7 @@ frontend/src/
   App.tsx           one screen: banner, plan, setup, composer
   Home.tsx          the dashboard, and the landing screen — next, today, attention, waiting
   Form.tsx          Manual mode as fields rather than a sentence — the built requirement 6
+  AvailabilitySettings.tsx weekday windows, overnight hours, breaks, and daily limits
   Chat.tsx          the conversation, grouped into runs like a messages app
   Calendar.tsx      day, week and month, coloured by category
   Nav.tsx           top bar, bottom tabs, and the wide-screen rail
@@ -73,8 +75,9 @@ same-origin `/api` paths and attaches the backend key in the development proxy. 
 environment file is therefore optional compatibility input, not part of the normal setup.
 
 `Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
-`add` the sentence path uses, and runs it through the public `validate` in `brain.py`. A typed
-task is booked, undone and mirrored to Google exactly like a parsed one, and `app.py` is still the
+`add` the sentence path uses, and runs it through the public `validate` in `brain.py`. The form
+needs no model, but placement checks any calendars the user connected. A typed
+task is booked and undone in Cooper's calendar exactly like a parsed one, and `app.py` is still the
 only writer. Bulk verbs are `POST /api/bulk/match` (lists hits, writes nothing) and `POST
 /api/bulk` (acts on confirmed ids, one change row for the batch); `undo_last` has a `bulk` branch
 that restores every snapshot in a single step.
@@ -107,8 +110,10 @@ source_ref    the provider event reference, so a move or cancellation finds it a
 ```
 
 `google_event_id` and `source_ref` are not the same thing and must not be merged.
-`google_event_id` is an event Cooper _wrote_. `source_ref` is an event Cooper _read_. One is a
-mirror Cooper owns, the other is a fact it does not.
+`google_event_id` identifies a legacy event Cooper previously wrote. Cooper no longer creates or
+deletes such blocks. `source_ref` identifies an event Cooper read. A linked Google copy is hidden
+only when its title, time, and description still match the Cooper item; changed copies remain
+visible and busy.
 
 **`setting`** — `(owner_id, key)` value. Working hours, the encrypted Google token, durable OAuth
 nonce, Gmail watcher health, and the watcher's last-checked marker.
@@ -145,15 +150,15 @@ _sanity_check()   ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘  same g
 app.run()             the only code that writes
    ↓
 planner.rank()        pure scoring
-planner.place()       pure fitting, inside working hours, around sources.busy()
+planner.place()       pure fitting, inside chosen availability, around complete source reads
    ↓
-google.add_block()    best effort; a failure leaves it scheduled locally
+Cooper item time      saved locally; no provider write
 ```
 
-Ask can also enter a bounded Gemini function-calling loop. `mcp.py` publishes the read tools,
-`app.py` validates their arguments and derives the owner from authentication, and provider
-credentials never enter tool arguments or results. Applying a plan is a separate authenticated
-tool call that requires explicit confirmation. `app.py` remains the only database writer.
+Ask can also enter a bounded Gemini function-calling loop. The Ask path exposes only read tools;
+it cannot apply a plan or refresh Gmail. `app.py` validates tool arguments and derives the owner
+from authentication; provider credentials never enter tool arguments or results. A separate
+authenticated `apply_plan` tool can save a plan. `app.py` remains the only database writer.
 
 The important part of that diagram is the join. An event parsed out of an email is a _proposal_
 and goes through the same validation as a sentence you typed. There is no second write path.
@@ -165,10 +170,10 @@ database access. `_sanity_check` rejects an add with no title, a reference with 
 reference, and an event that ends before it starts. Wrong model output becomes a question, not a
 mutation.
 
-**Nothing is booked outside your hours.** `_first_gap` builds candidate times from
-`Hours.start_hour`, `end_hour`, and `weekdays`. There is no code path that produces a time
-outside them, so this is structural rather than checked. Busy intervals from `sources.py` subtract
-from those candidates; they never add to them.
+**Nothing is booked outside your availability.** `planner.place()` expands weekday windows into
+UTC intervals, including overnight and 24-hour windows. Existing local tasks count toward daily
+block and minute limits. Busy intervals from `sources.py` subtract from candidates; they never
+add to them. A slot must fit the exact requested duration and finish before its deadline.
 
 **Unsure means ask.** `find()` in `app.py` resolves by exact id, exact title, then unique
 substring. Two matches raise a 409 listing them. Zero matches returns a question. It never
@@ -179,41 +184,41 @@ SQLite drops offsets, and without this a 3pm appointment displayed at 11pm and e
 slid a day. It is a type rather than a convention so no future query can forget. Incoming remote
 events carry their own offsets and must go through the same type.
 
-**Remote failures never block you.** Every Google and iCloud call is wrapped. If one fails the item is
-still captured, still ranked, still scheduled locally. Same contract for Microsoft and for the
-watcher.
+**A failed connected calendar read cannot create a false free slot.** The item is captured and
+ranked, but waits unscheduled with a reason until availability can be checked. With no calendars
+connected, local scheduling proceeds normally. The watcher reports its own health separately.
 
 **The watcher says when it last ran.** Its last-checked time is on the dashboard. It is the only
 part of Cooper that can fail while nobody is watching, so it is the only part that has to report
 that it is alive.
 
-**Read-only means read-only.** `microsoft.py` and the watcher never write to the remote. Cooper
-writes to exactly one remote place: blocks it placed, in Google Calendar.
+**Read-only means read-only.** Google Calendar, iCloud, and the watcher provide commitments.
+Cooper writes new items only to its own database and calendar, and preserves legacy Google copies.
 
 ## Scoring
 
 In `planner.py`, weights summing to 1:
 
 ```
-score = 0.40·due + 0.30·importance + 0.15·age + 0.15·quick
+score = 0.60·due + 0.15·age + 0.25·quick
 ```
 
 - `due` — 0 with no deadline, ramps over 14 days, 1.0 once overdue
-- `importance` — your 1–5, normalised
+- `importance` — stored on the item; it does not currently affect the score
 - `age` — how long it has been waiting, capped at three weeks
 - `quick` — shorter scores higher, because finishing beats starting; no estimate sits at 0.5
 
 Pinned items sort first regardless. Tuning these numbers is the intended way to disagree with
 the ranking, and each row shows its own breakdown so you can see which term is responsible.
 
-Teams assignments arrive with a due date and no estimate, which puts them in the ranking on the
-strength of their deadline alone. That is correct and needs no special case.
+Teams and Classroom assignments do not arrive yet. Their future ranking needs its own review.
 
 ## Placement
 
-Greedy, earliest fit, in ranked order. Blocks are 20–90 minutes with a 10 minute gap, capped
-per day, starting no sooner than 15 minutes from now. A task with no estimate is skipped rather
-than guessed at.
+Greedy, earliest fit, in ranked order. A block keeps the exact requested duration as one
+continuous session. Breaks, maximum blocks, and daily task minutes are configurable; placement
+starts no sooner than 15 minutes from now. A task with no estimate is skipped rather than guessed
+at. A connected calendar must be available before any new slot is committed.
 
 That last sentence is why errands work without new code: `buy milk` has no estimate, so it is
 ranked and shown but never given a block.

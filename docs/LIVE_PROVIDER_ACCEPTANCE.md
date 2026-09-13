@@ -21,7 +21,8 @@ disposable test account and a uniquely named test block.
    http://127.0.0.1:8000/api/google/callback
    ```
 
-   Cooper requests only Google Calendar event access and Gmail read-only access.
+   Cooper uses its existing Google Calendar event access and Gmail read-only access. New work
+   stays in Cooper's calendar; this check does not authorize Google write-back.
 5. Run the non-secret preflight. It reports only ready, missing, or invalid status:
 
    ```bash
@@ -53,16 +54,15 @@ disposable test account and a uniquely named test block.
 6. Confirm the imported commitment has a time and, if present, a safe location or meeting link.
    Cooper must not display the email body.
 
-## Scheduling Write
+## Cooper Scheduling With Connected Calendars
 
 1. Add a unique task such as `Cooper live-test schedule` with a duration and a near deadline.
-2. Ask Cooper to schedule it, or use the normal Schedule action. The resulting block must avoid
-   `Cooper live-test busy` and remain inside configured working hours.
-3. In Google Calendar, confirm a corresponding Cooper-owned block exists with the same time.
-4. Refresh Cooper. Confirm that Calendar immediately shows the scheduled block and its Google
-   mirror state remains present.
-5. Use Cooper's Undo action. Confirm the local item is unscheduled and the Cooper-owned Google
-   block is removed. Do not delete the source `Cooper live-test busy` event through Cooper.
+2. Confirm it is automatically placed in Cooper's calendar at its full duration, avoids
+   `Cooper live-test busy`, and stays inside the availability configured in Settings.
+3. In Google Calendar, confirm no new Cooper block was created. Existing Google events are
+   imported commitments, not a destination for new work.
+4. Refresh Cooper and confirm the scheduled block remains visible once. Use Undo and confirm
+   Cooper reverses the local addition without changing the source Google event.
 
 ## iCloud Read-Only Check
 
@@ -70,7 +70,7 @@ disposable test account and a uniquely named test block.
    working period.
 2. In Cooper Settings, enter the test Apple ID and an Apple app-specific password under iCloud.
    The password is sent only to the local Cooper server and is not returned to the browser.
-3. Confirm Calendar displays the iCloud event and scheduling avoids its time.
+3. Confirm Calendar displays the iCloud event and an automatically scheduled task avoids its time.
 4. Confirm no iCloud event is created, changed, or deleted by Cooper. iCloud is intentionally
    read-only under the current product rules.
 5. Select **Disconnect iCloud** after testing. This removes the encrypted local credential, not
@@ -78,11 +78,13 @@ disposable test account and a uniquely named test block.
 
 ## Failure And Cleanup
 
-1. Temporarily disconnect Google or use a revoked test grant, then schedule a test task.
-   Cooper should retain the local schedule but must not claim the Google block was created.
-2. Reconnect Google and confirm future Cooper writes succeed.
+1. With Google still connected, use a revoked test grant or temporarily make the test provider
+   unreachable, then add a task with a duration. Cooper should capture and rank it, leave it
+   unscheduled, and explain that connected calendar conflicts could not be checked.
+2. Restore the connection, then retry scheduling. Confirm the task can now be placed locally
+   around the source event. With all calendars disconnected, local scheduling should still work.
 3. Remove the disposable Google and iCloud test events manually. Use Cooper only to undo
-   Cooper-owned blocks.
+   Cooper-owned local items. Preserve any legacy Google copies unless you remove them manually.
 4. Remove the local `.env` and local test database only if you no longer need the test state.
 
 Record the date, connected test-account aliases, and pass/fail result in the deployment change
