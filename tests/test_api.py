@@ -121,6 +121,38 @@ def test_mcp_catalog_and_disconnected_read(client):
     assert "not connected" in result["result"]["content"][0]["text"]
 
 
+def test_plan_tool_reports_unavailable_connected_calendar(client, monkeypatch):
+    import cooper.app as module
+
+    class FailedCalendar:
+        connected = True
+
+        def busy(self, **kwargs):
+            raise CalendarError("Unavailable")
+
+    monkeypatch.setattr(module, "connected_calendar", lambda owner: FailedCalendar())
+    result = module.execute_tool("local", "plan_tasks", {"days": 7})
+
+    assert result["isError"] is False
+    assert result["structuredContent"]["complete"] is False
+    assert result["structuredContent"]["unavailable_sources"] == ["google"]
+
+
+def test_apply_plan_does_not_claim_success_after_final_check_fails(client, monkeypatch):
+    import cooper.app as module
+
+    start = dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)
+    candidate = module.Slot("candidate", "Task", start, start + dt.timedelta(minutes=30))
+    monkeypatch.setattr(module, "plan_tasks", lambda *args, **kwargs: [candidate])
+    monkeypatch.setattr(module, "apply_slots", lambda *args, **kwargs: [])
+
+    result = module.execute_tool(
+        "local", "apply_plan", {"item_ids": ["candidate"], "days": 7, "confirmed": True}
+    )
+
+    assert result["isError"] is True
+
+
 def test_mcp_requires_auth_and_rejects_unbounded_arguments(client):
     payload = {
         "jsonrpc": "2.0",
@@ -1492,7 +1524,7 @@ class TestSaying:
         assert set(shortlist[0]["why"]) == {"due", "age", "quick"}
 
     def test_a_timed_sentence_creates_an_event(self, client: TestClient) -> None:
-        body = say(client, "dentist thursday 3pm")
+        body = say(client, "dentist thursday 3pm 60m")
 
         assert body["item"]["kind"] == "event"
         assert body["item"]["start_at"] is not None
@@ -1913,7 +1945,7 @@ class TestAgenda:
         assert booked[0]["end_at"] is not None
 
     def test_a_fixed_event_keeps_the_time_you_said(self, client: TestClient) -> None:
-        say(client, "dentist thursday 3pm")
+        say(client, "dentist thursday 3pm 60m")
 
         booked = client.get("/api/today", headers=HEADERS).json()["scheduled"]
 
@@ -1926,6 +1958,55 @@ class TestAgenda:
             ZoneInfo("Asia/Singapore")
         )
         assert local.hour == 15
+
+    def test_fixed_event_keeps_its_time_and_reports_an_external_overlap(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
+        end = start + dt.timedelta(hours=1)
+
+        class BusyCalendar:
+            connected = True
+
+            def busy(self, **kwargs):
+                return [Busy(start, end, "Existing appointment", False)]
+
+        monkeypatch.setattr(module, "connected_calendar", lambda owner: BusyCalendar())
+        response = client.post(
+            "/api/items",
+            json={"title": "Fixed appointment", "start": start.isoformat(), "minutes": 60},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["item"]["start_at"] == start.isoformat()
+        assert "overlap" in response.json()["message"].lower()
+
+    def test_fixed_event_reports_when_calendar_conflicts_cannot_be_checked(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
+
+        class FailedCalendar:
+            connected = True
+
+            def busy(self, **kwargs):
+                raise CalendarError("Unavailable")
+
+        monkeypatch.setattr(module, "connected_calendar", lambda owner: FailedCalendar())
+        response = client.post(
+            "/api/items",
+            json={"title": "Fixed appointment", "start": start.isoformat(), "minutes": 60},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["item"]["start_at"] == start.isoformat()
+        assert "could not be checked" in response.json()["message"].lower()
 
 
 class TestManualForm:
@@ -1970,6 +2051,7 @@ class TestManualForm:
         body = self.form(
             client,
             title="planning session",
+            minutes=60,
             start=start.isoformat(),
             meeting_url="https://meet.google.com/example-room",
             location="Studio 3",
@@ -2031,16 +2113,30 @@ class TestManualForm:
         start = dt.datetime.now(zone).replace(microsecond=0) + dt.timedelta(days=1)
         naive = start.replace(tzinfo=None).isoformat()
 
-        body = self.form(client, title="dentist", start=naive)
+        body = self.form(client, title="dentist", start=naive, minutes=60)
 
         assert body["item"]["start_at"] == start.isoformat()
         assert body["item"]["end_at"] == (start + dt.timedelta(hours=1)).isoformat()
 
     def test_a_form_time_with_an_offset_is_trusted(self, client: TestClient) -> None:
         start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
-        body = self.form(client, title="call", start=start.isoformat())
+        body = self.form(client, title="call", start=start.isoformat(), minutes=60)
 
         assert body["item"]["start_at"] == start.isoformat()
+
+    def test_a_fixed_form_time_without_duration_asks_before_saving(
+        self, client: TestClient
+    ) -> None:
+        start = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).replace(microsecond=0)
+        response = client.post(
+            "/api/items",
+            json={"title": "call", "start": start.isoformat()},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
+        assert "long" in response.json()["detail"].lower()
+        assert client.get("/api/today", headers=HEADERS).json()["scheduled"] == []
 
     def test_a_past_deadline_is_refused(self, client: TestClient) -> None:
         response = client.post(

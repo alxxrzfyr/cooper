@@ -5,16 +5,13 @@ event RSVP'd to on Luma and read out of an email — to the scheduler these are 
 `(start, end)` pair it must route around. `planner.place()` takes a list of those and does not
 care who produced them.
 
-Only Google exists today, plus the blocks Cooper placed itself. The second and third producers
-(Microsoft, and events parsed from email) are named in PRD.md and are the reason this is a file
-rather than a function inside app.py: when they arrive they add a `collect_*` here and append to
-the same list, and nothing in the planner changes.
+Google, iCloud, Cooper blocks, and supported Gmail confirmations exist today. Future Teams and
+Classroom inputs are named in PRD.md; adding them should not change the planner.
 
 Two rules this file must keep:
   - It never writes. It reads commitments; it does not create, RSVP, or cancel anything.
-  - A failed source never blocks the user. Each producer is wrapped, and a failure means less
-    awareness of what is booked, never an empty plan or a raised error. Local is the source of
-    truth; every remote is a mirror.
+  - A failed connected calendar read must be reported to the scheduling caller. The item can be
+    saved locally, but cannot be placed against an incomplete busy-time picture.
 """
 
 from __future__ import annotations
@@ -41,7 +38,7 @@ class CalendarProvider(Protocol):
 
 
 def collect_google(calendar: CalendarProvider | None, *, days: int) -> list[Interval]:
-    """Busy intervals from Google Calendar, or nothing if it is off or unreachable."""
+    """Busy intervals from a connected calendar, or nothing when it is disconnected."""
     if calendar is None or not calendar.connected:
         return []
     return [(entry.start, entry.end) for entry in calendar.busy(days=days)]
@@ -84,8 +81,8 @@ def busy_windows(
 ) -> list[Interval]:
     """Every commitment, from every source, as one list of intervals the planner routes around.
 
-    The one call the scheduler makes. Today it merges Google, local blocks and Gmail imports;
-    when Microsoft lands it appends here and this signature does not change.
+    Today it merges Google, iCloud, local blocks, and Gmail imports. Connected calendar errors
+    propagate to the caller, which leaves new tasks waiting rather than guessing at free time.
     """
     spans: list[Interval] = []
     spans.extend(collect_google(calendar, days=days))

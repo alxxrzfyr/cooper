@@ -793,13 +793,26 @@ def execute_tool(owner_id: str, name: str, arguments: object) -> dict[str, Any]:
         return mcp.tool_result({"sync": dataclasses.asdict(summary), "confirmations": commitments})
 
     if isinstance(parsed, mcp.PlanArgs):
-        slots = plan_tasks(owner_id, item_ids=parsed.item_ids, days=parsed.days)
+        availability = _external_availability(owner_id, days=parsed.days + 1)
+        slots = plan_tasks(
+            owner_id, item_ids=parsed.item_ids, days=parsed.days, availability=availability
+        )
         return mcp.tool_result(
             {
                 "slots": [_slot_payload(slot) for slot in slots],
+                "complete": availability["complete"],
+                "unavailable_sources": [
+                    entry["source"]
+                    for entry in availability["source_health"]
+                    if entry["status"] == "unavailable"
+                ],
                 "reason": (
-                    "Tasks are ranked by deadline, age, and duration, then fitted into your "
-                    "working hours around existing commitments."
+                    "A connected calendar could not be checked, so no time can be promised."
+                    if not availability["complete"]
+                    else "No selected task fits the current availability and deadlines."
+                    if not slots
+                    else "Tasks are ranked by deadline, age, and duration, then fitted into "
+                    "your availability around existing commitments."
                 ),
             }
         )
@@ -811,8 +824,17 @@ def execute_tool(owner_id: str, name: str, arguments: object) -> dict[str, Any]:
                 "No selected task can be placed in the available hours.", error=True
             )
         applied = apply_slots(owner_id, slots, days=parsed.days)
+        if not applied:
+            return mcp.tool_result(
+                "No task was scheduled. Availability or task state changed; refresh and retry.",
+                error=True,
+            )
         return mcp.tool_result(
-            {"slots": [_slot_payload(slot) for slot in applied], "destination": "cooper"}
+            {
+                "slots": [_slot_payload(slot) for slot in applied],
+                "destination": "cooper",
+                "complete": len(applied) == len(slots),
+            }
         )
 
     return mcp.tool_result("Unknown tool.", error=True)
@@ -1021,7 +1043,7 @@ def run(owner_id: str, action: Action) -> dict[str, Any]:
         if not placed:
             return {
                 "kind": "note",
-                "message": "Nothing to place. Tasks need a time estimate to be scheduled.",
+                "message": "No tasks were placed. Check the waiting tasks for the reason.",
             }
         return {
             "kind": "scheduled",
@@ -1090,13 +1112,42 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
         }
 
     if payload["start_at"]:
+        notices = _fixed_event_notices(owner_id, payload)
         return {
             "kind": "added",
-            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}.",
+            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}." + notices,
             "item": payload,
         }
 
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
+
+
+def _fixed_event_notices(owner_id: str, payload: dict[str, Any]) -> str:
+    """Report overlaps without moving a fixed appointment or losing it to a source outage."""
+    start = dt.datetime.fromisoformat(payload["start_at"])
+    end = dt.datetime.fromisoformat(payload["end_at"])
+    availability = _external_availability(owner_id)
+    with store.session() as session:
+        local = [
+            (entry.start_at, entry.end_at)
+            for entry in store.open_items(session, owner_id)
+            if entry.id != payload["id"] and entry.start_at and entry.end_at
+        ]
+    notices = []
+    if any(
+        booked_start < end and start < booked_end
+        for booked_start, booked_end in [*availability["busy"], *local]
+    ):
+        notices.append("This overlaps another calendar commitment.")
+    if not availability["complete"]:
+        notices.append("Connected calendar conflicts could not be checked.")
+    elif availability["source_health"] and end > dt.datetime.fromisoformat(
+        availability["range_end"]
+    ):
+        notices.append(
+            "Connected calendar conflicts beyond the checked range could not be checked."
+        )
+    return " " + " ".join(notices) if notices else ""
 
 
 def _external_availability(owner_id: str, *, days: int = 14) -> dict[str, Any]:
@@ -1357,8 +1408,18 @@ def schedule_now(owner_id: str) -> list[Slot]:
     return apply_slots(owner_id, None)
 
 
-def plan_tasks(owner_id: str, *, item_ids: list[str] | None = None, days: int = 7) -> list[Slot]:
-    availability = _external_availability(owner_id, days=days + 1)
+def plan_tasks(
+    owner_id: str,
+    *,
+    item_ids: list[str] | None = None,
+    days: int = 7,
+    availability: dict[str, Any] | None = None,
+) -> list[Slot]:
+    availability = (
+        availability
+        if availability is not None
+        else _external_availability(owner_id, days=days + 1)
+    )
     if not availability["complete"]:
         return []
     with store.session() as session:
@@ -1511,8 +1572,8 @@ def create(body: NewItem, request: Request) -> dict[str, Any]:
     """Manual mode's form: fields in, item out, no parsing and no model.
 
     It builds an Action by hand and hands it to the same `add` the sentence path uses, so a
-    typed task is booked into working hours exactly like a parsed one, goes through the same
-    undo hook, and reaches Google the same way. There is deliberately no second write path.
+    typed task is booked in Cooper exactly like a parsed one and goes through the same undo hook.
+    There is deliberately no second write path.
     """
     owner_id = request_owner(request).uid
     action = Action(
