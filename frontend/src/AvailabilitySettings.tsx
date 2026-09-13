@@ -44,6 +44,12 @@ export function AvailabilitySettings({
   return (
     <>
       <div className="group__label">Working hours</div>
+      {hours.windows !== null && hours.windows !== undefined && (
+        <p className="hint">
+          Custom windows are active. Changing a start, end, or weekday below switches back to
+          standard hours.
+        </p>
+      )}
       <div className="inset">
         <div className="field">
           <span className="field__label">Start</span>
@@ -55,6 +61,7 @@ export function AvailabilitySettings({
               void onSave({
                 ...hours,
                 start_hour: Number(event.target.value),
+                windows: null,
               })
             }
           >
@@ -75,6 +82,7 @@ export function AvailabilitySettings({
               void onSave({
                 ...hours,
                 end_hour: Number(event.target.value),
+                windows: null,
               })
             }
           >
@@ -96,6 +104,7 @@ export function AvailabilitySettings({
               onClick={() =>
                 void onSave({
                   ...hours,
+                  windows: null,
                   weekdays: hours.weekdays.includes(index)
                     ? hours.weekdays.filter((day) => day !== index)
                     : [...hours.weekdays, index].sort((a, b) => a - b),
@@ -112,7 +121,7 @@ export function AvailabilitySettings({
             type="number"
             aria-label="Most blocks a day"
             min={1}
-            max={10}
+            max={100}
             value={hours.max_per_day}
             disabled={busy}
             onChange={(event) =>

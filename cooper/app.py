@@ -167,7 +167,7 @@ class HoursIn(BaseModel):
     start_hour: int = Field(ge=0, le=23)
     end_hour: int = Field(ge=1, le=24)
     weekdays: list[int]
-    max_per_day: int = Field(ge=1, le=10)
+    max_per_day: int = Field(ge=1, le=100)
     windows: list[tuple[int, int, int]] | None = None
     break_minutes: int = Field(default=10, ge=0, le=1440)
     max_minutes_per_day: int | None = Field(default=None, ge=1, le=1440)
