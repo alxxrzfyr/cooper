@@ -2434,6 +2434,8 @@ button.slot:active {
     min-height: 100%;
     display: flex;
     flex-direction: column;
+    /* Keep all 24 rows in the group's scroller, including late-night bookings. */
+    flex-shrink: 0;
   }
 
   .weekgrid {

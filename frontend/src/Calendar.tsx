@@ -25,8 +25,8 @@ const CATEGORY_LABEL: Record<Category, string> = {
   personal: "Personal",
 };
 
-const DAY_START = 7;
-const DAY_END = 22;
+const DAY_START = 0;
+const DAY_END = 24;
 const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + DAY_START);
 const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const MONTH_ROWS = 6;
@@ -238,11 +238,22 @@ export function Calendar({
   }
 
   function working(day: Date, hour: number): boolean {
-    return (
-      hour >= view.hours.start_hour &&
-      hour < view.hours.end_hour &&
-      view.hours.weekdays.includes(zonedFields(day, zone).weekday)
-    );
+    const weekday = zonedFields(day, zone).weekday;
+    const windowRules =
+      view.hours.windows ??
+      view.hours.weekdays.map((dayIndex): [number, number, number] => [
+        dayIndex,
+        view.hours.start_hour * 60,
+        view.hours.end_hour * 60,
+      ]);
+    const minute = hour * 60;
+    return windowRules.some(([ruleDay, start, end]) => {
+      if (end > start) return ruleDay === weekday && minute + 60 > start && minute < end;
+      return (
+        (ruleDay === weekday && minute + 60 > start) ||
+        (ruleDay === (weekday + 6) % 7 && minute < end)
+      );
+    });
   }
 
   function on(day: Date, hour?: number): CalendarEntry[] {
@@ -318,6 +329,13 @@ export function Calendar({
           )}
         </div>
       </div>
+      {view.source_health
+        ?.filter((source) => source.status === "unavailable")
+        .map((source) => (
+          <p className="hint" key={source.source} role="status">
+            {source.source} calendar could not be refreshed. Imported events may be missing.
+          </p>
+        ))}
     </>
   );
 
@@ -341,7 +359,7 @@ export function Calendar({
           <h2 className="empty__title">Nothing on the calendar</h2>
           <p className="empty__text">
             Add a task with a time estimate and say &ldquo;plan my day&rdquo;, or give something an
-            exact time like &ldquo;dentist thursday 3pm&rdquo;.
+            exact time and duration like &ldquo;dentist thursday 3pm 60m&rdquo;.
           </p>
         </section>
       </div>
@@ -388,6 +406,7 @@ export function Calendar({
           {entry.event?.all_day ? "All day" : clock(entry.start, zone)}
         </span>
         <span className="slot__title">{entry.title}</span>
+        {entry.conflict && <span className="slot__detail">Overlaps another calendar item</span>}
         {entry.event && (
           <>
             <span className="slot__from">

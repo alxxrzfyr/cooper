@@ -9,6 +9,7 @@ export interface CalendarEntry {
   category: Category;
   item?: Item;
   event?: CalendarEvent;
+  conflict?: boolean;
 }
 
 /** The one-line context shown beneath an imported event in compact views. */
@@ -83,5 +84,15 @@ export function calendarEntries(
     });
   }
 
-  return entries.sort((a, b) => a.start.getTime() - b.start.getTime());
+  entries.sort((a, b) => a.start.getTime() - b.start.getTime());
+  for (const entry of entries) {
+    if (entry.source !== "cooper") continue;
+    entry.conflict = entries.some(
+      (other) =>
+        other.key !== entry.key &&
+        other.start.getTime() < entry.end.getTime() &&
+        entry.start.getTime() < other.end.getTime(),
+    );
+  }
+  return entries;
 }
