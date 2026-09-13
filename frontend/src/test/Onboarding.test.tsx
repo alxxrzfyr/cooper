@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
@@ -8,9 +8,10 @@ const progress = {
   hasItem: false,
   hasGeminiKey: false,
   googleConnected: false,
+  icloudConnected: false,
 };
 
-function renderOnboarding() {
+function renderOnboarding(tab: "home" | "chat" | "settings" = "home") {
   const onOpenForm = vi.fn();
   const onOpenSettings = vi.fn();
   const onDismiss = vi.fn();
@@ -18,6 +19,8 @@ function renderOnboarding() {
   render(
     <Onboarding
       progress={progress}
+      tab={tab}
+      mode="manual"
       onOpenForm={onOpenForm}
       onOpenSettings={onOpenSettings}
       onDismiss={onDismiss}
@@ -32,6 +35,8 @@ describe("Onboarding", () => {
     renderOnboarding();
 
     expect(screen.getByText("Step 1 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Add your first item" })).toBeInTheDocument();
+    expect(screen.queryByText("Getting started")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip tutorial" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
@@ -75,6 +80,68 @@ describe("Onboarding", () => {
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  test("opens the real Form from the first step", async () => {
+    const user = userEvent.setup();
+    const { onOpenForm } = renderOnboarding();
+    await user.click(screen.getByRole("button", { name: "Open Form" }));
+    expect(onOpenForm).toHaveBeenCalledTimes(1);
+  });
+
+  test("points to the current control as the user moves through the app", async () => {
+    const user = userEvent.setup();
+    const props = {
+      progress,
+      mode: "manual" as const,
+      onOpenForm: vi.fn(),
+      onOpenSettings: vi.fn(),
+      onDismiss: vi.fn(),
+    };
+    const { rerender, container } = render(<Onboarding {...props} tab="home" />);
+    expect(container.querySelector(".tour")).toHaveAttribute("data-tour-target", "nav-chat");
+
+    rerender(<Onboarding {...props} tab="chat" />);
+    expect(container.querySelector(".tour")).toHaveAttribute("data-tour-target", "form-title");
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(container.querySelector(".tour")).toHaveAttribute("data-tour-target", "nav-settings");
+
+    rerender(<Onboarding {...props} tab="settings" />);
+    expect(container.querySelector(".tour")).toHaveAttribute("data-tour-target", "gemini-key");
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(container.querySelector(".tour")).toHaveAttribute(
+      "data-tour-target",
+      "calendar-connections",
+    );
+  });
+
+  test("advances when the first item is saved", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Onboarding
+        progress={progress}
+        tab="chat"
+        mode="manual"
+        onOpenForm={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    rerender(
+      <Onboarding
+        progress={{ ...progress, hasItem: true }}
+        tab="chat"
+        mode="manual"
+        onOpenForm={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Step 2 of 3")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Step 1 of 3")).toBeInTheDocument();
   });
 
   test("leaves calendar connection optional on the final step", async () => {

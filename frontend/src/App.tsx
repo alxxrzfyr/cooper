@@ -920,18 +920,30 @@ export default function App() {
   const hours = view?.hours;
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
   const guideProgress: OnboardingProgress = {
-    hasItem: hasCreatedItem || Boolean(view?.shortlist.length || view?.scheduled.length),
+    hasItem:
+      hasCreatedItem ||
+      Boolean(
+        view?.shortlist.some((item) => item.source === "me") ||
+        view?.scheduled.some((item) => item.source === "me"),
+      ),
     hasGeminiKey: canUseAi,
     googleConnected: Boolean(view?.calendar.connected),
+    icloudConnected: Boolean(view?.icloud.connected),
   };
 
   useEffect(() => {
-    if (authState.kind !== "signed-in" || !view || guideSessionDismissed) return;
-    if (!onboardingDone(authState.user.uid)) setGuideVisible(true);
-  }, [authState, guideSessionDismissed, view]);
+    if (!view || guideSessionDismissed) return;
+    if (authState.kind === "signed-in" && !onboardingDone(authState.user.uid)) {
+      setGuideVisible(true);
+    }
+    if (authState.kind === "local" && !guideProgress.hasItem && !onboardingDone("local")) {
+      setGuideVisible(true);
+    }
+  }, [authState, guideProgress.hasItem, guideSessionDismissed, view]);
 
   const dismissGuide = useCallback(() => {
     if (authState.kind === "signed-in") finishOnboarding(authState.user.uid);
+    if (authState.kind === "local") finishOnboarding("local");
     setGuideSessionDismissed(true);
     setGuideVisible(false);
   }, [authState]);
@@ -954,7 +966,13 @@ export default function App() {
           booked={scheduled.length}
           undo={view?.undo ?? null}
           busy={busy}
-          onChange={setTab}
+          onChange={(next) => {
+            setTab(next);
+            if (guideVisible && next === "chat" && !guideProgress.hasItem) {
+              setMode("manual");
+              saveMode("manual");
+            }
+          }}
           onUndo={() => void act(() => api.undo())}
         />
       )}
@@ -1065,18 +1083,6 @@ export default function App() {
               />
             )}
 
-            {workspaceVisible && tab === "home" && view && guideVisible && (
-              <Onboarding
-                progress={guideProgress}
-                onOpenForm={() => {
-                  setTab("chat");
-                  setMode("manual");
-                }}
-                onOpenSettings={openSettings}
-                onDismiss={dismissGuide}
-              />
-            )}
-
             {workspaceVisible && !loadResolved && !view && loadingTab && (
               <LoadingSurface tab={loadingTab} />
             )}
@@ -1152,19 +1158,23 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn--quiet"
-                      onClick={() => {
-                        setTab("home");
-                        setGuideSessionDismissed(false);
-                        setGuideVisible(true);
-                      }}
-                    >
-                      Show getting-started guide
-                    </button>
                   </section>
                 )}
+
+                <section className="group">
+                  <div className="group__label">Guide</div>
+                  <button
+                    type="button"
+                    className="btn btn--quiet"
+                    onClick={() => {
+                      setTab("home");
+                      setGuideSessionDismissed(false);
+                      setGuideVisible(true);
+                    }}
+                  >
+                    Show getting-started guide
+                  </button>
+                </section>
 
                 <section className="group">
                   <AvailabilitySettings
@@ -1184,7 +1194,9 @@ export default function App() {
                 </section>
 
                 <section className="group">
-                  <div className="group__label">Google Calendar + Gmail</div>
+                  <div className="group__label" data-tour="calendar-connections">
+                    Google Calendar + Gmail
+                  </div>
                   <div className="inset">
                     <div className="field">
                       <span className="field__label">Account</span>
@@ -1217,7 +1229,7 @@ export default function App() {
                   </div>
                   <p className="hint">
                     {view.calendar.connected
-                      ? "Booked work is written to Google. Your own events block scheduling."
+                      ? "Google events appear in Cooper and protect busy time. New work stays in Cooper's calendar."
                       : view.calendar.configured
                         ? "Not connected. Cooper is using its own calendar, which works on its own."
                         : "Cooper has its own calendar and needs nothing to work. Connect Google Calendar + Gmail when you want both services included."}
@@ -1369,6 +1381,7 @@ export default function App() {
                       <div className="field__secret">
                         <input
                           id="gemini-key"
+                          data-tour="gemini-key"
                           type="password"
                           autoComplete="off"
                           maxLength={256}
@@ -1469,6 +1482,21 @@ export default function App() {
           </>
         )}
       </main>
+
+      {workspaceVisible && view && guideVisible && (
+        <Onboarding
+          progress={guideProgress}
+          tab={tab}
+          mode={mode}
+          onOpenForm={() => {
+            setTab("chat");
+            setMode("manual");
+            saveMode("manual");
+          }}
+          onOpenSettings={() => setTab("settings")}
+          onDismiss={dismissGuide}
+        />
+      )}
 
       {notice && (
         <div

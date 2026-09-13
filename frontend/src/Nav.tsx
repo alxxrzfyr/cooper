@@ -124,6 +124,7 @@ export function Nav({
               key={tab.id}
               type="button"
               className="rail__item"
+              data-tour={tab.id === "chat" ? "nav-chat" : undefined}
               aria-current={current === tab.id ? "page" : undefined}
               onClick={() => onChange(tab.id)}
             >
@@ -147,6 +148,7 @@ export function Nav({
               key={tab.id}
               type="button"
               className="rail__item"
+              data-tour="nav-settings"
               aria-current={current === tab.id ? "page" : undefined}
               onClick={() => onChange(tab.id)}
             >
@@ -172,6 +174,9 @@ export function Nav({
             key={tab.id}
             type="button"
             className="tab"
+            data-tour={
+              tab.id === "chat" ? "nav-chat" : tab.id === "settings" ? "nav-settings" : undefined
+            }
             aria-current={current === tab.id ? "page" : undefined}
             onClick={() => onChange(tab.id)}
           >

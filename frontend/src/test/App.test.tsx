@@ -274,6 +274,35 @@ async function emitFirebaseUser(user: TestFirebaseUser | null): Promise<void> {
 }
 
 describe("first impression", () => {
+  test("does not interrupt a local user who already has an item", async () => {
+    stub({});
+    render(<App />);
+
+    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(screen.queryByText("Cooper guide")).not.toBeInTheDocument();
+  });
+
+  test("local first-run guide follows Form and Settings and can be reopened", async () => {
+    const user = userEvent.setup();
+    stub({ view: view({ shortlist: [], scheduled: [] }) });
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: "Add your first item" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open Form" }));
+    expect(screen.getByRole("textbox", { name: "What" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(screen.getByLabelText("Gemini API key")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Skip tutorial" }));
+    expect(screen.queryByRole("region", { name: "Set up Ask" })).not.toBeInTheDocument();
+    expect(localStorage.getItem("cooper.onboarding.done.v1:local")).toBe("1");
+
+    await user.click(screen.getByRole("button", { name: "Show getting-started guide" }));
+    expect(screen.getByRole("region", { name: "Add your first item" })).toBeInTheDocument();
+  });
+
   test("local root opens the public landing surface", () => {
     window.history.replaceState({}, "", "/");
     const calls = stub({});
@@ -1085,6 +1114,42 @@ describe("navigation", () => {
 });
 
 describe("the calendar", () => {
+  test("shows every hour and shades an overnight custom window on both days", async () => {
+    stub({
+      view: view({
+        scheduled: [
+          {
+            ...ranked(),
+            id: "overnight",
+            start_at: "2026-08-31T14:00:00+00:00",
+            end_at: "2026-08-31T15:00:00+00:00",
+          },
+        ],
+        hours: {
+          start_hour: 9,
+          end_hour: 18,
+          weekdays: [0, 1, 2, 3, 4],
+          max_per_day: 4,
+          windows: [[0, 1320, 120]],
+        },
+      }),
+    });
+    render(<App />);
+    const user = await openCalendar();
+    const rows = () => [...document.querySelectorAll(".daygrid__row")];
+    const open = (hour: number) => rows()[hour]?.querySelector(".daygrid__slot--open") !== null;
+
+    expect(rows()).toHaveLength(24);
+    expect(open(0)).toBe(false);
+    expect(open(22)).toBe(true);
+    expect(open(23)).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Next day" }));
+    expect(open(0)).toBe(true);
+    expect(open(1)).toBe(true);
+    expect(open(2)).toBe(false);
+  });
+
   function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     return {
       title: "Standup with the team",
@@ -1118,6 +1183,34 @@ describe("the calendar", () => {
     await openCalendar();
 
     expect(await screen.findByText("Nothing on the calendar")).toBeInTheDocument();
+  });
+
+  test("warns when a connected calendar is unavailable", async () => {
+    stub({
+      view: view({
+        source_health: [{ source: "google", status: "unavailable" }],
+      }),
+    });
+    render(<App />);
+    await openCalendar();
+
+    expect(
+      screen.getByText("google calendar could not be refreshed. Imported events may be missing."),
+    ).toBeInTheDocument();
+  });
+
+  test("keeps an imported overlap visible beside Cooper's block", async () => {
+    const booked = {
+      ...ranked(),
+      id: "b1",
+      start_at: "2026-08-31T01:00:00+00:00",
+      end_at: "2026-08-31T02:00:00+00:00",
+    };
+    stub({ view: view({ scheduled: [booked], events: [event()] }) });
+    render(<App />);
+    await openCalendar();
+
+    expect(screen.getByText("Overlaps another calendar item")).toBeInTheDocument();
   });
 
   test("your own Google events show up beside booked work", async () => {
@@ -1899,6 +1992,9 @@ describe("manual mode as a form", () => {
     const day = screen.getByLabelText("Deadline") as HTMLInputElement;
     await user.type(day, "2099-09-05");
     await user.selectOptions(screen.getByLabelText("At"), "14:00");
+    expect(screen.getByRole("button", { name: "Add it" })).toBeDisabled();
+    expect(screen.getByText("Add a duration to save this fixed event.")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("How long"), "60");
     await user.click(screen.getByRole("button", { name: "Add it" }));
 
     await waitFor(() => {
@@ -1906,6 +2002,7 @@ describe("manual mode as a form", () => {
       expect(created).toBeDefined();
       // No Z, no offset: a wall-clock string the backend tags with the configured zone.
       expect(created?.body.start).toBe("2099-09-05T14:00:00");
+      expect(created?.body.minutes).toBe(60);
     });
   });
 
