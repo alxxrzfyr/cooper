@@ -578,7 +578,7 @@ class TestGoogleTransport:
         gmail = Gmail(calendar)
         monkeypatch.setattr(gmail, "_send", lambda request: {})
 
-        gmail.list_messages(after=NOW, max_results=1)
+        gmail.list_messages(after=dt.datetime.now(tz=dt.UTC) - dt.timedelta(days=1), max_results=1)
 
         assert seen == [
             {

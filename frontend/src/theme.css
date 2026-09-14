@@ -2691,8 +2691,7 @@ button.slot:active {
 
 .frame__description,
 .event-row__primary,
-.event-row__sub,
-.event-metadata dd {
+.event-row__sub {
   overflow-wrap: anywhere;
 }
 
@@ -2867,30 +2866,6 @@ button.slot:active {
 .event-detail-list li {
   display: grid;
   gap: 2px;
-}
-
-.event-metadata {
-  display: grid;
-  gap: 10px;
-  margin: 8px 0 0;
-}
-
-.event-metadata > div {
-  display: grid;
-  gap: 2px;
-}
-
-.event-metadata dt {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.event-metadata dd {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .event-guest {

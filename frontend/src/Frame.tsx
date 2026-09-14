@@ -754,22 +754,6 @@ export function CalendarEventFrame({
             <div className="event-row__body frame__description">{description.nodes}</div>
           </div>
         )}
-
-        {event.metadata && event.metadata.length > 0 && (
-          <div className="event-row event-row--metadata">
-            <div className="event-row__body">
-              <span className="event-row__label">Additional event information</span>
-              <dl className="event-metadata">
-                {event.metadata.map((entry, index) => (
-                  <div key={`${entry.label}-${index}`}>
-                    <dt>{entry.label}</dt>
-                    <dd>{entry.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          </div>
-        )}
       </div>
     </Frame>
   );

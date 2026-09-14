@@ -83,7 +83,7 @@ describe("calendar event details", () => {
     expect(rows).toBeTruthy();
   });
 
-  test("renders provider links, reminders, attachments, and metadata without clipping them", () => {
+  test("renders provider links, reminders, and attachments without the extra metadata section", () => {
     render(
       <CalendarEventFrame
         event={event({
@@ -111,6 +111,7 @@ describe("calendar event details", () => {
     expect(screen.getByText("Event link")).toBeInTheDocument();
     expect(screen.getByText("email · 30 minutes before")).toBeInTheDocument();
     expect(screen.getByText("Launch brief.pdf")).toBeInTheDocument();
-    expect(screen.getByText("visibility")).toBeInTheDocument();
+    expect(screen.queryByText("Additional event information")).not.toBeInTheDocument();
+    expect(screen.queryByText("visibility")).not.toBeInTheDocument();
   });
 });
