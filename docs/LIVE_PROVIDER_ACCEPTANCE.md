@@ -4,6 +4,14 @@ Use this checklist before deploying provider integrations. It verifies the same 
 Gmail, iCloud, scheduling, and truthful-UI paths covered by the automated tests, using a
 disposable test account and a uniquely named test block.
 
+## Latest verification
+
+The owner manually verified the Google Calendar and iCloud Calendar acceptance flows on
+2026-09-14. This confirms the connected-provider paths against the current Cooper build; account
+names, event names, credentials, and other private test details are intentionally not recorded
+here. Repeat this checklist after changes to provider authentication, normalization, scheduling,
+or read-only guarantees.
+
 ## Safe Setup
 
 1. Copy `.env.example` to `.env` if needed. Keep `.env` local: it is gitignored.

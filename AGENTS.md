@@ -9,7 +9,8 @@ Three owner-scoped tables and a small set of backend files. Runs locally and can
 authentication for approved users.
 
 Read `PRD.md`, then `ARCHITECTURE.md`. `PRD.md` has seven requirements; the provider requirement
-is only partly built. Know which sources are live before you start.
+is only partly built. Know which sources are live before you start, and check
+`docs/LIVE_PROVIDER_ACCEPTANCE.md` for the latest manual provider verification record.
 
 ## Commands
 
@@ -133,6 +134,10 @@ markup. `tests/test_cooper.py` covers the pure functions, `tests/test_api.py` go
 Run the app and look at it before saying you are done. Three of the bugs in this codebase's
 history were invisible in tests and obvious on screen: a timezone shift that displayed 3pm as
 11pm, a grid that wrapped, and the same task listed twice.
+
+Provider changes have two separate gates: automated transport/API checks and manual acceptance
+with connected Google or iCloud accounts. Update `docs/LIVE_PROVIDER_ACCEPTANCE.md` after the
+manual gate, before pushing a release. Never treat mocked provider tests as live acceptance.
 
 Small files. If one is hard to describe in a sentence, split it.
 

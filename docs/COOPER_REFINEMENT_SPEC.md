@@ -5,6 +5,11 @@ This work serves PRD requirements 1, 3, 4, 5, 6, and 7. Preserve Cooper's cream/
 paper appearance, illustrations, handwriting, categories, importance, navigation,
 and separate mobile layout.
 
+> Historical snapshot: this brief records the starting state and evidence from 2026-09-08. The
+> iCloud adapter, bounded MCP tools, local-only scheduling, and contextual onboarding it describes
+> as future or incomplete are now implemented. Use `README.md`, `ARCHITECTURE.md`, and
+> `docs/LIVE_PROVIDER_ACCEPTANCE.md` for the current contract and verification status.
+
 ## Verified starting state
 
 At 1366x768, the running Vite app has a 744px landing track. Its final panel's
@@ -22,7 +27,8 @@ Calendar.add_block uses deterministic IDs but did not verify ownership before pa
 ID or deleting a saved event reference.
 sources.busy_windows collects Google/local/Gmail commitments. brain.py proposes
 validated Actions; app.py writes and owns undo. Calendar write failures can be
-swallowed by place_one and schedule_now. There is no MCP or iCloud adapter.
+swallowed by place_one and schedule_now. At the time of this snapshot there was no MCP or
+iCloud adapter.
 
 The checkout contains earlier auth, onboarding, config and visual changes. Keep
 them in place and retain explicit commit checkpoints.
@@ -112,9 +118,11 @@ safe meeting links and locations without storing message bodies.
 
 Final checks: backend `304 passed`; frontend `154 passed`; production frontend build passes; Ruff
 passes; `git diff --check` passes. Live screenshots cover landing, final CTA, signup, Form, Settings,
-and Calendar at desktop and mobile sizes. The browser console has no application errors. Live
-external Google/Gmail/iCloud calls were not made because no designated test account or event was
-provided; provider behavior is covered with transport and API tests.
+and Calendar at desktop and mobile sizes. The browser console has no application errors. At the
+time of this 2026-09-08 brief, live external Google/Gmail/iCloud calls were not made because no
+designated test account or event was provided. That historical limitation is superseded by the
+manual Google Calendar and iCloud Calendar verification recorded in
+`docs/LIVE_PROVIDER_ACCEPTANCE.md`.
 
 ## Rollback
 

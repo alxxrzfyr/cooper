@@ -34,6 +34,8 @@ approved audience, but it is not a team or project-management tool.
 - Connect Google Calendar and Gmail as read-only commitment sources. Cooper writes only the
   calendar blocks it places.
 - Read iCloud calendars through CalDAV so those commitments also block scheduling.
+- Google Calendar and iCloud Calendar acceptance flows were manually verified on 2026-09-14;
+  the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
 - Let Ask select bounded availability, Gmail confirmation, and planning tools through MCP.
 - Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
 - Install the frontend as a responsive PWA with light and dark themes.
@@ -148,7 +150,8 @@ Cooper follows a small set of product rules:
 - [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
 - [`docs/DESIGN.md`](docs/DESIGN.md) describes the visual system and interaction rules.
 - [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) provides the local
-  Google, Gmail, iCloud, and calendar-write acceptance checklist before deployment.
+  Google, Gmail, iCloud, and Cooper-local scheduling acceptance checklist, including the latest
+  manual verification record.
 
 ## License
 

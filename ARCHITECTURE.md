@@ -39,6 +39,13 @@ reconciled Gmail confirmations.
 it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
 second writer.
 
+## Operational verification
+
+The owner manually verified the Google Calendar and iCloud Calendar acceptance flows on
+2026-09-14. The repeatable checklist and the privacy-safe verification record are in
+`docs/LIVE_PROVIDER_ACCEPTANCE.md`; do not infer live provider readiness from transport mocks or
+unit tests alone.
+
 **`sources.py` is the load-bearing one.** Google events, Outlook meetings and events parsed out
 of email are all the same thing to the scheduler: `(start, end)` pairs that are already spoken
 for. `planner.place()` takes busy intervals and does not care where they came from. Build this

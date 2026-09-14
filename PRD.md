@@ -204,7 +204,9 @@ Requirement 7's shared pipe (`sources.py`) combines Google Calendar, iCloud Cale
 blocks, and supported Gmail confirmations. Connected calendar reads must complete before a task
 is placed; an unavailable source leaves it captured and waiting. The one Gmail timer reports its
 last check. Teams and Classroom are future read-only sources, and Luma/Meetup have no direct
-integration. Bulk destructive verbs still need their conversation surface in AI mode.
+integration. The owner manually verified the Google Calendar and iCloud Calendar acceptance flows
+on 2026-09-14; the repeatable record is in `docs/LIVE_PROVIDER_ACCEPTANCE.md`. Bulk destructive
+verbs still need their conversation surface in AI mode.
 
 Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
 an invented half-hour block, against what all three documents promised. The dashboard's "waiting
