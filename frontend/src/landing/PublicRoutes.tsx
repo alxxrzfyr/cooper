@@ -1,6 +1,6 @@
 import "./landing.css";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Mascot } from "../Mascot";
 import { AuthPage } from "./AuthPage";
@@ -51,7 +51,17 @@ function authIntent(route: PublicRoute): AuthIntent {
   return route === "login" ? "login" : "signup";
 }
 
-function PublicLoading({ onOverview }: { onOverview: () => void }) {
+const AUTH_CHECK_TIMEOUT_MS = 8_000;
+
+function PublicLoading({
+  stalled,
+  onContinue,
+  continueLabel,
+}: {
+  stalled: boolean;
+  onContinue: () => void;
+  continueLabel: string;
+}) {
   return (
     <div className="public-page public-loading">
       <header className="public-page__header">
@@ -60,21 +70,32 @@ function PublicLoading({ onOverview }: { onOverview: () => void }) {
           <span className="landing__wordmark">Cooper</span>
         </a>
       </header>
-      <section className="public-loading__main" aria-labelledby="public-loading-title">
+      <section
+        className="public-loading__main"
+        aria-labelledby="public-loading-title"
+        aria-busy="true"
+      >
         <Mascot name="cooper_idle" size="lg" decorative loading="eager" />
         <p className="landing__eyebrow">Welcome to Cooper</p>
-        <h1 id="public-loading-title">Checking your account.</h1>
-        <p>One moment while we confirm your Cooper account.</p>
-        <button type="button" className="landing__secondary" onClick={onOverview}>
-          View the overview
+        <h1 id="public-loading-title">
+          {stalled ? "Still checking your account." : "Checking your account."}
+        </h1>
+        <p>
+          {stalled
+            ? "This is taking longer than usual. You can continue while we finish checking securely."
+            : "One moment while we confirm your Cooper account."}
+        </p>
+        <button type="button" className="landing__secondary" onClick={onContinue}>
+          {continueLabel}
         </button>
         <div
           className="public-loading__status"
           role="status"
           aria-label="Checking Firebase account"
+          aria-live="polite"
         >
-          <span aria-hidden="true" />
-          <span>Checking securely</span>
+          <span className="public-loading__spinner" aria-hidden="true" />
+          <span>{stalled ? "Taking longer than expected" : "Checking securely"}</span>
         </div>
       </section>
     </div>
@@ -117,14 +138,35 @@ export function PublicRoutes({
   onResetPassword,
   onUseAnotherAccount,
 }: PublicRoutesProps) {
-  const [showOverview, setShowOverview] = useState(false);
+  const [loadingFallback, setLoadingFallback] = useState<"overview" | "auth" | null>(null);
+  const [authCheckStalled, setAuthCheckStalled] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading) {
+      setAuthCheckStalled(false);
+      setLoadingFallback(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setAuthCheckStalled(true), AUTH_CHECK_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [authLoading]);
+
+  useEffect(() => {
+    setLoadingFallback(null);
+  }, [route]);
 
   if (route === "terms") return <TermsPage />;
   if (route === "privacy") return <PrivacyPage />;
   if (route === "not-found") return <NotFoundPage />;
   if (route === "landing") {
-    if (authLoading && !showOverview) {
-      return <PublicLoading onOverview={() => setShowOverview(true)} />;
+    if (authLoading && loadingFallback === null) {
+      return (
+        <PublicLoading
+          stalled={authCheckStalled}
+          onContinue={() => setLoadingFallback("overview")}
+          continueLabel="View the overview"
+        />
+      );
     }
     return (
       <LandingPage
@@ -138,13 +180,23 @@ export function PublicRoutes({
     );
   }
 
+  if (authLoading && loadingFallback === null) {
+    return (
+      <PublicLoading
+        stalled={authCheckStalled}
+        onContinue={() => setLoadingFallback("auth")}
+        continueLabel={route === "login" ? "Continue to sign in" : "Continue to create an account"}
+      />
+    );
+  }
+
   return (
     <AuthPage
       intent={authIntent(route)}
       busy={busy}
       error={error}
       authEnabled={authEnabled}
-      authLoading={authLoading}
+      authLoading={authLoading && loadingFallback !== "auth"}
       onSignIn={onSignIn}
       onEmailAuth={onEmailAuth}
       authStatus={authStatus === "verification-pending" ? "verification-pending" : "idle"}

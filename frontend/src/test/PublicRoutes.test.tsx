@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
@@ -38,7 +38,13 @@ describe("public route surface", () => {
     render(<PublicRoutes route="landing" {...props} authLoading />);
 
     expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Checking your account." }).closest("section"),
+    ).toHaveAttribute("aria-busy", "true");
     expect(screen.queryByRole("heading", { name: "Hi, I’m Cooper." })).not.toBeInTheDocument();
   });
 
@@ -49,6 +55,26 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Checking your account…" })).toBeDisabled();
+  });
+
+  test("gives dedicated auth routes a safe fallback when checking takes too long", () => {
+    vi.useFakeTimers();
+    try {
+      render(<PublicRoutes route="login" {...props} authLoading />);
+
+      expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(8_000));
+
+      expect(
+        screen.getByRole("heading", { name: "Still checking your account." }),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Continue to sign in" }));
+      expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("renders signup with a distinct intent", () => {

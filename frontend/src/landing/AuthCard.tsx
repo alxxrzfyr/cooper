@@ -58,7 +58,7 @@ export function AuthCard({
 
   if (authStatus === "verification-pending") {
     return (
-      <section className="landing__auth-card" aria-labelledby="auth-card-title">
+      <section className="landing__auth-card" aria-labelledby="auth-card-title" aria-busy={busy}>
         <h2 id="auth-card-title">Check your email</h2>
         <p>We sent a verification link. Confirm it, then come back here to open Cooper.</p>
         <div className="landing__auth-actions">
@@ -66,6 +66,7 @@ export function AuthCard({
             type="button"
             className="landing__email-submit"
             disabled={busy}
+            aria-busy={busy}
             onClick={() => void onCheckVerification?.()}
           >
             {busy ? "Checking…" : "I’ve verified my email"}
@@ -74,6 +75,7 @@ export function AuthCard({
             type="button"
             className="landing__secondary"
             disabled={busy}
+            aria-busy={busy}
             onClick={() => void onResendVerification?.()}
           >
             Resend verification email
@@ -121,7 +123,7 @@ export function AuthCard({
 
   if (resetMode) {
     return (
-      <section className="landing__auth-card" aria-labelledby="auth-card-title">
+      <section className="landing__auth-card" aria-labelledby="auth-card-title" aria-busy={busy}>
         <h2 id="auth-card-title">Reset your password</h2>
         <p>Enter your email and we&rsquo;ll send a link to choose a new password.</p>
         <form className="landing__email-form" onSubmit={submitReset}>
@@ -141,6 +143,7 @@ export function AuthCard({
             type="submit"
             className="landing__email-submit"
             disabled={disabled || !onResetPassword}
+            aria-busy={busy}
           >
             {busy ? "Sending…" : "Send reset link"}
           </button>
@@ -176,7 +179,7 @@ export function AuthCard({
   }
 
   return (
-    <section className="landing__auth-card" aria-labelledby="auth-card-title">
+    <section className="landing__auth-card" aria-labelledby="auth-card-title" aria-busy={disabled}>
       <h2 id="auth-card-title">{copy.title}</h2>
       <p>{copy.description}</p>
 
@@ -193,6 +196,7 @@ export function AuthCard({
         type="button"
         className={`landing__google${!authEnabled ? " landing__google--unavailable" : ""}`}
         disabled={googleDisabled}
+        aria-busy={authLoading || busy}
         onClick={onSignIn}
       >
         {authEnabled && (
@@ -298,7 +302,12 @@ export function AuthCard({
             {passwordError}
           </p>
         )}
-        <button type="submit" className="landing__email-submit" disabled={disabled}>
+        <button
+          type="submit"
+          className="landing__email-submit"
+          disabled={disabled}
+          aria-busy={busy}
+        >
           {busy ? "Working…" : emailAction}
         </button>
         {intent === "login" && (
