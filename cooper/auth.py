@@ -77,11 +77,3 @@ def verify_firebase_token(token: str, *, project_id: str) -> AuthIdentity:
         _deny(401, "Invalid authentication token")
 
     return AuthIdentity(uid=uid, email=email.casefold())
-
-
-def check_allowed_email(identity: AuthIdentity, allowed: frozenset[str]) -> None:
-    if not allowed:
-        return
-    normalized_allowed = {email.strip().casefold() for email in allowed if email.strip()}
-    if identity.email.casefold() not in normalized_allowed:
-        _deny(403, "Account is not allowed")

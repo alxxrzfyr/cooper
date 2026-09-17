@@ -334,10 +334,9 @@ class Calendar:
                 decoded = json.loads(raw) if raw else {}
                 return decoded if isinstance(decoded, dict) else {}
         except urllib.error.HTTPError as error:
-            detail = error.read().decode(errors="replace")[:200]
-            raise CalendarError(f"Google returned {error.code}: {detail}") from error
+            raise CalendarError(f"Google returned {error.code}.") from error
         except (urllib.error.URLError, TimeoutError) as error:
-            raise CalendarError(f"Could not reach Google: {error}") from error
+            raise CalendarError("Could not reach Google.") from error
         except json.JSONDecodeError as error:
             raise CalendarError("Google sent a response that was not JSON.") from error
 

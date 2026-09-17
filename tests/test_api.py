@@ -8,6 +8,7 @@ state rather than a special case.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -41,7 +42,6 @@ def configured_client(
     owner_id: str = "local",
     shared_key: str | None = KEY,
     auth_mode: str = "local",
-    allowed_emails: str = "friend@example.com",
     google_client_id: str = "",
     google_client_secret: str = "",
     encryption_key: str = "",
@@ -52,26 +52,33 @@ def configured_client(
     monkeypatch.setenv("COOPER_GOOGLE_CLIENT_ID", google_client_id)
     monkeypatch.setenv("COOPER_GOOGLE_CLIENT_SECRET", google_client_secret)
     monkeypatch.setenv("COOPER_ENCRYPTION_KEY", encryption_key)
-    monkeypatch.setenv("COOPER_AUTH_MODE", auth_mode)
+    # Firebase-mode tests use throwaway SQLite databases. Load the module in local mode first so
+    # the production-only hosted database guard does not weaken merely to accommodate tests,
+    # then switch the already-created settings object to Firebase for request-path coverage.
+    module_load_auth_mode = "local" if auth_mode == "firebase" else auth_mode
+    monkeypatch.setenv("COOPER_AUTH_MODE", module_load_auth_mode)
     monkeypatch.setenv("COOPER_OWNER_ID", owner_id)
+    monkeypatch.delenv("COOPER_ALLOWED_EMAILS", raising=False)
     if shared_key is None:
-        monkeypatch.setenv("COOPER_SHARED_KEY", "")
+        monkeypatch.setenv("COOPER_SHARED_KEY", KEY if auth_mode == "firebase" else "")
     else:
         monkeypatch.setenv("COOPER_SHARED_KEY", shared_key)
     if auth_mode == "firebase":
         monkeypatch.setenv("COOPER_FIREBASE_PROJECT_ID", "project")
-        monkeypatch.setenv("COOPER_ALLOWED_EMAILS", allowed_emails)
         monkeypatch.setenv("COOPER_OAUTH_STATE_SECRET", "oauth-state-secret-long-enough")
         monkeypatch.setenv("COOPER_SYNC_SECRET", "sync-secret-that-is-long-enough")
     else:
         monkeypatch.delenv("COOPER_FIREBASE_PROJECT_ID", raising=False)
-        monkeypatch.delenv("COOPER_ALLOWED_EMAILS", raising=False)
 
     import importlib
 
     import cooper.app as module
 
     module = importlib.reload(module)
+    if auth_mode == "firebase":
+        module.settings.auth_mode = "firebase"
+        if shared_key is None:
+            module.settings.shared_key = None
     with TestClient(module.app) as open_client:
         yield module, open_client
 
@@ -97,6 +104,35 @@ def say(client: TestClient, text: str) -> dict:
     response = client.post("/api/say", json={"text": text}, headers=HEADERS)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_health_checks_database_and_returns_no_error_details(
+    client: TestClient, monkeypatch
+) -> None:
+    import cooper.app as module
+
+    assert client.get("/health").json() == {"status": "ok"}
+
+    def unavailable() -> None:
+        raise RuntimeError("private database connection details")
+
+    monkeypatch.setattr(module.store.engine, "connect", unavailable)
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert "private database connection details" not in response.text
+
+
+def test_request_log_excludes_query_and_authentication(client: TestClient, caplog) -> None:
+    with caplog.at_level(logging.INFO, logger="cooper.requests"):
+        response = client.get("/health?code=private-oauth-code", headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID")
+    entries = [record.message for record in caplog.records if record.name == "cooper.requests"]
+    assert len(entries) == 1
+    assert '"status": 200' in entries[0]
+    assert "private-oauth-code" not in entries[0]
+    assert KEY not in entries[0]
 
 
 def test_mcp_catalog_and_disconnected_read(client):
@@ -1110,7 +1146,7 @@ class TestRequestOwnership:
         assert response.status_code == 401
         assert response.json() == {"detail": "Invalid authentication token"}
 
-    def test_firebase_unlisted_email_is_forbidden_before_store_query(
+    def test_firebase_verified_email_can_use_the_api_without_an_invite(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         with configured_client(
@@ -1118,7 +1154,6 @@ class TestRequestOwnership:
             f"sqlite:///{tmp_path / 'firebase.db'}",
             auth_mode="firebase",
             shared_key="test-key-that-is-long-enough-x",
-            allowed_emails="friend@example.com",
         ) as (module, client):
             monkeypatch.setattr(
                 module,
@@ -1127,16 +1162,46 @@ class TestRequestOwnership:
                     uid="stranger", email="stranger@example.com"
                 ),
             )
-            monkeypatch.setattr(
-                module.store,
-                "open_items",
-                lambda *_args, **_kwargs: pytest.fail("forbidden request reached storage"),
-            )
 
-            response = client.get("/api/today", headers={"Authorization": "Bearer verified"})
+            response = client.get("/api/changes", headers={"Authorization": "Bearer verified"})
 
-        assert response.status_code == 403
-        assert response.json() == {"detail": "Account is not allowed"}
+        assert response.status_code == 200
+
+    def test_hosted_requests_are_limited_per_owner(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            monkeypatch.setattr(module, "API_REQUESTS_PER_MINUTE", 2)
+            headers = allow_firebase(module, monkeypatch)
+            assert client.get("/api/changes", headers=headers).status_code == 200
+            assert client.get("/api/changes", headers=headers).status_code == 200
+            limited = client.get("/api/changes", headers=headers)
+            assert limited.status_code == 429
+            assert int(limited.headers["Retry-After"]) >= 1
+            assert client.get("/health").status_code == 200
+
+            other_headers = allow_firebase(module, monkeypatch, uid="another-user")
+            assert client.get("/api/changes", headers=other_headers).status_code == 200
+
+    def test_hosted_provider_sync_has_a_tighter_limit(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with configured_client(
+            monkeypatch,
+            f"sqlite:///{tmp_path / 'firebase.db'}",
+            auth_mode="firebase",
+            shared_key=None,
+        ) as (module, client):
+            monkeypatch.setattr(module, "SYNC_REQUESTS_PER_MINUTE", 1)
+            monkeypatch.setattr(module, "sync_gmail_once", lambda _owner: module.SyncSummary())
+            headers = allow_firebase(module, monkeypatch)
+            assert client.post("/api/google/sync", headers=headers).status_code == 200
+            assert client.post("/api/google/sync", headers=headers).status_code == 429
 
     def test_firebase_routes_use_verified_uid_for_items_settings_and_history(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
@@ -1146,7 +1211,6 @@ class TestRequestOwnership:
             f"sqlite:///{tmp_path / 'firebase.db'}",
             auth_mode="firebase",
             shared_key=None,
-            allowed_emails="friend@example.com",
         ) as (module, client):
             monkeypatch.setattr(
                 module,
@@ -1211,7 +1275,6 @@ class TestRequestOwnership:
             f"sqlite:///{tmp_path / 'firebase.db'}",
             auth_mode="firebase",
             shared_key=None,
-            allowed_emails="friend@example.com",
         ) as (module, client):
             monkeypatch.setattr(
                 module,
@@ -1791,7 +1854,6 @@ class TestGoogle:
 
         monkeypatch.setattr(module.settings, "auth_mode", "firebase")
         monkeypatch.setattr(module.settings, "firebase_project_id", "project")
-        monkeypatch.setattr(module.settings, "allowed_emails", ("friend@example.com",))
 
         firebase_response = client.get("/api/google/callback?code=abc&state=forged")
 

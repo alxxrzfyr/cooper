@@ -192,6 +192,12 @@
   .auth-page .landing__email-form > p {
     grid-column: 1 / -1;
   }
+  .auth-page .landing__email-form--signup > label:last-of-type {
+    grid-column: 1 / -1;
+  }
+  .auth-page .landing__email-form > label:only-of-type {
+    grid-column: 1 / -1;
+  }
 }
 
 .auth-page .landing__google {

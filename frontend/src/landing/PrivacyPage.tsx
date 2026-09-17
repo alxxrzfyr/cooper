@@ -2,11 +2,11 @@ import { LegalPage } from "./LegalPage";
 
 export function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="August 31, 2026" tone="green">
+    <LegalPage title="Privacy Policy" updated="September 17, 2026" tone="green">
       <p className="legal-page__intro">
-        Cooper is designed to keep planning personal. This page explains what the current invited
-        deployment handles and why. It is a plain-language product notice, not a substitute for a
-        review of the laws that apply to a public launch.
+        Cooper is designed to keep planning personal. This page explains what the current public
+        beta handles and why. It is a plain-language product notice, not a substitute for a review
+        of the laws that apply to a public launch.
       </p>
 
       <section className="legal-page__card">
@@ -33,9 +33,8 @@ export function PrivacyPage() {
         <p>
           If you connect Google, Cooper reads calendar commitments and supported confirmation emails
           to avoid placing work over something you already scheduled. Calendar and mail are
-          read-only inputs. Cooper writes only its own placed work blocks to Google Calendar. Access
-          tokens are encrypted at rest by the backend, and a remote failure must not prevent local
-          capture.
+          read-only inputs. New Cooper items stay in Cooper's database. Access tokens are encrypted
+          at rest by the backend, and a remote failure must not prevent local capture.
         </p>
         <p>
           Email content is used only to parse supported confirmations. Cooper does not turn your
@@ -57,10 +56,10 @@ export function PrivacyPage() {
       <section className="legal-page__card">
         <h2>Sharing and retention</h2>
         <p>
-          Cooper does not sell your workspace or use it for advertising. The invited deployment is
-          shared only with people granted access by its operator. To ask about access or deletion,
-          contact the person who operates your deployment; retention depends on that
-          deployment&apos;s database and hosting configuration.
+          Cooper does not sell your workspace or use it for advertising. Each account has its own
+          workspace. To ask about access or deletion, contact the person who operates your
+          deployment; retention depends on that deployment&apos;s database and hosting
+          configuration.
         </p>
       </section>
 

@@ -62,11 +62,29 @@ describe("public route surface", () => {
     );
   });
 
+  test("email signup requires matching password confirmation before Firebase is called", async () => {
+    const onEmailAuth = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    render(<PublicRoutes route="signup" {...props} onEmailAuth={onEmailAuth} />);
+
+    await user.type(screen.getByLabelText("Email address"), "new@proton.com");
+    await user.type(screen.getByLabelText("Create your password"), "cooper-secret");
+    await user.type(screen.getByLabelText("Re-enter your password"), "different-secret");
+    await user.click(screen.getByRole("button", { name: "Register with email" }));
+    expect(onEmailAuth).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Passwords do not match.");
+
+    await user.clear(screen.getByLabelText("Re-enter your password"));
+    await user.type(screen.getByLabelText("Re-enter your password"), "cooper-secret");
+    await user.click(screen.getByRole("button", { name: "Register with email" }));
+    expect(onEmailAuth).toHaveBeenCalledWith("new@proton.com", "cooper-secret", "signup");
+  });
+
   test("keeps legal pages available without authentication", () => {
     render(<PublicRoutes route="terms" {...props} authEnabled={false} />);
 
     expect(screen.getByRole("heading", { name: "Terms of Use" })).toBeInTheDocument();
-    expect(screen.getByText(/invited friends and family/i)).toBeInTheDocument();
+    expect(screen.getByText(/personal planning workspace in public beta/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
   });
 
@@ -88,7 +106,7 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("button", { name: "Hosted sign-in unavailable" })).toBeDisabled();
     const email = screen.getByLabelText("Email address");
-    const password = screen.getByLabelText("Password");
+    const password = screen.getByLabelText("Create your password");
 
     expect(email).toBeEnabled();
     expect(password).toBeEnabled();

@@ -45,6 +45,8 @@ export function AuthCard({
 }: AuthCardProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -98,7 +100,12 @@ export function AuthCard({
 
   function submitEmail(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    if (!onEmailAuth) return;
+    if (disabled || !onEmailAuth) return;
+    if (intent === "signup" && password !== passwordConfirmation) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    setPasswordError(null);
     void onEmailAuth(email.trim(), password, intent);
   }
 
@@ -221,7 +228,10 @@ export function AuthCard({
         <span>or continue with email</span>
       </div>
 
-      <form className="landing__email-form" onSubmit={submitEmail}>
+      <form
+        className={`landing__email-form${intent === "signup" ? " landing__email-form--signup" : ""}`}
+        onSubmit={submitEmail}
+      >
         <label>
           Email address
           <input
@@ -235,14 +245,17 @@ export function AuthCard({
           />
         </label>
         <label>
-          Password
+          {intent === "signup" ? "Create your password" : "Password"}
           <span className="landing__password-control">
             <input
               type={passwordVisible ? "text" : "password"}
               name="password"
               autoComplete={intent === "login" ? "current-password" : "new-password"}
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setPasswordError(null);
+              }}
               disabled={disabled}
               minLength={6}
               required
@@ -262,6 +275,29 @@ export function AuthCard({
             </button>
           </span>
         </label>
+        {intent === "signup" && (
+          <label>
+            Re-enter your password
+            <input
+              type="password"
+              name="password-confirmation"
+              autoComplete="new-password"
+              value={passwordConfirmation}
+              onChange={(event) => {
+                setPasswordConfirmation(event.target.value);
+                setPasswordError(null);
+              }}
+              disabled={disabled}
+              minLength={6}
+              required
+            />
+          </label>
+        )}
+        {passwordError && (
+          <p className="landing__error" role="alert">
+            {passwordError}
+          </p>
+        )}
         <button type="submit" className="landing__email-submit" disabled={disabled}>
           {busy ? "Working…" : emailAction}
         </button>

@@ -72,9 +72,11 @@ describe("public landing", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} onEmailAuth={onEmailAuth} />);
 
     expect(screen.getByLabelText("Email address")).toBeInTheDocument();
-    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Create your password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Re-enter your password")).toBeInTheDocument();
     await userEvent.setup().type(screen.getByLabelText("Email address"), "friend@example.com");
-    await userEvent.setup().type(screen.getByLabelText("Password"), "password");
+    await userEvent.setup().type(screen.getByLabelText("Create your password"), "password");
+    await userEvent.setup().type(screen.getByLabelText("Re-enter your password"), "password");
     await userEvent.setup().click(screen.getByRole("button", { name: "Register with email" }));
 
     expect(onEmailAuth).toHaveBeenCalledWith("friend@example.com", "password", "signup");
@@ -84,7 +86,7 @@ describe("public landing", () => {
     const user = userEvent.setup();
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
-    const password = screen.getByLabelText("Password");
+    const password = screen.getByLabelText("Create your password");
     await user.type(password, "cooper-secret");
     expect(password).toHaveAttribute("type", "password");
 

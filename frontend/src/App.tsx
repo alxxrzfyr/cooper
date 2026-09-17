@@ -216,7 +216,6 @@ type AuthState =
   | { kind: "loading" }
   | { kind: "signed-out" }
   | { kind: "verification-pending"; user: FirebaseUser }
-  | { kind: "access-denied"; user: FirebaseUser; message: string }
   | { kind: "signed-in"; user: FirebaseUser };
 
 function firebaseAuthMessage(error: unknown): string {
@@ -382,9 +381,7 @@ export default function App() {
   const canCompose = canUseAi || authState.kind === "local";
   const canAsk = canUseAi || authState.kind === "local";
   const signedInUser =
-    authState.kind === "signed-in" ||
-    authState.kind === "verification-pending" ||
-    authState.kind === "access-denied"
+    authState.kind === "signed-in" || authState.kind === "verification-pending"
       ? authState.user
       : null;
   const signedInUid = signedInUser?.uid ?? null;
@@ -498,22 +495,9 @@ export default function App() {
     (error: unknown): boolean => {
       if (!(error instanceof ApiError)) return false;
       if (error.status === 401) return returnToSignIn();
-      if (error.status === 403 && firebaseConfigured && auth?.currentUser) {
-        setView(null);
-        setAgentSteps(null);
-        setText("");
-        setAuthState({
-          kind: "access-denied",
-          user: auth.currentUser,
-          message: "This beta is invite-only. Ask the Cooper maintainer to approve this email.",
-        });
-        setLoadResolved(true);
-        navigate("/login");
-        return true;
-      }
       return false;
     },
-    [navigate, returnToSignIn],
+    [returnToSignIn],
   );
 
   const startSignIn = useCallback(() => {
@@ -987,13 +971,7 @@ export default function App() {
             authLoading={authState.kind === "loading"}
             onSignIn={startSignIn}
             onEmailAuth={startEmailAuth}
-            authStatus={
-              authState.kind === "verification-pending"
-                ? "verification-pending"
-                : authState.kind === "access-denied"
-                  ? "access-denied"
-                  : "idle"
-            }
+            authStatus={authState.kind === "verification-pending" ? "verification-pending" : "idle"}
             onCheckVerification={checkVerification}
             onResendVerification={resendVerification}
             onResetPassword={sendPasswordReset}

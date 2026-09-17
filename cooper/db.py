@@ -187,7 +187,7 @@ class Store:
 
     def __init__(self, url: str) -> None:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        self.engine = create_engine(url, connect_args=connect_args)
+        self.engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
         existing = set(inspect(self.engine).get_table_names())
         if not (existing - {"alembic_version"}):
             Base.metadata.create_all(self.engine)

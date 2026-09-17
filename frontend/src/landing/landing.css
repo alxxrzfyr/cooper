@@ -4780,6 +4780,9 @@ html.lenis body {
   .landing__panel--start .landing__email-form > p {
     grid-column: 1 / -1;
   }
+  .landing__panel--start .landing__email-form--signup > label:last-of-type {
+    grid-column: 1 / -1;
+  }
   .landing__panel--start .landing__email-form input {
     min-height: 44px;
   }

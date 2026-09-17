@@ -5,7 +5,7 @@ import datetime as dt
 import pytest
 from pydantic import ValidationError
 
-from cooper.auth import AuthFailure, AuthIdentity, check_allowed_email, verify_firebase_token
+from cooper.auth import AuthFailure, verify_firebase_token
 from cooper.config import Settings
 
 
@@ -82,28 +82,17 @@ def test_firebase_identity_rejects_expired_tokens(monkeypatch: pytest.MonkeyPatc
     assert error.value.status_code == 401
 
 
-def test_allowlist_is_case_insensitive() -> None:
-    identity = AuthIdentity(uid="u1", email="Friend@Example.com")
-
-    check_allowed_email(identity, frozenset({"friend@example.com"}))
-
-
-def test_firebase_mode_allows_an_empty_allowlist() -> None:
+def test_firebase_mode_starts_without_an_email_allowlist() -> None:
     settings = Settings(
         _env_file=None,
         shared_key=None,
         auth_mode="firebase",
         firebase_project_id="project",
-        allowed_emails=(),
+        database_url="postgresql+psycopg://example.invalid/test",
         oauth_state_secret="oauth-state-secret-long-enough",
         sync_secret="sync-secret-that-is-long-enough",
     )
-
-    assert settings.allowed_emails == ()
-
-
-def test_empty_allowlist_allows_any_verified_identity() -> None:
-    check_allowed_email(AuthIdentity(uid="u1", email="anyone@example.com"), frozenset())
+    assert settings.auth_mode == "firebase"
 
 
 def test_firebase_mode_does_not_require_a_shared_key() -> None:
@@ -112,12 +101,25 @@ def test_firebase_mode_does_not_require_a_shared_key() -> None:
         shared_key=None,
         auth_mode="firebase",
         firebase_project_id="project",
-        allowed_emails=("friend@example.com",),
+        database_url="postgresql+psycopg://example.invalid/test",
         oauth_state_secret="oauth-state-secret-long-enough",
         sync_secret="sync-secret-that-is-long-enough",
     )
 
     assert settings.shared_key is None
+
+
+def test_firebase_mode_requires_a_hosted_database() -> None:
+    with pytest.raises(ValidationError, match="COOPER_DATABASE_URL must point to PostgreSQL"):
+        Settings(
+            _env_file=None,
+            shared_key=None,
+            auth_mode="firebase",
+            firebase_project_id="project",
+            database_url="sqlite:///./cooper.db",
+            oauth_state_secret="oauth-state-secret-long-enough",
+            sync_secret="sync-secret-that-is-long-enough",
+        )
 
 
 def test_firebase_mode_requires_an_oauth_state_secret(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +131,7 @@ def test_firebase_mode_requires_an_oauth_state_secret(monkeypatch: pytest.Monkey
             shared_key=None,
             auth_mode="firebase",
             firebase_project_id="project",
-            allowed_emails=("friend@example.com",),
+            database_url="postgresql+psycopg://example.invalid/test",
             sync_secret="sync-secret-that-is-long-enough",
         )
 
@@ -143,7 +145,7 @@ def test_firebase_mode_requires_a_sync_secret(monkeypatch: pytest.MonkeyPatch) -
             shared_key=None,
             auth_mode="firebase",
             firebase_project_id="project",
-            allowed_emails=("friend@example.com",),
+            database_url="postgresql+psycopg://example.invalid/test",
             oauth_state_secret="oauth-state-secret-long-enough",
         )
 

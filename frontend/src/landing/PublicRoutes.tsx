@@ -40,7 +40,7 @@ interface PublicRoutesProps {
   authLoading: boolean;
   onSignIn: () => void;
   onEmailAuth?: (email: string, password: string, intent: AuthIntent) => Promise<void>;
-  authStatus?: "idle" | "verification-pending" | "access-denied";
+  authStatus?: "idle" | "verification-pending";
   onCheckVerification?: () => Promise<void>;
   onResendVerification?: () => Promise<void>;
   onResetPassword?: (email: string) => Promise<void>;
@@ -76,27 +76,6 @@ function PublicLoading({ onOverview }: { onOverview: () => void }) {
           <span aria-hidden="true" />
           <span>Checking securely</span>
         </div>
-      </section>
-    </div>
-  );
-}
-
-function AccessDeniedPage({ onUseAnotherAccount }: { onUseAnotherAccount: () => void }) {
-  return (
-    <div className="public-page public-loading" role="alert">
-      <header className="public-page__header">
-        <a className="public-page__brand" href="/" aria-label="Cooper home">
-          <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
-          <span className="landing__wordmark">Cooper</span>
-        </a>
-      </header>
-      <section className="public-loading__main" aria-labelledby="access-denied-title">
-        <Mascot name="cooper_puzzled" size="lg" decorative loading="eager" />
-        <h1 id="access-denied-title">This beta is invite-only.</h1>
-        <p>Your account is valid, but it is not on Cooper’s approved access list yet.</p>
-        <button type="button" className="landing__secondary" onClick={onUseAnotherAccount}>
-          Use another account
-        </button>
       </section>
     </div>
   );
@@ -143,9 +122,6 @@ export function PublicRoutes({
   if (route === "terms") return <TermsPage />;
   if (route === "privacy") return <PrivacyPage />;
   if (route === "not-found") return <NotFoundPage />;
-  if (authStatus === "access-denied") {
-    return <AccessDeniedPage onUseAnotherAccount={onUseAnotherAccount ?? onSignIn} />;
-  }
   if (route === "landing") {
     if (authLoading && !showOverview) {
       return <PublicLoading onOverview={() => setShowOverview(true)} />;

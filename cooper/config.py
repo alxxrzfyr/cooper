@@ -7,10 +7,10 @@ the rest of the app on safe defaults.
 from __future__ import annotations
 
 import os
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 KEY_MIN = 24
 
@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     shared_key: SecretStr | None = None
     auth_mode: Literal["local", "firebase"] = "local"
     firebase_project_id: str | None = None
-    allowed_emails: Annotated[tuple[str, ...], NoDecode] = ()
 
     host: str = "127.0.0.1"
     port: int = 8000
@@ -95,17 +94,6 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("allowed_emails", mode="before")
-    @classmethod
-    def _parse_allowed_emails(cls, value: object) -> tuple[str, ...]:
-        if value is None or value == "":
-            return ()
-        if isinstance(value, str):
-            return tuple(email.strip() for email in value.split(",") if email.strip())
-        if isinstance(value, (list, tuple, set, frozenset)):
-            return tuple(str(email).strip() for email in value if str(email).strip())
-        return value  # type: ignore[return-value]
-
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Settings:
         if os.environ.get("COOPER_GEMINI_API_KEY", "").strip():
@@ -122,6 +110,10 @@ class Settings(BaseSettings):
             if not self.firebase_project_id:
                 raise ValueError(
                     "COOPER_FIREBASE_PROJECT_ID is required when COOPER_AUTH_MODE=firebase"
+                )
+            if self.database_url.casefold().startswith("sqlite"):
+                raise ValueError(
+                    "COOPER_DATABASE_URL must point to PostgreSQL when COOPER_AUTH_MODE=firebase"
                 )
             if not self.oauth_secret() or len(self.oauth_secret() or "") < KEY_MIN:
                 raise ValueError(

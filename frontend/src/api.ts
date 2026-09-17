@@ -44,9 +44,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response) {
     throw new ApiError(
       503,
-      networkError instanceof TypeError
-        ? "Cooper can’t reach the API right now. Check the connection and try again."
-        : "Cooper couldn’t reach the API. Try again.",
+      init?.method && init.method !== "GET"
+        ? "Cooper couldn’t confirm whether that change saved. Refresh before trying again."
+        : networkError instanceof TypeError
+          ? "Cooper can’t reach the API right now. Check the connection and try again."
+          : "Cooper couldn’t reach the API. Try again.",
     );
   }
   const contentType = response.headers.get("content-type") ?? "";

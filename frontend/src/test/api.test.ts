@@ -88,7 +88,10 @@ describe("API runtime configuration", () => {
     vi.resetModules();
     const { api } = await import("../api");
 
-    await expect(api.createItem({ title: "Write report" })).rejects.toMatchObject({ status: 503 });
+    await expect(api.createItem({ title: "Write report" })).rejects.toMatchObject({
+      status: 503,
+      message: "Cooper couldn’t confirm whether that change saved. Refresh before trying again.",
+    });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

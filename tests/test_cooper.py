@@ -763,13 +763,18 @@ class TestGoogleTransport:
 
         def fail(_request, timeout):
             raise urllib.error.HTTPError(
-                "https://gmail.googleapis.com", 403, "forbidden", {}, io.BytesIO(b"nope")
+                "https://gmail.googleapis.com",
+                403,
+                "forbidden",
+                {},
+                io.BytesIO(b"private provider data"),
             )
 
         monkeypatch.setattr("urllib.request.urlopen", fail)
 
-        with pytest.raises(CalendarError, match="Google returned 403"):
+        with pytest.raises(CalendarError, match="Google returned 403") as error:
             Gmail(calendar).get_message("raw-message-id")
+        assert "private provider data" not in str(error.value)
 
     def test_revocation_failure_does_not_raise_or_keep_using_the_token(
         self, monkeypatch: pytest.MonkeyPatch

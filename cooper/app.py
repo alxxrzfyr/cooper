@@ -17,8 +17,12 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
+import time
+from collections import deque
+from threading import Lock
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -27,10 +31,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import AnyHttpUrl, BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from cooper import mcp, sources
-from cooper.auth import AuthFailure, AuthIdentity, check_allowed_email, verify_firebase_token
+from cooper.auth import AuthFailure, AuthIdentity, verify_firebase_token
 from cooper.brain import (
     COOPER_IDENTITY,
     Action,
@@ -57,6 +61,17 @@ ICLOUD_SETTING = "icloud_credentials"
 ICLOUD_STATUS_SETTING = "icloud_status"
 GOOGLE_NOT_CONNECTED = "Google is not connected for this account."
 OAUTH_STATE_SECONDS = 600
+RATE_WINDOW_SECONDS = 60
+API_REQUESTS_PER_MINUTE = 120
+SYNC_REQUESTS_PER_MINUTE = 5
+_rate_hits: dict[tuple[str, str], deque[float]] = {}
+_rate_lock = Lock()
+logger = logging.getLogger("cooper.requests")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -140,12 +155,63 @@ async def guard(request: Request, call_next: Any) -> Any:
             token.strip(),
             project_id=settings.firebase_project_id or "",
         )
-        check_allowed_email(identity, frozenset(settings.allowed_emails))
     except AuthFailure as error:
         return JSONResponse({"detail": error.detail}, status_code=error.status_code)
 
+    retry_after = _rate_wait(identity.uid, "api", API_REQUESTS_PER_MINUTE)
+    if retry_after is None and request.url.path in {
+        "/api/google/sync",
+        "/api/icloud/connect",
+    }:
+        retry_after = _rate_wait(identity.uid, "provider", SYNC_REQUESTS_PER_MINUTE)
+    if retry_after is not None:
+        return JSONResponse(
+            {"detail": "Too many requests. Please try again shortly."},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
     request.state.identity = identity
     return await call_next(request)
+
+
+def _rate_wait(owner_id: str, bucket: str, limit: int) -> int | None:
+    """One-process abuse guard for the current single-worker hosted API."""
+    at = time.monotonic()
+    key = (owner_id, bucket)
+    with _rate_lock:
+        hits = _rate_hits.setdefault(key, deque())
+        while hits and hits[0] <= at - RATE_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= limit:
+            return max(1, int(hits[0] + RATE_WINDOW_SECONDS - at) + 1)
+        hits.append(at)
+    return None
+
+
+@app.middleware("http")
+async def request_log(request: Request, call_next: Any) -> Any:
+    """Log bounded request context without URLs, bodies, identities, or credentials."""
+    request_id = secrets.token_hex(8)
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        route = request.scope.get("route")
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "route": getattr(route, "path", "unmatched"),
+                    "status": status,
+                    "duration_ms": round((time.perf_counter() - started) * 1000),
+                }
+            )
+        )
 
 
 def request_owner(request: Request) -> AuthIdentity:
@@ -725,6 +791,11 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    try:
+        with store.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable.") from None
     return {"status": "ok"}
 
 
