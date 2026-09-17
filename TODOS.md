@@ -1,8 +1,13 @@
 # TODOS
 
+These are planned items, not active work. Create a `COOP-*` GitHub Issue before implementation.
+
 ## Calendar sources
 
-### Plan Microsoft Teams assignment imports
+### COOP-001 — Plan Microsoft Teams assignment imports
+
+**Status:** Proposed
+**Priority:** P2
 
 **What:** Design read-only assignment and deadline import after the calendar repair.
 
@@ -19,7 +24,10 @@ This is planning work, not authorization to request broader OAuth scopes.
 **Priority:** P2
 **Depends on:** Calendar core repair and verified source-health contract.
 
-### Plan Google Classroom assignment imports
+### COOP-002 — Plan Google Classroom assignment imports
+
+**Status:** Proposed
+**Priority:** P2
 
 **What:** Design read-only assignments, due dates, and update reconciliation.
 

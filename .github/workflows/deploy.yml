@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
+  group: cooper-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +35,9 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --frozen
 
+      - name: Check backend lockfile and dependencies
+        run: uv lock --check && uv pip check
+
       - name: Run backend tests
         run: uv run pytest
 
@@ -47,6 +53,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+        working-directory: frontend
+
+      - name: Audit production frontend dependencies
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
 
       - name: Run frontend tests
@@ -71,6 +81,7 @@ jobs:
   deploy-hosting:
     name: Deploy Firebase Hosting
     needs: verify
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -101,6 +112,7 @@ jobs:
   trigger-render:
     name: Trigger Render API deploy (optional)
     needs: verify
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     env:
       # A step's own `env:` block is invisible to that step's `if:` condition, so the secret has

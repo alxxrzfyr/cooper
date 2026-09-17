@@ -245,11 +245,18 @@ localhost, so:
 The shared key is one user's front door, not authentication. Do not extend it into a pretend
 version of one.
 
-Hosted mode uses Firebase Authentication. The browser sends `Authorization: Bearer <Firebase ID
-token>`, `auth.py` verifies it lazily with Firebase Admin, and `app.py` scopes every query and
-change by the verified UID. A separate owner-bound Google OAuth grant supplies Calendar and Gmail
+Hosted mode uses Firebase Authentication with open email/password registration or Google sign-in.
+The browser sends `Authorization: Bearer <Firebase ID token>`, `auth.py` verifies it lazily with
+Firebase Admin, and `app.py` scopes every query and change by the verified UID. A separate
+owner-bound Google OAuth grant supplies Calendar and Gmail
 access. The OAuth callback is protected by signed, durable, one-use state because Firebase cannot
 attach a bearer token to Google's redirect.
+
+Hosted requests have a short in-process abuse limit per verified UID: 120 requests per minute,
+with five Google sync or iCloud connection attempts per minute. A limit returns 429 with
+`Retry-After`. This protects the current single-worker API, not multiple replicas; a scaled
+deployment needs a shared edge limit. Gemini remains bring-your-own-key, with usage charged and
+limited by the Google project behind each person's key. Cooper keeps no spending ledger.
 
 **Gmail is a restricted scope.** Reading mail is among the heaviest permissions Google grants.
 Free in testing mode for a single developer; a published multi-user app requires a paid annual

@@ -51,6 +51,27 @@ def test_dockerfile_runs_migrations_before_render_server() -> None:
     assert "COOPER_DATABASE_URL=" not in text
 
 
+def test_ci_verifies_pull_requests_but_deploys_only_main_runs() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
+
+    assert "  pull_request:\n    branches:\n      - main" in workflow
+    assert "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" in workflow
+    assert "uv lock --check" in workflow
+    assert "uv pip check" in workflow
+    assert "npm audit --omit=dev --audit-level=high" in workflow
+
+
+def test_solo_workflow_documents_main_and_ticket_conventions() -> None:
+    workflow = (ROOT / "docs" / "WORKFLOW.md").read_text()
+    issue_template = (ROOT / ".github" / "ISSUE_TEMPLATE" / "work-item.md").read_text()
+    pull_request = (ROOT / ".github" / "pull_request_template.md").read_text()
+
+    assert "`main` is the production branch" in workflow
+    assert "COOP-<issue number>" in workflow
+    assert "COOP-___" in issue_template
+    assert "Testing performed" in pull_request
+
+
 def test_backend_env_example_documents_local_and_hosted_values() -> None:
     local = (ROOT / ".env.example").read_text()
     hosted = (ROOT / "render.env.example").read_text()
@@ -62,7 +83,6 @@ def test_backend_env_example_documents_local_and_hosted_values() -> None:
         assert expected in local
     for expected in (
         "COOPER_AUTH_MODE=firebase",
-        "COOPER_ALLOWED_EMAILS=",
         "COOPER_OAUTH_STATE_SECRET=",
         "COOPER_SYNC_SECRET=",
         "COOPER_GOOGLE_REDIRECT_URI=",
@@ -70,6 +90,7 @@ def test_backend_env_example_documents_local_and_hosted_values() -> None:
         assert expected in hosted
     assert "COOPER_GEMINI_API_KEY" not in local
     assert "COOPER_GEMINI_API_KEY" not in hosted
+    assert "COOPER_ALLOWED_EMAILS" not in hosted
     assert "render.env.example" in local
 
 

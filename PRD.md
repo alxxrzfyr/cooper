@@ -2,8 +2,8 @@
 
 One place for everything that takes my time — tasks, events, and errands — that I can talk to.
 
-Today it runs on my machine for me alone. A small public version can also run for approved friends
-and family with Firebase sign-in, PostgreSQL, and owner-scoped data. That does not make it a team
+Today it runs on my machine for me alone. A small public beta can also run with Firebase sign-in,
+PostgreSQL, and owner-scoped data. That does not make it a team
 tool: there is still no sharing, projects, reports, or collaboration.
 
 ## The problem
@@ -155,7 +155,7 @@ brutally expensive if they are deferred, so they are settled now:
 4. **The shared key is a placeholder, not the design.** It is one user's front door. It is not
    authentication and must not be extended into a pretend version of it.
 
-Accounts and hosting are intentionally narrow: Firebase identifies an approved person, PostgreSQL
+Accounts and hosting are intentionally narrow: Firebase identifies a verified account, PostgreSQL
 stores each owner's rows, and Google Calendar/Gmail consent stays per owner. Nothing about that
 adds sharing or team features.
 

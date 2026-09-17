@@ -7,7 +7,7 @@
 <p align="center">A conversational planning workspace for tasks, events, and everyday commitments.</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-private%20beta-405536?style=flat-square" alt="Private beta" />
+  <img src="https://img.shields.io/badge/status-public%20beta-405536?style=flat-square" alt="Public beta" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/FastAPI-0.141-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
@@ -21,8 +21,8 @@ Cooper is a personal planning workspace that turns plain-language input into org
 events, and time-aware plans. It gives each item a priority, explains the ranking, and schedules
 estimated work around the commitments already on the calendar.
 
-The product is designed for one person at a time. It supports private hosted accounts for an
-approved audience, but it is not a team or project-management tool.
+The product is designed for one person at a time. The hosted public beta supports private accounts
+through verified email/password or Google sign-in, but it is not a team or project-management tool.
 
 ## Product capabilities
 
@@ -31,8 +31,8 @@ approved audience, but it is not a team or project-management tool.
 - Schedule estimated tasks inside configured working hours.
 - Display the day, ranked work, fixed events, and scheduled blocks in one workspace.
 - Undo the latest change, including a complete scheduling run.
-- Connect Google Calendar and Gmail as read-only commitment sources. Cooper writes only the
-  calendar blocks it places.
+- Connect Google Calendar and Gmail as read-only commitment sources. Cooper stores new calendar
+  items locally.
 - Read iCloud calendars through CalDAV so those commitments also block scheduling.
 - Google Calendar and iCloud Calendar acceptance flows were manually verified on 2026-09-14;
   the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
@@ -93,7 +93,8 @@ flowchart LR
 - `planner.py` ranks and places work without network or database I/O.
 - `sources.py` combines Cooper blocks, Google Calendar events, iCloud events, and reconciled Gmail
   commitments into the busy intervals used by the planner.
-- `google.py` handles Calendar writes, Gmail reads, and per-owner OAuth tokens.
+- `google.py` handles Google Calendar/Gmail reads and per-owner OAuth tokens; new Cooper blocks
+  are saved locally rather than written back to Google.
 - `icloud.py` reads iCloud calendars with encrypted owner credentials and never writes remotely.
 - `mcp.py` defines bounded tool schemas shared by Ask and the authenticated MCP endpoint.
 - `watcher.py` runs the fixed-interval Gmail sync and reports its last check through the app.
@@ -148,6 +149,9 @@ Cooper follows a small set of product rules:
 - [`PRD.md`](PRD.md) defines the product requirements and non-goals.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation in detail.
 - [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
+- [`docs/WORKFLOW.md`](docs/WORKFLOW.md) defines the lightweight ticket, branch, PR, release, and
+  incident workflow for solo development.
+- [`docs/RECOVERY.md`](docs/RECOVERY.md) documents backup, restore, and deployment recovery steps.
 - [`docs/DESIGN.md`](docs/DESIGN.md) describes the visual system and interaction rules.
 - [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) provides the local
   Google, Gmail, iCloud, and Cooper-local scheduling acceptance checklist, including the latest

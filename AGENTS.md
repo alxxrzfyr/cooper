@@ -6,7 +6,7 @@ Instructions for anyone changing this code, human or model.
 
 One place for everything that takes your time — tasks, events, and errands — that you talk to.
 Three owner-scoped tables and a small set of backend files. Runs locally and can use hosted
-authentication for approved users.
+authentication for public-beta accounts.
 
 Read `PRD.md`, then `ARCHITECTURE.md`. `PRD.md` has seven requirements; the provider requirement
 is only partly built. Know which sources are live before you start, and check
@@ -26,7 +26,8 @@ npm test
 npm run build
 ```
 
-No migrations. No linter beyond ruff. That is the whole toolchain.
+Alembic applies versioned migrations during hosted startup; there is no separate migration service.
+Ruff is the only Python linter. The frontend uses the npm scripts in `frontend/package.json`.
 
 ## The bar for adding anything
 
