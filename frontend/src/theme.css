@@ -4246,7 +4246,7 @@ button.slot:active {
 .app:not(.app--public) .calendar-canvas .calbar {
   flex: none;
   margin: 0;
-  padding: 4px 16px;
+  padding: 12px 16px;
   border: 0;
   border-bottom: 1px solid var(--hair);
   border-radius: 0;
@@ -4427,7 +4427,7 @@ button.slot:active {
 .calendar-canvas .calfoot {
   flex: none;
   min-width: 0;
-  padding: 6px 16px 8px;
+  padding: 10px 16px 12px;
   border-top: 1px solid var(--hair);
   background: color-mix(in srgb, var(--card) 94%, var(--sunken));
 }
@@ -4442,8 +4442,8 @@ button.slot:active {
 
 @media (min-width: 900px) {
   .app:not(.app--public) .scroll.calendar-page {
-    gap: 12px;
-    padding: 14px clamp(18px, 2vw, 32px) 16px;
+    gap: 10px;
+    padding: 12px clamp(18px, 2vw, 32px) 14px;
     overflow: hidden;
   }
 
@@ -4451,8 +4451,24 @@ button.slot:active {
     max-width: none;
   }
 
+  .calendar-page .calendar-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
   .calendar-page .calendar-heading .largetitle {
-    font-size: 34px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 26px;
+    letter-spacing: -0.025em;
+  }
+
+  .calendar-page .calendar-heading .largetitle__sub {
+    margin-top: 0;
+    font-size: 13px;
   }
 
   .calendar-canvas .calfoot {

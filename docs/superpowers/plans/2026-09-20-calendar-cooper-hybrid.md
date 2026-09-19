@@ -34,15 +34,15 @@
 - Consumes: existing `Calendar` markup, `.calendar-page`, `.calendar-canvas`, `.calendar-view`, `.calbar`, `.calfoot`, and shell grid areas.
 - Produces: a written baseline checklist for toolbar height, canvas bounds, month grid minimums, footer height, and collapsed-rail width behavior before edits.
 
-- [ ] **Step 1: Inspect the rendered calendar at the reference viewport sizes.**
+- [x] **Step 1: Inspect the rendered calendar at the reference viewport sizes.**
 
 Run the existing frontend dev server and inspect Month view at a wide viewport with the rail expanded and collapsed, then at a narrow viewport. Record whether the final week, event pills, and legend are visible without a nested vertical scroll.
 
-- [ ] **Step 2: Capture the current CSS constraints.**
+- [x] **Step 2: Capture the current CSS constraints.**
 
 Confirm the baseline values in `theme.css`: `.calendar-page` spacing, `.calendar-canvas` flex behavior, `.calbar` padding, `.monthgrid` minimum width/row tracks, `.monthcell` minimum height, and `.calfoot` padding.
 
-- [ ] **Step 3: Stop before editing if the existing markup cannot express the approved hierarchy.**
+- [x] **Step 3: Stop before editing if the existing markup cannot express the approved hierarchy.**
 
 The approved design expects the existing heading → controls → grid → legend order. If that order is already present, continue with CSS-only refinement; do not introduce a wrapper or a new calendar component.
 
@@ -58,28 +58,28 @@ The approved design expects the existing heading → controls → grid → legen
 - Consumes: baseline measurements from Task 1 and the existing calendar tokens.
 - Produces: a calendar canvas whose toolbar and footer have comfortable vertical rhythm while the month grid retains its current minimum width and row heights.
 
-- [ ] **Step 1: Restore generous toolbar spacing.**
+- [x] **Step 1: Restore generous toolbar spacing.**
 
 Use the shared spacing rhythm around `.app:not(.app--public) .calendar-canvas .calbar`; keep the segmented control and navigation aligned without shrinking their existing touch targets. Avoid solving height pressure by reducing `.monthcell` or event pill dimensions.
 
-- [ ] **Step 2: Refine the canvas hierarchy.**
+- [x] **Step 2: Refine the canvas hierarchy.**
 
 Keep the canvas as one continuous rounded surface. Use the existing hairline separator between controls, grid, and legend; remove only spacing that creates accidental visual gaps, not the generous breathing room between primary groups.
 
-- [ ] **Step 3: Keep the month grid dimensions unchanged.**
+- [x] **Step 3: Keep the month grid dimensions unchanged.**
 
 Retain the `720px` minimum month width, `40px` weekday header, `96px` desktop rows, and `94px` narrow rows. The fix must come from surrounding layout allocation and clear overflow rules, not cell compression.
 
-- [ ] **Step 4: Keep the legend subordinate.**
+- [x] **Step 4: Keep the legend subordinate.**
 
 Preserve the legend and explanatory hint at the bottom of the same canvas. On narrow screens keep the existing horizontal legend behavior; do not turn the legend into a second card or a competing navigation surface.
 
-- [ ] **Step 5: Run formatting and the layout detector.**
+- [x] **Step 5: Run formatting and the layout detector.**
 
 ```bash
 cd frontend
 node_modules/.bin/prettier --write src/theme.css
-node /home/home/.agents/skills/impeccable/scripts/detect.mjs --json --scope layout src/theme.css
+node /home/home/.gemini/config/skills/impeccable/scripts/detect.mjs --json --scope layout src/theme.css
 ```
 
 Expected: Prettier reports the file unchanged after the write and the detector returns no unexplained findings for the changed calendar rules.
@@ -96,15 +96,15 @@ Expected: Prettier reports the file unchanged after the write and the detector r
 - Consumes: Task 2's calendar canvas rules and existing desktop rail/mobile tabbar contracts.
 - Produces: stable calendar geometry when the sidebar collapses and readable control order at narrow widths.
 
-- [ ] **Step 1: Verify expanded and collapsed desktop rail states.**
+- [x] **Step 1: Verify expanded and collapsed desktop rail states.**
 
 Confirm the calendar canvas width increases when the rail collapses, with no overlap, clipped right edge, or stale fixed width. Confirm the calendar remains aligned to the authenticated shell's `main` grid area.
 
-- [ ] **Step 2: Verify narrow-screen order and touch targets.**
+- [x] **Step 2: Verify narrow-screen order and touch targets.**
 
 Confirm the visual order remains heading, range controls, date navigation, grid, and legend. Keep the existing 42px segmented buttons and 42px navigation buttons at narrow widths.
 
-- [ ] **Step 3: Verify content extremes.**
+- [x] **Step 3: Verify content extremes.**
 
 Use a month containing events on the first and last visible weeks, long event titles, and an empty category. Confirm the final row remains visible and long titles truncate within their pills rather than changing grid width.
 
@@ -121,7 +121,7 @@ Use a month containing events on the first and last visible weeks, long event ti
 - Consumes: completed calendar CSS and any narrowly scoped markup changes from Tasks 2–3.
 - Produces: verified, reviewable calendar behavior ready for a Conventional Commit and push.
 
-- [ ] **Step 1: Run frontend tests.**
+- [x] **Step 1: Run frontend tests.**
 
 ```bash
 cd frontend
@@ -130,7 +130,7 @@ npm test -- --no-file-parallelism
 
 Expected: all existing frontend test files and tests pass.
 
-- [ ] **Step 2: Run formatting and production build.**
+- [x] **Step 2: Run formatting and production build.**
 
 ```bash
 npm run format:check
@@ -139,7 +139,7 @@ npm run build
 
 Expected: Prettier reports all matched files clean and Vite completes the TypeScript/build pipeline.
 
-- [ ] **Step 3: Run repository checks.**
+- [x] **Step 3: Run repository checks.**
 
 ```bash
 cd ..
@@ -150,7 +150,7 @@ uv run ruff format --check .
 
 Expected: no whitespace errors and no Python lint/format regressions.
 
-- [ ] **Step 4: Inspect the final diff and visual result.**
+- [x] **Step 4: Inspect the final diff and visual result.**
 
 Review only the intended calendar files and documentation. Recheck desktop expanded/collapsed rail, mobile calendar, final-week visibility, event truncation, and light/dark themes.
 
