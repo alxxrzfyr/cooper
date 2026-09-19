@@ -31,6 +31,21 @@ const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, index) => index + 
 const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const MONTH_ROWS = 6;
 
+function Chevron({ direction }: { direction: "previous" | "next" }) {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <path
+        d={direction === "previous" ? "m12.5 4.5-5 5.5 5 5.5" : "m7.5 4.5 5 5.5-5 5.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
 /** Field getters below all read a `Date` as wall-clock time in a named zone, not the browser's
  *  local zone. The backend places `start_at` from `COOPER_TIMEZONE`; a browser in any other zone
  *  must not shift which day or hour a booked block appears to land on. */
@@ -272,8 +287,8 @@ export function Calendar({
     return sameDay(entry.start, day, zone) ? zonedFields(entry.start, zone).hour : DAY_START;
   }
 
-  const header = (
-    <>
+  const heading = (
+    <header className="calendar-heading">
       <h1 className="largetitle">
         Calendar
         <span className="largetitle__sub">
@@ -284,58 +299,70 @@ export function Calendar({
               : "On this device · connect a calendar in Settings"}
         </span>
       </h1>
+    </header>
+  );
 
-      <div className="calbar">
-        <div className="segmented segmented--inline" role="group" aria-label="Calendar range">
-          {MODES.map((option) => (
-            <button
-              type="button"
-              key={option}
-              className="segment"
-              aria-pressed={mode === option}
-              onClick={() => choose(option)}
-            >
-              {MODE_LABEL[option]}
-            </button>
-          ))}
-        </div>
-
-        <div className="calnav">
+  const toolbar = (
+    <div className="calbar">
+      <div className="segmented segmented--inline" role="group" aria-label="Calendar range">
+        {MODES.map((option) => (
           <button
             type="button"
-            className="iconbtn"
-            aria-label={`Previous ${mode}`}
-            onClick={() => setAnchor(step(mode, anchor, -1, zone))}
+            key={option}
+            className="segment"
+            aria-pressed={mode === option}
+            onClick={() => choose(option)}
           >
-            ‹
+            {MODE_LABEL[option]}
           </button>
-          <span className="calnav__label">{rangeLabel(mode, anchor, today, zone)}</span>
-          <button
-            type="button"
-            className="iconbtn"
-            aria-label={`Next ${mode}`}
-            onClick={() => setAnchor(step(mode, anchor, 1, zone))}
-          >
-            ›
-          </button>
-          {days.some((day) => sameDay(day, today, zone)) ? null : (
-            <button
-              type="button"
-              className="ghostbtn"
-              onClick={() => setAnchor(startOfDay(today, zone))}
-            >
-              Today
-            </button>
-          )}
-        </div>
-      </div>
-      {view.source_health
-        ?.filter((source) => source.status === "unavailable")
-        .map((source) => (
-          <p className="hint" key={source.source} role="status">
-            {source.source} calendar could not be refreshed. Imported events may be missing.
-          </p>
         ))}
+      </div>
+
+      <div className="calnav">
+        <button
+          type="button"
+          className="iconbtn"
+          aria-label={`Previous ${mode}`}
+          onClick={() => setAnchor(step(mode, anchor, -1, zone))}
+        >
+          <Chevron direction="previous" />
+        </button>
+        <span className="calnav__label" aria-live="polite">
+          {rangeLabel(mode, anchor, today, zone)}
+        </span>
+        <button
+          type="button"
+          className="iconbtn"
+          aria-label={`Next ${mode}`}
+          onClick={() => setAnchor(step(mode, anchor, 1, zone))}
+        >
+          <Chevron direction="next" />
+        </button>
+        {days.some((day) => sameDay(day, today, zone)) ? null : (
+          <button
+            type="button"
+            className="ghostbtn"
+            onClick={() => setAnchor(startOfDay(today, zone))}
+          >
+            Today
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const sourceWarnings = view.source_health
+    ?.filter((source) => source.status === "unavailable")
+    .map((source) => (
+      <p className="hint calendar-source-warning" key={source.source} role="status">
+        {source.source} calendar could not be refreshed. Imported events may be missing.
+      </p>
+    ));
+
+  const header = (
+    <>
+      {heading}
+      {sourceWarnings}
     </>
   );
 
@@ -352,7 +379,7 @@ export function Calendar({
 
   if (entries.length === 0) {
     return (
-      <div className="scroll scroll--wide">
+      <div className="scroll scroll--wide calendar-page">
         {header}
         <section className="empty">
           <Mascot name="cooper_reading" size="lg" decorative />
@@ -424,116 +451,120 @@ export function Calendar({
   }
 
   return (
-    <div className="scroll scroll--wide">
+    <div className="scroll scroll--wide calendar-page">
       {header}
 
-      {mode === "day" ? (
-        <section className="group">
-          <div className="daygroup">
-            {on(anchor).length} {on(anchor).length === 1 ? "thing" : "things"}
-          </div>
-          <div className="daygrid">
-            {HOURS.map((hour) => (
-              <div className="daygrid__row" key={hour}>
-                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
-                <div
-                  className={`daygrid__slot ${working(anchor, hour) ? "daygrid__slot--open" : ""}`}
-                >
-                  {on(anchor, hour).map((entry) => block(entry, false))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <section className={`calendar-canvas calendar-canvas--${mode}`}>
+        {toolbar}
 
-      {mode === "week" ? (
-        <section className="group weekscroll">
-          <div className="weekgrid">
-            <div className="weekgrid__headrow">
-              <span />
-              {days.map((day) => (
-                <button
-                  type="button"
-                  key={day.toDateString()}
-                  className={`weekgrid__head ${sameDay(day, today, zone) ? "is-today" : ""}`}
-                  onClick={() => openDay(day)}
-                >
-                  <span className="weekgrid__name">{dayName(day, zone)}</span>
-                  <span className="weekgrid__num">{dayNumber(day, zone)}</span>
-                </button>
+        {mode === "day" ? (
+          <section className="group calendar-view calendar-view--day">
+            <div className="daygroup">
+              {on(anchor).length} {on(anchor).length === 1 ? "thing" : "things"}
+            </div>
+            <div className="daygrid">
+              {HOURS.map((hour) => (
+                <div className="daygrid__row" key={hour}>
+                  <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
+                  <div
+                    className={`daygrid__slot ${working(anchor, hour) ? "daygrid__slot--open" : ""}`}
+                  >
+                    {on(anchor, hour).map((entry) => block(entry, false))}
+                  </div>
+                </div>
               ))}
             </div>
+          </section>
+        ) : null}
 
-            {HOURS.map((hour) => (
-              <div className="weekgrid__line" key={hour}>
-                <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
+        {mode === "week" ? (
+          <section className="group weekscroll calendar-view calendar-view--week">
+            <div className="weekgrid">
+              <div className="weekgrid__headrow">
+                <span />
                 {days.map((day) => (
-                  <div
+                  <button
+                    type="button"
                     key={day.toDateString()}
-                    className={`weekgrid__cell ${working(day, hour) ? "daygrid__slot--open" : ""}`}
+                    className={`weekgrid__head ${sameDay(day, today, zone) ? "is-today" : ""}`}
+                    onClick={() => openDay(day)}
                   >
-                    {on(day, hour).map((entry) => block(entry, true))}
-                  </div>
+                    <span className="weekgrid__name">{dayName(day, zone)}</span>
+                    <span className="weekgrid__num">{dayNumber(day, zone)}</span>
+                  </button>
                 ))}
               </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
-      {mode === "month" ? (
-        <section className="group">
-          <div className="monthgrid">
-            {WEEKDAY_LABELS.map((label) => (
-              <span className="monthgrid__head" key={label} aria-hidden="true">
-                {label}
-              </span>
-            ))}
-            {days.map((day) => {
-              const mine = on(day);
-              const outside = monthOf(day, zone) !== monthOf(anchor, zone);
-              return (
-                <button
-                  type="button"
-                  key={day.toDateString()}
-                  className={`monthcell ${outside ? "is-outside" : ""} ${
-                    sameDay(day, today, zone) ? "is-today" : ""
-                  }`}
-                  aria-label={`${day.toLocaleDateString(undefined, {
-                    timeZone: zone,
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
-                  onClick={() => setPicked(day)}
-                >
-                  <span className="monthcell__num">{dayNumber(day, zone)}</span>
-                  {mine.slice(0, 3).map((entry) => (
-                    <span
-                      className={`pill pill--${entry.source} cat--${entry.category}`}
-                      key={entry.key}
+              {HOURS.map((hour) => (
+                <div className="weekgrid__line" key={hour}>
+                  <span className="daygrid__hour">{String(hour).padStart(2, "0")}</span>
+                  {days.map((day) => (
+                    <div
+                      key={day.toDateString()}
+                      className={`weekgrid__cell ${working(day, hour) ? "daygrid__slot--open" : ""}`}
                     >
-                      {entry.title}
-                    </span>
+                      {on(day, hour).map((entry) => block(entry, true))}
+                    </div>
                   ))}
-                  {mine.length > 3 ? (
-                    <span className="monthcell__more">+{mine.length - 3}</span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-      <footer className="calfoot">
-        {legend}
-        <p className="hint">
-          Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
-          placed; outlined ones came from Google Calendar, iCloud, or Gmail.
-        </p>
-      </footer>
+        {mode === "month" ? (
+          <section className="group calendar-view calendar-view--month">
+            <div className="monthgrid">
+              {WEEKDAY_LABELS.map((label) => (
+                <span className="monthgrid__head" key={label} aria-hidden="true">
+                  {label}
+                </span>
+              ))}
+              {days.map((day) => {
+                const mine = on(day);
+                const outside = monthOf(day, zone) !== monthOf(anchor, zone);
+                return (
+                  <button
+                    type="button"
+                    key={day.toDateString()}
+                    className={`monthcell ${outside ? "is-outside" : ""} ${
+                      sameDay(day, today, zone) ? "is-today" : ""
+                    }`}
+                    aria-label={`${day.toLocaleDateString(undefined, {
+                      timeZone: zone,
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}, ${mine.length} ${mine.length === 1 ? "thing" : "things"}`}
+                    onClick={() => setPicked(day)}
+                  >
+                    <span className="monthcell__num">{dayNumber(day, zone)}</span>
+                    {mine.slice(0, 3).map((entry) => (
+                      <span
+                        className={`pill pill--${entry.source} cat--${entry.category}`}
+                        key={entry.key}
+                      >
+                        {entry.title}
+                      </span>
+                    ))}
+                    {mine.length > 3 ? (
+                      <span className="monthcell__more">+{mine.length - 3}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <footer className="calfoot">
+          {legend}
+          <p className="hint">
+            Colour is the category. Shaded hours are yours to book. Filled entries are ones Cooper
+            placed; outlined ones came from Google Calendar, iCloud, or Gmail.
+          </p>
+        </footer>
+      </section>
 
       {picked && !chosen && !chosenEvent && (
         <Frame

@@ -89,13 +89,23 @@ function PublicLoading({
           {continueLabel}
         </button>
         <div
-          className="public-loading__status"
+          className={`public-loading__status${stalled ? " public-loading__status--stalled" : ""}`}
           role="status"
           aria-label="Checking Firebase account"
           aria-live="polite"
         >
           <span className="public-loading__spinner" aria-hidden="true" />
-          <span>{stalled ? "Taking longer than expected" : "Checking securely"}</span>
+          <span className="public-loading__status-copy">
+            <strong>{stalled ? "Account check is delayed" : "Checking secure sign-in"}</strong>
+            <span>
+              {stalled
+                ? "You can keep going and sign in again if needed."
+                : "Waiting for Firebase to return your account."}
+            </span>
+          </span>
+          <span className="public-loading__track" aria-hidden="true">
+            <span />
+          </span>
         </div>
       </section>
     </div>

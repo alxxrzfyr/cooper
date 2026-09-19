@@ -59,23 +59,47 @@ function NavIcon({ name }: { name: Tab }) {
   );
 }
 
+function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <rect
+        x="3.5"
+        y="4"
+        width="17"
+        height="16"
+        rx="2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path d="M9 4v16" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d={collapsed ? "m13.5 9 3 3-3 3" : "m16.5 9-3 3 3 3"}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
 /** Navigation rendered as tabs on narrow screens and a rail on wide screens. */
 export function Nav({
   current,
   todo,
   booked,
-  undo,
-  busy,
+  collapsed,
   onChange,
-  onUndo,
+  onToggleCollapsed,
 }: {
   current: Tab;
   todo: number;
   booked: number;
-  undo: string | null;
-  busy: boolean;
+  collapsed: boolean;
   onChange: (tab: Tab) => void;
-  onUndo: () => void;
+  onToggleCollapsed: () => void;
 }) {
   function count(tab: Tab): number {
     // Home is where the open tasks live now, so it carries the count the Plan tab used to.
@@ -92,25 +116,15 @@ export function Nav({
           <Mascot name="cooper_avatar" size="xs" decorative />
           <span className="who__name">Cooper</span>
         </div>
-        <div className="topbar__spacer" />
-        {undo && (
-          <button
-            type="button"
-            className="topbar__action"
-            disabled={busy}
-            onClick={onUndo}
-            title={undo}
-          >
-            Undo
-          </button>
-        )}
       </header>
 
-      <nav className="rail" aria-label="Sections">
+      <nav className="rail" aria-label="Sections" data-collapsed={collapsed || undefined}>
         <div className="rail__brand">
-          <div className="who">
-            <Mascot name="cooper_avatar" size="xs" decorative />
-            <span className="who__name">Cooper</span>
+          <div className="rail__brand-row">
+            <div className="who">
+              <Mascot name="cooper_avatar" size="xs" decorative />
+              <span className="who__name">Cooper</span>
+            </div>
           </div>
           <p className="rail__tagline">Your time, untangled</p>
         </div>
@@ -126,6 +140,7 @@ export function Nav({
               className="rail__item"
               data-tour={tab.id === "chat" ? "nav-chat" : undefined}
               aria-current={current === tab.id ? "page" : undefined}
+              title={collapsed ? tab.label : undefined}
               onClick={() => onChange(tab.id)}
             >
               <span className="rail__glyph">
@@ -150,6 +165,7 @@ export function Nav({
               className="rail__item"
               data-tour="nav-settings"
               aria-current={current === tab.id ? "page" : undefined}
+              title={collapsed ? tab.label : undefined}
               onClick={() => onChange(tab.id)}
             >
               <span className="rail__glyph">
@@ -160,12 +176,21 @@ export function Nav({
           ))}
         </div>
 
-        {undo && (
-          <button type="button" className="rail__undo" disabled={busy} onClick={onUndo}>
-            <span className="undo__verb">Undo</span>
-            <span className="undo__what">{undo}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          className="rail__footer-toggle"
+          aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Show sidebar" : "Hide sidebar"}
+          onClick={onToggleCollapsed}
+        >
+          <span className="rail__footer-toggle-glyph">
+            <CollapseIcon collapsed={collapsed} />
+          </span>
+          <span className="rail__footer-toggle-label">
+            {collapsed ? "Show sidebar" : "Hide sidebar"}
+          </span>
+        </button>
       </nav>
 
       <nav className="tabbar" aria-label="Sections">

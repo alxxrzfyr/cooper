@@ -68,6 +68,7 @@ const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
 ];
 
 const GEMINI_KEY = "cooper.gemini_key.v1";
+const SIDEBAR_COLLAPSED_KEY = "cooper.sidebar.collapsed.v1";
 type GeminiKeyStatus = "saved" | "empty" | "cleared" | null;
 
 const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
@@ -100,6 +101,22 @@ function saveGeminiKey(value: string, uid?: string | null): void {
     else localStorage.removeItem(storageKey);
   } catch {
     /* a blocked store is not worth failing over; the key still applies this session */
+  }
+}
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveSidebarCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch {
+    // The rail can still collapse for this session when browser storage is blocked.
   }
 }
 
@@ -286,6 +303,10 @@ function LoadingSurface({ tab }: { tab: Exclude<Tab, "chat"> }) {
       aria-label={LOADING_LABEL[tab]}
       aria-busy="true"
     >
+      <div className="skeleton-screen__status">
+        <span className="loading-spinner" aria-hidden="true" />
+        <span>{LOADING_LABEL[tab]}…</span>
+      </div>
       <div className="skeleton-screen__heading" aria-hidden="true">
         <span className="skeleton skeleton--title" />
         <span className="skeleton skeleton--subtitle" />
@@ -343,6 +364,7 @@ export default function App() {
         ? { kind: "loading" }
         : { kind: "local" },
   );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
   const [loadResolved, setLoadResolved] = useState(false);
@@ -941,15 +963,14 @@ export default function App() {
     <div
       className={`app${publicSurface ? " app--public" : ""}${
         publicLandingSurface ? " app--landing" : ""
-      }`}
+      }${!publicSurface && sidebarCollapsed ? " app--rail-collapsed" : ""}`}
     >
       {!publicSurface && (
         <Nav
           current={tab}
           todo={shortlist.length}
           booked={scheduled.length}
-          undo={view?.undo ?? null}
-          busy={busy}
+          collapsed={sidebarCollapsed}
           onChange={(next) => {
             setTab(next);
             if (guideVisible && next === "chat" && !guideProgress.hasItem) {
@@ -957,7 +978,13 @@ export default function App() {
               saveMode("manual");
             }
           }}
-          onUndo={() => void act(() => api.undo())}
+          onToggleCollapsed={() => {
+            setSidebarCollapsed((current) => {
+              const next = !current;
+              saveSidebarCollapsed(next);
+              return next;
+            });
+          }}
         />
       )}
 

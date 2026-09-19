@@ -274,6 +274,29 @@ async function emitFirebaseUser(user: TestFirebaseUser | null): Promise<void> {
 }
 
 describe("first impression", () => {
+  test("desktop sidebar collapses, persists, and keeps navigation available", async () => {
+    const user = userEvent.setup();
+    stub({});
+    const first = render(<App />);
+
+    const hideSidebar = await screen.findByRole("button", { name: "Hide sidebar" });
+    await user.click(hideSidebar);
+
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(document.querySelector(".app")).toHaveClass("app--rail-collapsed");
+    expect(localStorage.getItem("cooper.sidebar.collapsed.v1")).toBe("1");
+    expect(screen.getAllByRole("button", { name: "Calendar" }).length).toBeGreaterThan(0);
+
+    first.unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
+    expect(document.querySelector(".app")).toHaveClass("app--rail-collapsed");
+  });
+
   test("does not interrupt a local user who already has an item", async () => {
     stub({});
     render(<App />);
@@ -996,29 +1019,14 @@ describe("the list", () => {
 });
 
 describe("undo", () => {
-  test("undo is offered only when there is something to undo", async () => {
-    stub({ view: view({ undo: null }) });
+  test("undo history does not add controls to desktop or mobile navigation", async () => {
+    stub({ view: view({ undo: "Added “write the report”" }) });
     render(<App />);
     await screen.findByText("Up next");
 
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
-  });
-
-  test("undo appears once something has happened", async () => {
-    stub({ view: view({ undo: "Added “write the report”" }) });
-    render(<App />);
-
-    expect((await screen.findAllByRole("button", { name: "Undo" })).length).toBeGreaterThan(0);
-  });
-
-  test("undo calls the backend", async () => {
-    const calls = stub({ view: view({ undo: "Added something" }) });
-    render(<App />);
-    const user = userEvent.setup();
-
-    await user.click((await screen.findAllByRole("button", { name: "Undo" }))[0]);
-
-    await waitFor(() => expect(calls.some((call) => call.url.includes("/api/undo"))).toBe(true));
+    expect(document.querySelector(".rail__undo")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
   });
 });
 
