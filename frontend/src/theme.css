@@ -4246,7 +4246,7 @@ button.slot:active {
 .app:not(.app--public) .calendar-canvas .calbar {
   flex: none;
   margin: 0;
-  padding: 12px 16px;
+  padding: 4px 16px;
   border: 0;
   border-bottom: 1px solid var(--hair);
   border-radius: 0;
@@ -4427,7 +4427,7 @@ button.slot:active {
 .calendar-canvas .calfoot {
   flex: none;
   min-width: 0;
-  padding: 10px 16px 12px;
+  padding: 6px 16px 8px;
   border-top: 1px solid var(--hair);
   background: color-mix(in srgb, var(--card) 94%, var(--sunken));
 }
