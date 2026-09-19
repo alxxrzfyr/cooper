@@ -18,9 +18,13 @@ accent          #0A84FF      #0A84FF
 Green `#30B15C`, amber `#FF9F0A`, and red `#FF3B30` are reserved for state. Category colours
 are purple, blue, orange, and teal.
 
-Use the existing radius scale: 10, 14, 18, and 26px, plus pills. The font stack starts with
-`ui-rounded`, followed by the available system rounded fonts. Use soft shadows and translucent
-surfaces instead of borders where the surrounding component already uses them.
+Rounded rectangles use native continuous corners: keep `border-radius` as the fallback and apply
+`corner-shape: squircle`. Use the shared 10, 14, 20, and 28px radius scale. Nested rounded
+rectangles are concentric: inner radius plus the gap between surfaces equals outer radius. Capsules
+use a radius equal to half their height and `corner-shape: round`; circles remain round. Do not turn
+semantic capsules or circles into squircles. The font stack starts with `ui-rounded`, followed by
+the available system rounded fonts. Use soft shadows and translucent surfaces instead of borders
+where the surrounding component already uses them.
 
 ## Layout
 

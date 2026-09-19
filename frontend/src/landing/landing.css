@@ -39,6 +39,40 @@
   height: 100%;
 }
 
+.app.app--public
+  :where(
+    .landing__header-cta,
+    .landing__primary,
+    .landing__google,
+    .landing__panel::after,
+    .landing__secondary,
+    .landing__art-note span,
+    .landing__auth-switch,
+    .landing__auth-switch a,
+    .landing__email-submit,
+    .landing__password-toggle,
+    .landing__navigation,
+    .landing__progress-dot,
+    .landing__progress-dot span:first-child,
+    .landing__pager button,
+    .landing__google-mark,
+    .auth-page .public-page__back > span:first-child,
+    .public-loading__spinner,
+    .public-loading__track > span,
+    .public-page__nav-cta,
+    .landing__window-dots i,
+    .landing__mock-pill,
+    .landing__mock-check,
+    .landing__stage-caption,
+    .landing__start-checks li::before,
+    .auth-page__intro::after,
+    .landing__cooper-hello::before,
+    .landing__cooper-hello::after,
+    .landing__doodle-wave
+  ) {
+  corner-shape: var(--corner-round);
+}
+
 .app.app--public > .topbar,
 .app.app--public > .rail,
 .app.app--public > .tabbar {
@@ -1779,7 +1813,7 @@ html.lenis body {
   justify-self: stretch;
   padding: clamp(26px, 3.3rem, 38px);
   border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--card) 94%, transparent);
   box-shadow: 0 24px 70px color-mix(in srgb, var(--text) 13%, transparent);
   backdrop-filter: blur(8px);
@@ -2467,7 +2501,7 @@ html.lenis body {
   width: min(100%, 650px);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
-  border-radius: 18px;
+  border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: 0 26px 70px color-mix(in srgb, var(--text) 16%, transparent);
   transform: rotate(-1.4deg);
@@ -2540,7 +2574,7 @@ html.lenis body {
   width: 24px;
   height: 24px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: #fff;
   font-size: 11px;
@@ -2610,7 +2644,7 @@ html.lenis body {
   align-items: start;
   padding: 13px 14px;
   border: 1px solid var(--hair);
-  border-radius: 11px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--card) 78%, var(--sunken));
 }
 
@@ -2749,7 +2783,7 @@ html.lenis body {
   margin-top: 6px;
   padding: 15px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hair));
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: var(--card);
 }
 
@@ -3059,7 +3093,7 @@ html.lenis body {
 }
 
 .landing--keeby .landing__product-window--capture {
-  border-radius: 16px;
+  border-radius: var(--r-lg);
 }
 
 .landing--keeby .landing__support-rail {
@@ -3084,7 +3118,7 @@ html.lenis body {
   align-items: start;
   padding: 11px;
   border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--card) 88%, transparent);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--text) 8%, transparent);
 }
@@ -3094,7 +3128,7 @@ html.lenis body {
   width: 28px;
   height: 28px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: #ea4335;
   color: #fff;
   font-size: 11px;
@@ -3543,7 +3577,7 @@ html.lenis body {
 }
 
 .landing__start-column .landing__auth-card {
-  border-radius: 22px 22px 18px 18px;
+  border-radius: var(--r-xl);
   box-shadow: 0 24px 64px rgb(63 48 37 / 13%);
 }
 
@@ -3606,7 +3640,7 @@ html.lenis body {
 
 .auth-page .landing__auth-card {
   position: relative;
-  border-radius: 22px;
+  border-radius: var(--r-xl);
   box-shadow: 0 24px 66px rgb(45 55 45 / 12%);
 }
 
@@ -3668,7 +3702,7 @@ html.lenis body {
 .legal-page__card {
   padding: 22px 24px;
   border: 1px solid rgb(64 85 54 / 8%);
-  border-radius: 14px;
+  border-radius: var(--r-md);
   background: rgb(255 255 255 / 84%);
   box-shadow: 0 8px 24px rgb(45 55 45 / 4%);
 }
@@ -3844,7 +3878,7 @@ html.lenis body {
 
   .legal-page__card {
     padding: 19px 18px;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
   }
 
   .legal-page__intro {
