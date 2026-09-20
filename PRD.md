@@ -208,6 +208,20 @@ integration. The owner manually verified the Google Calendar and iCloud Calendar
 on 2026-09-14; the repeatable record is in `docs/LIVE_PROVIDER_ACCEPTANCE.md`. Bulk destructive
 verbs still need their conversation surface in AI mode.
 
+Calendar, navigation counts, and the common Ask questions now consume one normalized planning
+snapshot. That snapshot conservatively deduplicates commitments, retains their source and editability,
+derives task state, and reports provider health. Importance is an explainable ranking term rather
+than decorative metadata. Common questions such as what to focus on, what remains today, what to do
+next, and whether a focus block fits are answered from that snapshot without sending provider event
+contents to a model. Creation and scheduling replies are rebuilt from committed state and include
+any overlap, waiting, or unavailable-source warning; a successful-looking reply is never generated
+from intent alone.
+
+This is the implemented Release 1 foundation, not proof of the complete product loop. It still needs
+seven days of real mixed-source use before the Home command-center redesign or local rescheduling
+begins. Legacy top-level schedule fields remain temporarily because the backend and frontend can be
+deployed independently; they are compatibility fields, not a second source of planning truth.
+
 Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
 an invented half-hour block, against what all three documents promised. The dashboard's "waiting
 for a time" group is what made keeping the promise safe, because skipping is no longer silent.

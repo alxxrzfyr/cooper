@@ -34,7 +34,11 @@ cooper/
 
 `sources.py` turns every commitment into one list of busy intervals the planner routes around.
 Today it combines Google Calendar, read-only iCloud calendars, Cooper's own blocks, and
-reconciled Gmail confirmations.
+reconciled Gmail confirmations. It also normalizes those inputs into source-aware commitments and
+deduplicates only exact aliases or matching cross-source signatures. `planner.build_planning_snapshot`
+projects those commitments, ranked tasks, derived states, risks, counts, conflicts, and free time
+once. Calendar, navigation, Home's current schedule strip, and bounded Ask intents consume that
+projection instead of independently reconstructing the user's day.
 `watcher.py` reads Gmail on one fixed interval and reports its last check through the dashboard;
 it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
 second writer.
@@ -167,6 +171,13 @@ it cannot apply a plan or refresh Gmail. `app.py` validates tool arguments and d
 from authentication; provider credentials never enter tool arguments or results. A separate
 authenticated `apply_plan` tool can save a plan. `app.py` remains the only database writer.
 
+High-frequency planning questions take a narrower path before the model loop. A bounded intent is
+answered deterministically from the current planning snapshot, including provider availability but
+never provider titles in a model prompt. Create and schedule mutations refresh that same snapshot
+after commit and generate a receipt from the state found there. If the item cannot be verified, the
+route reports an error instead of fabricating confirmation; overlap, waiting, and source-health
+warnings remain attached to the receipt.
+
 The important part of that diagram is the join. An event parsed out of an email is a _proposal_
 and goes through the same validation as a sentence you typed. There is no second write path.
 
@@ -207,11 +218,11 @@ Cooper writes new items only to its own database and calendar, and preserves leg
 In `planner.py`, weights summing to 1:
 
 ```
-score = 0.60·due + 0.15·age + 0.25·quick
+score = 0.60·due + 0.20·importance + 0.10·age + 0.10·quick
 ```
 
 - `due` — 0 with no deadline, ramps over 14 days, 1.0 once overdue
-- `importance` — stored on the item; it does not currently affect the score
+- `importance` — the existing 1–5 value normalized to 0–1
 - `age` — how long it has been waiting, capped at three weeks
 - `quick` — shorter scores higher, because finishing beats starting; no estimate sits at 0.5
 
@@ -219,6 +230,10 @@ Pinned items sort first regardless. Tuning these numbers is the intended way to 
 the ranking, and each row shows its own breakdown so you can see which term is responsible.
 
 Teams and Classroom assignments do not arrive yet. Their future ranking needs its own review.
+
+Task workflow is also derived rather than stored as another mutable lifecycle. Open work resolves
+to `not_started`, `scheduled`, `in_progress`, `blocked`, `overdue`, or `missed_block` from its dates,
+placement, and source health; terminal database statuses resolve to `completed` or `dropped`.
 
 ## Placement
 

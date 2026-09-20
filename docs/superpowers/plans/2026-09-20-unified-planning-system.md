@@ -89,6 +89,10 @@ Execute the tasks in this release sequence:
 
 ### Release 1: Prove the trusted planning loop
 
+**Implementation status (2026-09-20):** Tasks 1, 2, 3, 4, 6, 7, and 8 are implemented and pass the
+automated backend and frontend gates. Release 1 remains in its real-use acceptance period; the
+seven-day mixed-source trust gate below is intentionally not marked complete.
+
 - Task 1: meaningful deadline-first priority and derived state;
 - Task 2: normalization and conservative deduplication;
 - Task 3: canonical planning snapshot;
