@@ -1,10 +1,15 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import { Mascot, type MascotName } from "./Mascot";
-import type { Item, ReplyKind } from "./types";
+import type { AskIntent, Item, ReplyKind } from "./types";
 
 /** How Cooper should handle the next request. Form is structured capture, Ask uses the model. */
 export type Mode = "manual" | "ai";
+
+export interface SuggestedPrompt {
+  label: string;
+  intent?: AskIntent;
+}
 
 /** One turn in the conversation. */
 export interface Turn {
@@ -204,7 +209,7 @@ export function Chat({
   canUseAi: boolean;
   manualForm: React.ReactNode;
   onMode: (mode: Mode) => void;
-  onExample: (text: string) => void;
+  onExample: (example: SuggestedPrompt) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
 
@@ -383,22 +388,28 @@ function Understood({ item }: { item: Item }) {
   return <span className="bubble__meta">{bits.join(" · ")}</span>;
 }
 
-const EXAMPLES: Record<Mode, string[]> = {
+const EXAMPLES: Record<Mode, SuggestedPrompt[]> = {
   manual: [
-    "write the quarterly report, 90m, important, due friday",
-    "dentist thursday 3pm",
-    "done quarterly",
-    "plan my day",
+    { label: "write the quarterly report, 90m, important, due friday" },
+    { label: "dentist thursday 3pm" },
+    { label: "done quarterly" },
+    { label: "plan my day" },
   ],
   ai: [
-    "what should I focus on this week",
-    "how much is left on my plate today",
-    "is there room for the gym tomorrow",
-    "what is the most urgent thing",
+    { label: "What should I focus on this week?", intent: "focus_week" },
+    { label: "How much is left on my plate today?", intent: "remaining_today" },
+    { label: "What should I work on next?", intent: "work_next" },
+    { label: "Can I fit a two-hour focus session today?", intent: "fit_duration" },
   ],
 };
 
-function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) => void }) {
+function Opening({
+  mode,
+  onExample,
+}: {
+  mode: Mode;
+  onExample: (example: SuggestedPrompt) => void;
+}) {
   return (
     <div className="opening">
       <Mascot name={mode === "ai" ? "cooper_thinking" : "cooper_waving"} size="lg" decorative />
@@ -411,12 +422,12 @@ function Opening({ mode, onExample }: { mode: Mode; onExample: (text: string) =>
       <div className="examples">
         {EXAMPLES[mode].map((example) => (
           <button
-            key={example}
+            key={example.label}
             type="button"
             className="example"
             onClick={() => onExample(example)}
           >
-            {example}
+            {example.label}
           </button>
         ))}
       </div>

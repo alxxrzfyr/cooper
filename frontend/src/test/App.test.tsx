@@ -468,7 +468,7 @@ describe("first impression", () => {
     expect(
       await screen.findByRole("button", { name: /what should I focus on/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /most urgent thing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /what should I work on next/i })).toBeInTheDocument();
   });
 
   test("empty AI chat uses a different mascot from empty Home", async () => {
@@ -489,16 +489,22 @@ describe("first impression", () => {
     );
   });
 
-  test("tapping an example sends it", async () => {
+  test.each([
+    ["What should I focus on this week?", "focus_week"],
+    ["How much is left on my plate today?", "remaining_today"],
+    ["What should I work on next?", "work_next"],
+    ["Can I fit a two-hour focus session today?", "fit_duration"],
+  ])("suggested question %s sends intent %s", async (label, intent) => {
     const calls = stub({ view: view({ shortlist: [], using_model: true }) });
     render(<App />);
     const user = await openAi();
 
-    await user.click(await screen.findByRole("button", { name: /most urgent thing/i }));
+    await user.click(await screen.findByRole("button", { name: label }));
 
     await waitFor(() => {
       const said = calls.find((call) => call.url.includes("/api/say"));
       expect(said?.body.mode).toBe("ai");
+      expect(said?.body.intent).toBe(intent);
     });
   });
 
@@ -911,7 +917,11 @@ describe("the conversation", () => {
   test("asking what to do gets answered in the conversation", async () => {
     stub({
       view: view({ using_model: true }),
-      say: reply({ kind: "shown", message: "Here is what is next." }),
+      say: reply({
+        kind: "answered",
+        message: "Work on write the quarterly report next because it is marked important.",
+        facts: ["write the quarterly report · marked important"],
+      }),
     });
     render(<App />);
     const user = await openAi();
@@ -919,8 +929,11 @@ describe("the conversation", () => {
     await user.type(screen.getByLabelText("Say something to Cooper"), "what should i do{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
-    expect(within(log).getByText(/Start with write the quarterly report/)).toBeInTheDocument();
-    expect(within(log).getByText(/1\. write the quarterly report/)).toBeInTheDocument();
+    expect(within(log).getByText(/Work on write the quarterly report next/)).toBeInTheDocument();
+    expect(
+      within(log).getByText("write the quarterly report · marked important"),
+    ).toBeInTheDocument();
+    expect(within(log).queryByText(/Start with/)).not.toBeInTheDocument();
   });
 
   test("the field clears after sending", async () => {

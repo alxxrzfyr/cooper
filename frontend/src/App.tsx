@@ -44,6 +44,7 @@ import { Row } from "./Row";
 import { CalendarEventFrame, TaskFrame } from "./Frame";
 import {
   ApiError,
+  type AskIntent,
   type Item,
   type CalendarEvent,
   type NewItem,
@@ -274,18 +275,6 @@ function AuthSetupErrorSurface({ message }: { message: string }) {
       <p className="empty__text">{message}</p>
     </div>
   );
-}
-
-/** Explain priority using the item's deadline and score details. */
-function why(item: Item): string {
-  if (!item.due) return "no deadline";
-  const day = item.due.slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
-  if (day < today) return "overdue";
-  if (day === today) return "due today";
-  const days = Math.round((new Date(day).getTime() - new Date(today).getTime()) / 86_400_000);
-  if (days === 1) return "due tomorrow";
-  return `due in ${days} days`;
 }
 
 const LOADING_LABEL: Record<Exclude<Tab, "chat">, string> = {
@@ -750,7 +739,7 @@ export default function App() {
 
   /** Send one sentence and let the otter answer. */
   const say = useCallback(
-    async (sentence: string) => {
+    async (sentence: string, intent?: AskIntent) => {
       const said = sentence.trim();
       if (!said || busy) return;
       const requestEpoch = authEpoch.current;
@@ -785,38 +774,27 @@ export default function App() {
       ];
 
       try {
-        const result = await api.say(said, openAsk ? "ai" : "manual", geminiKey);
+        const result = await api.say(said, openAsk ? "ai" : "manual", geminiKey, intent);
         if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
         announce(result.kind, result.message, !openAsk);
 
-        if (result.kind === "shown") {
-          const list = result.view.shortlist.slice(0, 4);
-          reply({
-            text: list.length
-              ? `Start with ${list[0].title}.`
-              : "Nothing waiting. Tell me what's on your plate.",
-            kind: "shown",
-            lines: list.map(
-              (row, index) =>
-                `${index + 1}. ${row.title}${row.minutes ? ` · ${row.minutes}m` : ""} · ${why(row)}`,
-            ),
-          });
-        } else {
-          reply({
-            text: result.message,
-            kind: result.kind,
-            item: result.item,
-            lines: [
-              ...(result.tools?.map(
-                (tool) =>
-                  `${tool.ok ? "Checked" : "Could not check"} ${tool.name.replaceAll("_", " ")}`,
-              ) ?? []),
-              ...(result.chip ?? []),
-            ],
-          });
-        }
+        reply({
+          text: result.message,
+          kind: result.kind,
+          item: result.item,
+          lines: [
+            ...(result.facts ?? []),
+            ...(result.warnings ?? []),
+            ...(result.receipt?.warnings ?? []),
+            ...(result.tools?.map(
+              (tool) =>
+                `${tool.ok ? "Checked" : "Could not check"} ${tool.name.replaceAll("_", " ")}`,
+            ) ?? []),
+            ...(result.chip ?? []),
+          ],
+        });
       } catch (error) {
         if (requestEpoch !== authEpoch.current) return;
         if (error instanceof ApiError) {
@@ -1104,7 +1082,7 @@ export default function App() {
                   setMode(next);
                   saveMode(next);
                 }}
-                onExample={(example) => void say(example)}
+                onExample={(example) => void say(example.label, example.intent)}
               />
             )}
 
