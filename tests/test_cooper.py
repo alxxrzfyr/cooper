@@ -26,7 +26,7 @@ from cooper import (  # noqa: E402
 )
 from cooper.brain import parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
-from cooper.planner import Hours, place, rank, task_state  # noqa: E402
+from cooper.planner import Hours, build_planning_snapshot, place, rank, task_state  # noqa: E402
 
 TZ = "Asia/Singapore"
 ZONE = ZoneInfo(TZ)
@@ -534,6 +534,141 @@ class TestTaskState:
             )
             == "missed_block"
         )
+
+
+class TestPlanningSnapshot:
+    @staticmethod
+    def commitment(
+        identity: str,
+        *,
+        start: dt.datetime,
+        end: dt.datetime,
+        source: str = "google",
+        aliases: tuple[str, ...] | None = None,
+        title: str = "Commitment",
+        all_day: bool = False,
+    ) -> sources.Commitment:
+        return sources.Commitment(
+            id=identity,
+            source=source,
+            source_id=identity.split(":", 1)[-1],
+            aliases=aliases or (identity,),
+            title=title,
+            kind="event",
+            start=start,
+            end=end,
+            all_day=all_day,
+            category="work",
+            editable=source == "cooper",
+        )
+
+    @staticmethod
+    def hours() -> Hours:
+        return Hours(
+            timezone="UTC",
+            weekdays=tuple(range(7)),
+            start_hour=9,
+            end_hour=18,
+            max_per_day=8,
+        )
+
+    def test_metrics_count_every_mixed_source_commitment_once(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
+        local_item = task(
+            id="local-1",
+            start_at=start,
+            end_at=start + dt.timedelta(hours=1),
+        )
+        local = sources.normalize_local_commitment(local_item)
+        assert local is not None
+        commitments = [
+            local,
+            self.commitment(
+                "google:g1", start=start + dt.timedelta(hours=2), end=start + dt.timedelta(hours=3)
+            ),
+            self.commitment(
+                "google:g2", start=start + dt.timedelta(hours=4), end=start + dt.timedelta(hours=5)
+            ),
+            self.commitment(
+                "icloud:i1",
+                source="icloud",
+                start=start + dt.timedelta(hours=6),
+                end=start + dt.timedelta(hours=7),
+            ),
+        ]
+
+        snapshot = build_planning_snapshot(
+            items=[local_item],
+            commitments=commitments,
+            source_health=[{"source": "google", "status": "ok"}],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["scheduled_count"] == 4
+        assert snapshot["metrics"]["occupied_minutes"] == 240
+
+    def test_occupied_minutes_clip_at_local_midnight(self) -> None:
+        late = dt.datetime(2026, 8, 31, 23, tzinfo=dt.UTC)
+        snapshot = build_planning_snapshot(
+            items=[],
+            commitments=[
+                self.commitment("google:overnight", start=late, end=late + dt.timedelta(hours=2))
+            ],
+            source_health=[],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["scheduled_count"] == 1
+        assert snapshot["metrics"]["occupied_minutes"] == 60
+
+    def test_remaining_effort_ignores_terminal_and_provider_events(self) -> None:
+        snapshot = build_planning_snapshot(
+            items=[
+                task(minutes=45),
+                task(minutes=90, status="done"),
+                task(minutes=120, status="dropped"),
+                task(kind="event", minutes=60),
+            ],
+            commitments=[],
+            source_health=[],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["remaining_effort_minutes"] == 45
+
+    def test_focus_conflicts_and_provider_risk_are_derived_once(self) -> None:
+        active_start = NOW - dt.timedelta(minutes=15)
+        active_end = NOW + dt.timedelta(minutes=45)
+        next_start = NOW + dt.timedelta(hours=2)
+        snapshot = build_planning_snapshot(
+            items=[task(id="overdue", due=NOW - dt.timedelta(minutes=1))],
+            commitments=[
+                self.commitment("google:active", start=active_start, end=active_end),
+                self.commitment(
+                    "icloud:overlap",
+                    source="icloud",
+                    start=NOW,
+                    end=NOW + dt.timedelta(hours=1),
+                ),
+                self.commitment(
+                    "google:next", start=next_start, end=next_start + dt.timedelta(hours=1)
+                ),
+            ],
+            source_health=[
+                {"source": "google", "status": "ok"},
+                {"source": "icloud", "status": "unavailable"},
+            ],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["complete"] is False
+        assert snapshot["focus"] == {"now_id": "google:active", "next_id": "google:next"}
+        assert snapshot["metrics"]["conflict_count"] == 1
+        assert {risk["kind"] for risk in snapshot["risks"]} >= {"overdue", "source_unavailable"}
 
 
 class TestPlacing:

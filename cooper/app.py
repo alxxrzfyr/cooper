@@ -48,7 +48,7 @@ from cooper.config import KEY_MIN, Settings
 from cooper.db import Change, Item, Setting, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.icloud import ICloudCalDAVProvider
-from cooper.planner import Hours, Slot, place, rank
+from cooper.planner import Hours, Slot, build_planning_snapshot, place, rank
 from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
@@ -717,7 +717,6 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
 
     with store.session() as session:
         items = store.open_items(session, owner_id)
-        ranked = rank(items, at=at)
         scheduled = [
             item.to_dict()
             for item in sorted(
@@ -744,27 +743,36 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         "complete": all(entry["status"] == "ok" for entry in source_health),
         "source_health": source_health,
     }
+    commitments = [
+        commitment
+        for item in items
+        if (commitment := sources.normalize_local_commitment(item)) is not None
+    ]
+    commitments.extend(sources.normalize_provider_commitment(event) for event in events)
+    planning = build_planning_snapshot(
+        items=items,
+        commitments=commitments,
+        source_health=source_health,
+        hours=hours,
+        at=at,
+    )
+    shortlist = []
+    for entry in planning["tasks"]:
+        payload = dict(entry)
+        if payload["kind"] == "task" and not payload["start_at"]:
+            payload["waiting_reason"] = _waiting_reason(payload, availability)
+        shortlist.append(payload)
+    planning["tasks"] = shortlist
     return {
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
         "timezone": settings.timezone,
-        "shortlist": [
-            {
-                **entry.item.to_dict(),
-                "score": entry.score,
-                "why": entry.why,
-                **(
-                    {"waiting_reason": _waiting_reason(entry.item.to_dict(), availability)}
-                    if entry.item.kind == "task" and not entry.item.start_at
-                    else {}
-                ),
-            }
-            for entry in ranked
-        ],
+        "shortlist": shortlist,
         "scheduled": scheduled,
         "hours": hours.as_setting(),
         "events": events,
         "source_health": source_health,
+        "planning": planning,
         "undo": undo_label,
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {

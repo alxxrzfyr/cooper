@@ -135,6 +135,66 @@ def test_request_log_excludes_query_and_authentication(client: TestClient, caplo
     assert KEY not in entries[0]
 
 
+def test_today_exposes_one_planning_snapshot_for_local_and_provider_items(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    fixed = dt.datetime(2026, 9, 20, 1, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(module, "now", lambda: fixed)
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="local-block",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="Local focus",
+                minutes=60,
+                importance=4,
+                category="work",
+                status="open",
+                start_at=fixed + dt.timedelta(hours=1),
+                end_at=fixed + dt.timedelta(hours=2),
+                created_at=fixed,
+            )
+        )
+
+    def provider_event(source: str, identity: str, offset: int) -> dict[str, object]:
+        start = fixed + dt.timedelta(hours=offset)
+        return {
+            "source": source,
+            "event_id": identity,
+            "title": f"{source} event",
+            "start_at": start.isoformat(),
+            "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+            "category": "personal",
+            "mine": False,
+            "all_day": False,
+        }
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [provider_event("google", "g1", 3), provider_event("google", "g2", 5)]
+
+    def icloud_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "icloud", "status": "ok"})
+        return [provider_event("icloud", "i1", 7)]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    monkeypatch.setattr(module, "icloud_events", icloud_events)
+
+    body = client.get("/api/today", headers=HEADERS).json()
+
+    assert body["planning"]["complete"] is True
+    assert body["planning"]["metrics"]["scheduled_count"] == 4
+    assert len(body["planning"]["commitments"]) == 4
+    assert {entry["id"] for entry in body["planning"]["tasks"]} == {
+        entry["id"] for entry in body["shortlist"]
+    }
+    assert body["planning"]["source_health"] == body["source_health"]
+
+
 def test_mcp_catalog_and_disconnected_read(client):
     def rpc(method, params=None):
         return client.post(
@@ -1584,7 +1644,7 @@ class TestSaying:
 
         assert [row["title"] for row in shortlist] == ["write the report"]
         assert shortlist[0]["score"] > 0
-        assert set(shortlist[0]["why"]) == {"due", "age", "quick"}
+        assert set(shortlist[0]["why"]) == {"due", "importance", "age", "quick"}
 
     def test_a_timed_sentence_creates_an_event(self, client: TestClient) -> None:
         body = say(client, "dentist thursday 3pm 60m")
