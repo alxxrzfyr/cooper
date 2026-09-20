@@ -152,6 +152,181 @@ def task(**fields: object) -> Item:
 
 
 class TestCommitmentSources:
+    @staticmethod
+    def provider_event(source: str = "google", **overrides: object) -> dict[str, object]:
+        start = NOW + dt.timedelta(hours=1)
+        values: dict[str, object] = {
+            "source": source,
+            "event_id": "remote-1",
+            "title": "Team review",
+            "start_at": start.isoformat(),
+            "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+            "category": "work",
+            "all_day": False,
+        }
+        return values | overrides
+
+    def test_local_scheduled_task_becomes_an_editable_commitment(self) -> None:
+        item = task(
+            id="local-1",
+            title="Write report",
+            start_at=NOW,
+            end_at=NOW + dt.timedelta(hours=1),
+            category="work",
+        )
+
+        commitment = sources.normalize_local_commitment(item)
+
+        assert commitment is not None
+        assert commitment.id == "cooper:local-1"
+        assert commitment.source == "cooper"
+        assert commitment.source_id == "local-1"
+        assert commitment.aliases == ("cooper:local-1",)
+        assert commitment.kind == "task"
+        assert commitment.start == NOW
+        assert commitment.editable is True
+        assert commitment.local_item_id == "local-1"
+
+    def test_local_fixed_event_and_gmail_item_keep_their_sources(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="event-1",
+                kind="event",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        gmail = sources.normalize_local_commitment(
+            task(
+                id="gmail-1",
+                kind="event",
+                source="gmail",
+                source_ref="meetup:123",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+
+        assert local is not None and local.source == "cooper" and local.editable
+        assert gmail is not None
+        assert gmail.source == "gmail"
+        assert gmail.source_id == "meetup:123"
+        assert gmail.aliases == ("cooper:gmail-1", "gmail:meetup:123")
+        assert gmail.editable is False
+
+    @pytest.mark.parametrize("source", ["google", "icloud"])
+    def test_provider_events_are_normalized_to_utc(self, source: str) -> None:
+        commitment = sources.normalize_provider_commitment(
+            self.provider_event(
+                source,
+                start_at="2026-08-31T10:00:00+08:00",
+                end_at="2026-08-31T11:00:00+08:00",
+                all_day=True,
+            )
+        )
+
+        assert commitment.source == source
+        assert commitment.id == f"{source}:remote-1"
+        assert commitment.start == dt.datetime(2026, 8, 31, 2, tzinfo=dt.UTC)
+        assert commitment.end == dt.datetime(2026, 8, 31, 3, tzinfo=dt.UTC)
+        assert commitment.all_day is True
+        assert commitment.editable is False
+
+    def test_same_provider_identity_is_counted_once(self) -> None:
+        first = sources.normalize_provider_commitment(self.provider_event())
+        second = sources.normalize_provider_commitment(self.provider_event(title="Updated title"))
+
+        assert len(sources.deduplicate_commitments([first, second])) == 1
+
+    def test_explicit_google_link_collapses_into_the_local_record(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(
+            self.provider_event(title="A changed legacy copy")
+        )
+
+        assert local is not None
+        [merged] = sources.deduplicate_commitments([google, local])
+        assert merged.id == "cooper:local-1"
+        assert merged.editable is True
+        assert merged.aliases == ("cooper:local-1", "google:remote-1")
+
+    def test_gmail_source_ref_is_not_a_google_event_identity(self) -> None:
+        gmail = sources.normalize_local_commitment(
+            task(
+                id="gmail-1",
+                source="gmail",
+                source_ref="remote-1",
+                title="Meetup",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(
+            self.provider_event(
+                title="Different meeting",
+                start_at=(NOW + dt.timedelta(hours=3)).isoformat(),
+                end_at=(NOW + dt.timedelta(hours=4)).isoformat(),
+            )
+        )
+
+        assert gmail is not None
+        assert len(sources.deduplicate_commitments([gmail, google])) == 2
+
+    def test_exact_cross_provider_signature_collapses_but_retains_aliases(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event("icloud", event_id="icloud-7", title="  TEAM   REVIEW ")
+        )
+
+        [merged] = sources.deduplicate_commitments([google, icloud])
+        assert merged.title == "Team review"
+        assert merged.aliases == ("google:remote-1", "icloud:icloud-7")
+
+    def test_overlaps_with_different_titles_remain_visible(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event("icloud", event_id="icloud-7", title="Client call")
+        )
+
+        assert len(sources.deduplicate_commitments([google, icloud])) == 2
+
+    def test_same_title_at_different_times_remains_visible(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event(
+                "icloud",
+                event_id="icloud-7",
+                start_at=(NOW + dt.timedelta(hours=4)).isoformat(),
+                end_at=(NOW + dt.timedelta(hours=5)).isoformat(),
+            )
+        )
+
+        assert len(sources.deduplicate_commitments([google, icloud])) == 2
+
+    def test_deduplicated_intervals_do_not_double_charge_a_linked_event(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                start_at=NOW + dt.timedelta(hours=1),
+                end_at=NOW + dt.timedelta(hours=2),
+            )
+        )
+        google = sources.normalize_provider_commitment(self.provider_event())
+
+        assert local is not None
+        commitments = sources.deduplicate_commitments([local, google])
+        assert sources.commitment_intervals(commitments) == [
+            (NOW + dt.timedelta(hours=1), NOW + dt.timedelta(hours=2))
+        ]
+
     def test_gmail_commitments_are_collected_once_not_as_local_blocks(self, store: Store) -> None:
         """If Gmail rows re-enter collect_local, each imported event blocks the planner twice."""
         gmail_start = NOW + dt.timedelta(days=1)
