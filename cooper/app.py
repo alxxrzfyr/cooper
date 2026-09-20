@@ -1158,6 +1158,7 @@ def _verified_write_response(
     item_ids: list[str],
 ) -> dict[str, Any]:
     receipt = _mutation_receipt(view, operation=operation, item_ids=item_ids)
+    receipt["warnings"] = list(dict.fromkeys([*receipt["warnings"], *result.pop("_warnings", [])]))
     return {**result, "message": _receipt_message(receipt), "receipt": receipt}
 
 
@@ -1230,18 +1231,21 @@ def _receipt_message(receipt: dict[str, Any]) -> str:
     if len(items) != 1:
         verb = "Added" if operation == "create" else "Scheduled"
         noun = "tasks" if operation == "create" else "items"
-        return f"{verb} {len(items)} {noun} in COOPER."
-    item = items[0]
-    verb = "Added" if operation == "create" else "Scheduled"
-    if item["start_at"] and item["end_at"]:
+        message = f"{verb} {len(items)} {noun} in COOPER."
+    else:
+        item = items[0]
+        verb = "Added" if operation == "create" else "Scheduled"
+        message = f"{verb} “{item['title']}” in COOPER."
+    if len(items) == 1 and item["start_at"] and item["end_at"]:
         zone = ZoneInfo(settings.timezone)
         start = dt.datetime.fromisoformat(item["start_at"]).astimezone(zone)
         end = dt.datetime.fromisoformat(item["end_at"]).astimezone(zone)
-        return (
+        message = (
             f"{verb} “{item['title']}” in COOPER for "
             f"{start.strftime('%a %-I:%M %p')}–{end.strftime('%-I:%M %p')}."
         )
-    return f"{verb} “{item['title']}” in COOPER."
+    warnings = " ".join(receipt["warnings"])
+    return f"{message} {warnings}" if warnings else message
 
 
 def _recommendation_reason(task: dict[str, Any], timezone: str) -> str:
@@ -1527,17 +1531,18 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
         }
 
     if payload["start_at"]:
-        notices = _fixed_event_notices(owner_id, payload)
+        warnings = _fixed_event_warnings(owner_id, payload)
         return {
             "kind": "added",
-            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}." + notices,
+            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}.",
             "item": payload,
+            "_warnings": warnings,
         }
 
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
 
 
-def _fixed_event_notices(owner_id: str, payload: dict[str, Any]) -> str:
+def _fixed_event_warnings(owner_id: str, payload: dict[str, Any]) -> list[str]:
     """Report overlaps without moving a fixed appointment or losing it to a source outage."""
     start = dt.datetime.fromisoformat(payload["start_at"])
     end = dt.datetime.fromisoformat(payload["end_at"])
@@ -1562,7 +1567,7 @@ def _fixed_event_notices(owner_id: str, payload: dict[str, Any]) -> str:
         notices.append(
             "Connected calendar conflicts beyond the checked range could not be checked."
         )
-    return " " + " ".join(notices) if notices else ""
+    return notices
 
 
 def _external_availability(owner_id: str, *, days: int = 14) -> dict[str, Any]:
