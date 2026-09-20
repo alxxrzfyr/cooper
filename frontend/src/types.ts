@@ -28,7 +28,8 @@ export interface Item {
 
 export interface Ranked extends Item {
   score: number;
-  why: { due: number; age: number; quick: number };
+  why: { due: number; importance: number; age: number; quick: number };
+  state?: PlanningTaskState;
 }
 
 /** Fields sent by the Form capture surface. */
@@ -111,6 +112,67 @@ export interface CalendarEvent {
   metadata?: CalendarEventMetadata[];
 }
 
+export type PlanningTaskState =
+  | "not_started"
+  | "scheduled"
+  | "in_progress"
+  | "blocked"
+  | "overdue"
+  | "missed_block"
+  | "completed"
+  | "dropped";
+
+export interface SourceHealth {
+  source: string;
+  status: "ok" | "unavailable";
+  message?: string;
+}
+
+export interface PlanningCommitment {
+  id: string;
+  source: "cooper" | "google" | "gmail" | "icloud" | string;
+  source_id: string | null;
+  aliases: string[];
+  title: string;
+  kind: Kind;
+  start_at: string;
+  end_at: string;
+  all_day: boolean;
+  category: Category;
+  editable: boolean;
+  local_item_id: string | null;
+  conflict: boolean;
+  item?: Item;
+  event?: CalendarEvent;
+}
+
+export interface PlanningRisk {
+  kind: string;
+  item_id?: string;
+  source?: string;
+  message?: string;
+  commitment_ids?: string[];
+}
+
+export interface PlanningSnapshot {
+  generated_at: string;
+  today: string;
+  timezone: string;
+  complete: boolean;
+  source_health: SourceHealth[];
+  commitments: PlanningCommitment[];
+  tasks: Ranked[];
+  focus: { now_id: string | null; next_id: string | null };
+  risks: PlanningRisk[];
+  metrics: {
+    scheduled_count: number;
+    occupied_minutes: number;
+    remaining_effort_minutes: number;
+    largest_free_block_minutes: number;
+    conflict_count: number;
+  };
+}
+
 export interface GmailHealth {
   configured: boolean;
   connected: boolean;
@@ -129,7 +191,7 @@ export interface SyncSummary {
 }
 
 export interface View {
-  source_health?: { source: string; status: "ok" | "unavailable"; message?: string }[];
+  source_health?: SourceHealth[];
   now: string;
   today: string;
   timezone: string;
@@ -137,6 +199,7 @@ export interface View {
   scheduled: Item[];
   hours: Hours;
   events: CalendarEvent[];
+  planning: PlanningSnapshot;
   undo: string | null;
   using_model: boolean;
   calendar: { configured: boolean; connected: boolean; email: string | null };

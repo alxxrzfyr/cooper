@@ -1,4 +1,4 @@
-import type { CalendarEvent, Category, Item } from "./types";
+import type { CalendarEvent, Category, Item, PlanningCommitment } from "./types";
 
 export interface CalendarEntry {
   key: string;
@@ -42,57 +42,34 @@ function spansDay(start: Date, end: Date, day: string, timeZone: string): boolea
   return zonedDay(start, timeZone) <= day && zonedDay(lastMoment, timeZone) >= day;
 }
 
-/** Merge local and external entries so Home and Calendar render the same records. */
+/** Format the backend's canonical commitments for Calendar and Home. */
 export function calendarEntries(
-  scheduled: Item[],
-  events: CalendarEvent[],
+  commitments: PlanningCommitment[],
   timeZone?: string,
   day?: string,
 ): CalendarEntry[] {
-  const entries: CalendarEntry[] = [];
-
-  for (const item of scheduled) {
-    if (!item.start_at) continue;
-    const start = new Date(item.start_at);
-    const end = new Date(item.end_at ?? item.start_at);
-    if (day && timeZone && !spansDay(start, end, day, timeZone)) continue;
-    const source = item.source === "gmail" ? "gmail" : "cooper";
-    entries.push({
-      key: `c-${item.id}`,
-      title: item.title,
-      start,
-      end,
-      source,
-      category: item.category,
-      item: source === "cooper" ? item : undefined,
-    });
-  }
-
-  for (const event of events) {
-    if (event.mine) continue;
-    const start = new Date(event.start_at);
-    const end = new Date(event.end_at);
-    if (day && timeZone && !spansDay(start, end, day, timeZone)) continue;
-    entries.push({
-      key: `${event.source}-${event.event_id ?? event.start_at}-${event.title}`,
-      title: event.title,
-      start,
-      end,
-      source: event.source,
-      category: event.category,
-      event,
-    });
-  }
+  const entries: CalendarEntry[] = commitments.flatMap((commitment) => {
+    const start = new Date(commitment.start_at);
+    const end = new Date(commitment.end_at);
+    if (day && timeZone && !spansDay(start, end, day, timeZone)) return [];
+    const source = ["cooper", "google", "gmail", "icloud"].includes(commitment.source)
+      ? (commitment.source as CalendarEntry["source"])
+      : "google";
+    return [
+      {
+        key: commitment.id,
+        title: commitment.title,
+        start,
+        end,
+        source,
+        category: commitment.category,
+        item: commitment.item,
+        event: commitment.event,
+        conflict: commitment.conflict,
+      },
+    ];
+  });
 
   entries.sort((a, b) => a.start.getTime() - b.start.getTime());
-  for (const entry of entries) {
-    if (entry.source !== "cooper") continue;
-    entry.conflict = entries.some(
-      (other) =>
-        other.key !== entry.key &&
-        other.start.getTime() < entry.end.getTime() &&
-        entry.start.getTime() < other.end.getTime(),
-    );
-  }
   return entries;
 }

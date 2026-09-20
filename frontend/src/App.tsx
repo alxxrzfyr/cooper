@@ -969,7 +969,7 @@ export default function App() {
         <Nav
           current={tab}
           todo={shortlist.length}
-          booked={scheduled.length}
+          booked={view?.planning.metrics.scheduled_count ?? 0}
           collapsed={sidebarCollapsed}
           onChange={(next) => {
             setTab(next);

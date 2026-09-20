@@ -756,6 +756,22 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         hours=hours,
         at=at,
     )
+    items_by_id = {item.id: item.to_dict() for item in items}
+    events_by_identity = {
+        (str(event.get("source")), str(event.get("event_id"))): event
+        for event in events
+        if event.get("event_id")
+    }
+    for commitment in planning["commitments"]:
+        local_item = items_by_id.get(commitment["local_item_id"])
+        if local_item is not None and commitment["editable"]:
+            commitment["item"] = local_item
+            continue
+        provider_event = events_by_identity.get(
+            (commitment["source"], str(commitment["source_id"]))
+        )
+        if provider_event is not None:
+            commitment["event"] = provider_event
     shortlist = []
     for entry in planning["tasks"]:
         payload = dict(entry)

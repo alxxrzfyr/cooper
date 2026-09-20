@@ -179,10 +179,12 @@ def build_planning_snapshot(
             )
 
     conflicts = 0
+    conflict_ids: set[str] = set()
     for index, first in enumerate(unique):
         for second in unique[index + 1 :]:
             if first.start < second.end and second.start < first.end:
                 conflicts += 1
+                conflict_ids.update((first.id, second.id))
                 risks.append(
                     {
                         "kind": "conflict",
@@ -204,7 +206,9 @@ def build_planning_snapshot(
         "timezone": hours.timezone,
         "complete": complete,
         "source_health": list(source_health),
-        "commitments": [_commitment_dict(entry) for entry in unique],
+        "commitments": [
+            _commitment_dict(entry, conflict=entry.id in conflict_ids) for entry in unique
+        ],
         "tasks": tasks,
         "focus": {"now_id": active.id if active else None, "next_id": next_id},
         "risks": risks,
@@ -220,7 +224,7 @@ def build_planning_snapshot(
     }
 
 
-def _commitment_dict(commitment: Commitment) -> dict[str, Any]:
+def _commitment_dict(commitment: Commitment, *, conflict: bool) -> dict[str, Any]:
     return {
         "id": commitment.id,
         "source": commitment.source,
@@ -234,6 +238,7 @@ def _commitment_dict(commitment: Commitment) -> dict[str, Any]:
         "category": commitment.category,
         "editable": commitment.editable,
         "local_item_id": commitment.local_item_id,
+        "conflict": conflict,
     }
 
 
