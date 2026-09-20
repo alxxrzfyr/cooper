@@ -34,9 +34,14 @@ through verified email/password or Google sign-in, but it is not a team or proje
 - Connect Google Calendar and Gmail as read-only commitment sources. Cooper stores new calendar
   items locally.
 - Read iCloud calendars through CalDAV so those commitments also block scheduling.
+- Normalize local, Google, iCloud, and Gmail commitments into one deduplicated planning snapshot
+  used by calendar cells, navigation counts, task state, workload facts, and common Ask questions.
+- Confirm creation and scheduling only after the committed item is visible in refreshed planning
+  state, preserving overlap and unavailable-calendar warnings.
 - Google Calendar and iCloud Calendar acceptance flows were manually verified on 2026-09-14;
   the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
-- Let Ask select bounded availability, Gmail confirmation, and planning tools through MCP.
+- Answer common focus, remaining-work, next-action, deadline, workload, and fit questions directly
+  from current COOPER state; use bounded read tools for longer-tail Ask questions.
 - Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
 - Install the frontend as a responsive PWA with light and dark themes.
 

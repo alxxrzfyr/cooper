@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from collections.abc import Sequence
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from cooper.db import Item, aware
+from cooper.sources import Commitment, deduplicate_commitments, merge_intervals
 
 # Score weights sum to 1. The deadline has the greatest weight.
 W_DUE = 0.60
-W_AGE = 0.15
-W_QUICK = 0.25
+W_IMPORTANCE = 0.20
+W_AGE = 0.10
+W_QUICK = 0.10
 
 HORIZON_DAYS = 14
 GAP = 10
@@ -43,7 +47,12 @@ def rank(items: list[Item], *, at: dt.datetime) -> list[Scored]:
         if item.status != "open" or item.kind != "task":
             continue
         why = _terms(item, at=at)
-        total = why["due"] * W_DUE + why["age"] * W_AGE + why["quick"] * W_QUICK
+        total = (
+            why["due"] * W_DUE
+            + why["importance"] * W_IMPORTANCE
+            + why["age"] * W_AGE
+            + why["quick"] * W_QUICK
+        )
         scored.append(Scored(item=item, score=round(total, 3), why=why))
 
     scored.sort(
@@ -73,9 +82,185 @@ def _terms(item: Item, *, at: dt.datetime) -> dict[str, float]:
 
     return {
         "due": round(due_term, 3),
+        "importance": round((item.importance - 1) / 4, 3),
         "age": round(min(age_days / 21, 1.0), 3),
         "quick": round(quick, 3),
     }
+
+
+TaskState = Literal[
+    "not_started",
+    "scheduled",
+    "in_progress",
+    "blocked",
+    "overdue",
+    "missed_block",
+    "completed",
+    "dropped",
+]
+
+
+def task_state(item: Item, *, at: dt.datetime, availability_complete: bool = True) -> TaskState:
+    """Derive the useful planning state without adding workflow columns."""
+    if item.status == "done":
+        return "completed"
+    if item.status == "dropped":
+        return "dropped"
+
+    due = aware(item.due)
+    if due is not None and due < at:
+        return "overdue"
+
+    start, end = aware(item.start_at), aware(item.end_at)
+    if start is not None and end is not None:
+        if start <= at < end:
+            return "in_progress"
+        if end <= at:
+            return "missed_block"
+        return "scheduled"
+
+    if not availability_complete and item.minutes is not None and item.minutes > 0:
+        return "blocked"
+    return "not_started"
+
+
+def build_planning_snapshot(
+    *,
+    items: Sequence[Item],
+    commitments: Sequence[Commitment],
+    source_health: Sequence[dict[str, Any]],
+    hours: Hours,
+    at: dt.datetime,
+) -> dict[str, Any]:
+    """Project all planning facts once for every product surface."""
+    zone = ZoneInfo(hours.timezone)
+    at = at.astimezone(dt.UTC)
+    today = at.astimezone(zone).date()
+    day_start = dt.datetime.combine(today, dt.time(), tzinfo=zone).astimezone(dt.UTC)
+    day_end = dt.datetime.combine(today + dt.timedelta(days=1), dt.time(), tzinfo=zone).astimezone(
+        dt.UTC
+    )
+    complete = all(entry.get("status") == "ok" for entry in source_health)
+    unique = deduplicate_commitments(commitments)
+    today_commitments = [
+        entry for entry in unique if entry.start < day_end and day_start < entry.end
+    ]
+    occupied = merge_intervals(
+        [(max(entry.start, day_start), min(entry.end, day_end)) for entry in today_commitments]
+    )
+    ranked = rank(list(items), at=at)
+    tasks = [
+        {
+            **entry.item.to_dict(),
+            "score": entry.score,
+            "why": entry.why,
+            "state": task_state(entry.item, at=at, availability_complete=complete),
+        }
+        for entry in ranked
+    ]
+
+    active = next((entry for entry in unique if entry.start <= at < entry.end), None)
+    upcoming = next((entry for entry in unique if entry.start > at), None)
+    next_id = upcoming.id if upcoming else (tasks[0]["id"] if tasks else None)
+
+    risks: list[dict[str, Any]] = []
+    for entry in ranked:
+        state = task_state(entry.item, at=at, availability_complete=complete)
+        if state in {"overdue", "missed_block", "blocked"}:
+            risks.append({"kind": state, "item_id": entry.item.id})
+    for health in source_health:
+        if health.get("status") != "ok":
+            risks.append(
+                {
+                    "kind": "source_unavailable",
+                    "source": health.get("source"),
+                    **({"message": health["message"]} if health.get("message") else {}),
+                }
+            )
+
+    conflicts = 0
+    conflict_ids: set[str] = set()
+    for index, first in enumerate(unique):
+        for second in unique[index + 1 :]:
+            if first.start < second.end and second.start < first.end:
+                conflicts += 1
+                conflict_ids.update((first.id, second.id))
+                risks.append(
+                    {
+                        "kind": "conflict",
+                        "commitment_ids": [first.id, second.id],
+                    }
+                )
+
+    occupied_minutes = round(sum((end - start).total_seconds() / 60 for start, end in occupied))
+    largest_free = _largest_free_block(
+        hours=hours,
+        at=at,
+        day_start=day_start,
+        day_end=day_end,
+        occupied=occupied,
+    )
+    return {
+        "generated_at": at.isoformat(),
+        "today": today.isoformat(),
+        "timezone": hours.timezone,
+        "complete": complete,
+        "source_health": list(source_health),
+        "commitments": [
+            _commitment_dict(entry, conflict=entry.id in conflict_ids) for entry in unique
+        ],
+        "tasks": tasks,
+        "focus": {"now_id": active.id if active else None, "next_id": next_id},
+        "risks": risks,
+        "metrics": {
+            "scheduled_count": len(today_commitments),
+            "occupied_minutes": occupied_minutes,
+            "remaining_effort_minutes": sum(
+                item.minutes or 0 for item in items if item.kind == "task" and item.status == "open"
+            ),
+            "largest_free_block_minutes": largest_free,
+            "conflict_count": conflicts,
+        },
+    }
+
+
+def _commitment_dict(commitment: Commitment, *, conflict: bool) -> dict[str, Any]:
+    return {
+        "id": commitment.id,
+        "source": commitment.source,
+        "source_id": commitment.source_id,
+        "aliases": list(commitment.aliases),
+        "title": commitment.title,
+        "kind": commitment.kind,
+        "start_at": commitment.start.isoformat(),
+        "end_at": commitment.end.isoformat(),
+        "all_day": commitment.all_day,
+        "category": commitment.category,
+        "editable": commitment.editable,
+        "local_item_id": commitment.local_item_id,
+        "conflict": conflict,
+    }
+
+
+def _largest_free_block(
+    *,
+    hours: Hours,
+    at: dt.datetime,
+    day_start: dt.datetime,
+    day_end: dt.datetime,
+    occupied: list[tuple[dt.datetime, dt.datetime]],
+) -> int:
+    largest = 0.0
+    for window_start, window_end in _windows(hours, day_start, 1):
+        cursor = max(window_start, day_start, at)
+        limit = min(window_end, day_end)
+        for busy_start, busy_end in occupied:
+            if busy_end <= cursor or busy_start >= limit:
+                continue
+            largest = max(largest, (min(busy_start, limit) - cursor).total_seconds() / 60)
+            cursor = max(cursor, busy_end)
+        largest = max(largest, (limit - cursor).total_seconds() / 60)
+    return max(0, round(largest))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

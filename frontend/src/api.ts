@@ -2,9 +2,11 @@
 
 import {
   ApiError,
+  type AskIntent,
   type Hours,
   type Item,
   type NewItem,
+  type MutationReceipt,
   type Reply,
   type SyncSummary,
   type View,
@@ -87,12 +89,13 @@ const post = (body?: unknown): RequestInit => ({
 
 export const api = {
   today: () => call<View>("/api/today"),
-  say: (text: string, mode: "manual" | "ai" = "manual", geminiKey = "") =>
+  say: (text: string, mode: "manual" | "ai" = "manual", geminiKey = "", intent?: AskIntent) =>
     call<Reply>(
       "/api/say",
       post({
         text,
         mode,
+        ...(intent ? { intent } : {}),
         ...(mode === "ai" && geminiKey.trim() ? { gemini_api_key: geminiKey.trim() } : {}),
       }),
     ),
@@ -100,7 +103,8 @@ export const api = {
   bulkMatch: (words: string) =>
     call<{ matched: Item[]; count: number }>("/api/bulk/match", post({ words })),
   bulk: (verb: "complete" | "drop", ids: string[]) => call<Reply>("/api/bulk", post({ verb, ids })),
-  schedule: () => call<{ placed: unknown[]; view: View }>("/api/schedule", post()),
+  schedule: () =>
+    call<{ placed: unknown[]; receipt?: MutationReceipt; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
   act: (id: string, verb: "complete" | "drop" | "pin" | "schedule") =>
     call<Reply>(`/api/items/${id}/${verb}`, post()),

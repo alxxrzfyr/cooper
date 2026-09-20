@@ -135,6 +135,107 @@ def test_request_log_excludes_query_and_authentication(client: TestClient, caplo
     assert KEY not in entries[0]
 
 
+def test_today_exposes_one_planning_snapshot_for_local_and_provider_items(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    fixed = dt.datetime(2026, 9, 20, 1, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(module, "now", lambda: fixed)
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="local-block",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="Local focus",
+                minutes=60,
+                importance=4,
+                category="work",
+                status="open",
+                start_at=fixed + dt.timedelta(hours=1),
+                end_at=fixed + dt.timedelta(hours=2),
+                created_at=fixed,
+            )
+        )
+
+    def provider_event(source: str, identity: str, offset: int) -> dict[str, object]:
+        start = fixed + dt.timedelta(hours=offset)
+        return {
+            "source": source,
+            "event_id": identity,
+            "title": f"{source} event",
+            "start_at": start.isoformat(),
+            "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+            "category": "personal",
+            "mine": False,
+            "all_day": False,
+        }
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [provider_event("google", "g1", 3), provider_event("google", "g2", 5)]
+
+    def icloud_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "icloud", "status": "ok"})
+        return [provider_event("icloud", "i1", 7)]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    monkeypatch.setattr(module, "icloud_events", icloud_events)
+
+    body = client.get("/api/today", headers=HEADERS).json()
+
+    assert body["planning"]["complete"] is True
+    assert body["planning"]["metrics"]["scheduled_count"] == 4
+    assert len(body["planning"]["commitments"]) == 4
+    assert {entry["id"] for entry in body["planning"]["tasks"]} == {
+        entry["id"] for entry in body["shortlist"]
+    }
+    assert body["planning"]["source_health"] == body["source_health"]
+
+
+def test_successful_add_returns_a_receipt_from_committed_state(client: TestClient) -> None:
+    body = say(client, "write the report, 60m")
+
+    receipt = body["receipt"]
+    assert receipt["operation"] == "create"
+    assert receipt["items"][0]["id"] == body["item"]["id"]
+    assert receipt["items"][0]["state"] in {"scheduled", "in_progress"}
+    assert receipt["items"][0]["start_at"] == body["item"]["start_at"]
+    assert receipt["snapshot_generated_at"] == body["view"]["planning"]["generated_at"]
+    assert "COOPER" in body["message"]
+
+
+def test_manual_create_returns_the_same_verified_receipt(client: TestClient) -> None:
+    response = client.post(
+        "/api/items",
+        headers=HEADERS,
+        json={"title": "Buy printer ink"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["receipt"]["operation"] == "create"
+    assert body["receipt"]["items"][0]["id"] == body["item"]["id"]
+    assert body["receipt"]["items"][0]["state"] == "not_started"
+
+
+def test_schedule_one_receipt_matches_the_refreshed_snapshot(client: TestClient) -> None:
+    created = say(client, "review notes")
+    item_id = created["item"]["id"]
+    client.patch(f"/api/items/{item_id}", headers=HEADERS, json={"minutes": 30})
+
+    response = client.post(f"/api/items/{item_id}/schedule", headers=HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    verified = next(item for item in body["view"]["planning"]["tasks"] if item["id"] == item_id)
+    assert body["receipt"]["operation"] == "schedule"
+    assert body["receipt"]["items"][0]["start_at"] == verified["start_at"]
+    assert body["receipt"]["items"][0]["state"] in {"scheduled", "in_progress"}
+
+
 def test_mcp_catalog_and_disconnected_read(client):
     def rpc(method, params=None):
         return client.post(
@@ -546,10 +647,92 @@ class TestTheTwoModes:
             module.brain, "_generate", lambda prompt, **kwargs: "Start with the report."
         )
 
-        reply = ask(client, "what should I focus on")
+        reply = ask(client, "how long is the report?")
 
         assert reply["kind"] == "answered"
         assert reply["message"] == "Start with the report."
+
+    def test_focus_question_is_grounded_without_calling_a_model(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        say(client, "write the report, 90m, important")
+        monkeypatch.setattr(
+            module.brain,
+            "_generate",
+            lambda *args, **kwargs: pytest.fail("a curated planning question reached Gemini"),
+        )
+
+        reply = ask(client, "What should I focus on this week?")
+
+        assert reply["kind"] == "answered"
+        assert "write the report" in reply["message"].lower()
+        assert reply["intent"] == "focus_week"
+        assert reply["facts"]
+
+    def test_remaining_today_includes_external_calendar_commitments(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        fixed = dt.datetime(2026, 9, 20, 1, 0, tzinfo=dt.UTC)
+        monkeypatch.setattr(module, "now", lambda: fixed)
+
+        def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+            health.append({"source": "google", "status": "ok"})
+            return [
+                {
+                    "source": "google",
+                    "event_id": "meeting-1",
+                    "title": "Design review",
+                    "start_at": (fixed + dt.timedelta(hours=2)).isoformat(),
+                    "end_at": (fixed + dt.timedelta(hours=3)).isoformat(),
+                    "category": "work",
+                    "mine": False,
+                    "all_day": False,
+                }
+            ]
+
+        monkeypatch.setattr(module, "google_events", google_events)
+
+        reply = ask(client, "What do I still have today?")
+
+        assert reply["kind"] == "answered"
+        assert "Design review" in reply["message"]
+        assert reply["intent"] == "remaining_today"
+
+    def test_fit_question_refuses_to_invent_time_when_a_provider_is_unavailable(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        def unavailable(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+            health.append(
+                {
+                    "source": "google",
+                    "status": "unavailable",
+                    "message": "Google calendar could not be refreshed.",
+                }
+            )
+            return []
+
+        monkeypatch.setattr(module, "google_events", unavailable)
+
+        reply = ask(client, "Can I fit a two-hour study session tonight?")
+
+        assert reply["kind"] == "answered"
+        assert "can’t confirm" in reply["message"].lower()
+        assert reply["warnings"]
+
+    def test_unknown_typed_intent_is_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/say",
+            json={"text": "What next?", "mode": "ai", "intent": "make_it_up"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
 
     def test_an_answer_never_changes_anything(self, client: TestClient, monkeypatch) -> None:
         import cooper.app as module
@@ -615,7 +798,7 @@ class TestTheTwoModes:
             lambda prompt, **kwargs: prompts.append(prompt) or "Nothing from my local plan.",
         )
 
-        reply = ask(client, "what should I do first")
+        reply = ask(client, "how much time have I estimated?")
 
         assert reply["kind"] == "answered"
         assert prompts
@@ -633,7 +816,7 @@ class TestTheTwoModes:
         monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
         monkeypatch.setattr(module.brain, "_generate", explode)
 
-        reply = ask(client, "what should I do first")
+        reply = ask(client, "how long is my first task?")
 
         assert reply["kind"] == "shown"
 
@@ -731,7 +914,7 @@ class TestTheTwoModes:
         assert secret not in response.text
         assert "gemini_api_key" in response.text
 
-    def test_ai_question_uses_one_model_call_with_a_browser_key(
+    def test_curated_ai_question_does_not_spend_the_browser_key(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import cooper.app as module
@@ -751,7 +934,8 @@ class TestTheTwoModes:
 
         assert response.status_code == 200
         assert response.json()["kind"] == "answered"
-        assert len(calls) == 1
+        assert response.json()["source"] == "cooper"
+        assert calls == []
 
 
 class TestGmailReconciliation:
@@ -1312,7 +1496,7 @@ class TestRequestOwnership:
 
             response = client.post(
                 "/api/say",
-                json={"text": "what is on my plate", "mode": "ai"},
+                json={"text": "how long is my report?", "mode": "ai"},
                 headers={"Authorization": "Bearer verified"},
             )
 
@@ -1584,7 +1768,7 @@ class TestSaying:
 
         assert [row["title"] for row in shortlist] == ["write the report"]
         assert shortlist[0]["score"] > 0
-        assert set(shortlist[0]["why"]) == {"due", "age", "quick"}
+        assert set(shortlist[0]["why"]) == {"due", "importance", "age", "quick"}
 
     def test_a_timed_sentence_creates_an_event(self, client: TestClient) -> None:
         body = say(client, "dentist thursday 3pm 60m")
@@ -2462,7 +2646,7 @@ class TestTheAIPathDoesNotCreateOffTopicContent:
 
         monkeypatch.setattr(module.brain, "_generate", capture)
 
-        body = ask(client, "what is on my plate")
+        body = ask(client, "how long is my reminder?")
 
         assert body["kind"] == "answered"
         assert seen, "the model was never called"

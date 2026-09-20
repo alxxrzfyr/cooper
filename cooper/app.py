@@ -38,7 +38,9 @@ from cooper.auth import AuthFailure, AuthIdentity, verify_firebase_token
 from cooper.brain import (
     COOPER_IDENTITY,
     Action,
+    AskIntent,
     Brain,
+    classify_ask_intent,
     guess_category,
     looks_like_a_question,
     sanitize_for_prompt,
@@ -48,7 +50,7 @@ from cooper.config import KEY_MIN, Settings
 from cooper.db import Change, Item, Setting, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.icloud import ICloudCalDAVProvider
-from cooper.planner import Hours, Slot, place, rank
+from cooper.planner import Hours, Slot, build_planning_snapshot, place, rank
 from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
@@ -227,6 +229,7 @@ class Say(BaseModel):
     mode: Literal["manual", "ai"] = "manual"
     # This key is request-scoped and is never persisted, logged, or returned.
     gemini_api_key: str | None = Field(default=None, max_length=256)
+    intent: AskIntent | None = None
 
 
 class HoursIn(BaseModel):
@@ -717,7 +720,6 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
 
     with store.session() as session:
         items = store.open_items(session, owner_id)
-        ranked = rank(items, at=at)
         scheduled = [
             item.to_dict()
             for item in sorted(
@@ -744,27 +746,52 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         "complete": all(entry["status"] == "ok" for entry in source_health),
         "source_health": source_health,
     }
+    commitments = [
+        commitment
+        for item in items
+        if (commitment := sources.normalize_local_commitment(item)) is not None
+    ]
+    commitments.extend(sources.normalize_provider_commitment(event) for event in events)
+    planning = build_planning_snapshot(
+        items=items,
+        commitments=commitments,
+        source_health=source_health,
+        hours=hours,
+        at=at,
+    )
+    items_by_id = {item.id: item.to_dict() for item in items}
+    events_by_identity = {
+        (str(event.get("source")), str(event.get("event_id"))): event
+        for event in events
+        if event.get("event_id")
+    }
+    for commitment in planning["commitments"]:
+        local_item = items_by_id.get(commitment["local_item_id"])
+        if local_item is not None and commitment["editable"]:
+            commitment["item"] = local_item
+            continue
+        provider_event = events_by_identity.get(
+            (commitment["source"], str(commitment["source_id"]))
+        )
+        if provider_event is not None:
+            commitment["event"] = provider_event
+    shortlist = []
+    for entry in planning["tasks"]:
+        payload = dict(entry)
+        if payload["kind"] == "task" and not payload["start_at"]:
+            payload["waiting_reason"] = _waiting_reason(payload, availability)
+        shortlist.append(payload)
+    planning["tasks"] = shortlist
     return {
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
         "timezone": settings.timezone,
-        "shortlist": [
-            {
-                **entry.item.to_dict(),
-                "score": entry.score,
-                "why": entry.why,
-                **(
-                    {"waiting_reason": _waiting_reason(entry.item.to_dict(), availability)}
-                    if entry.item.kind == "task" and not entry.item.start_at
-                    else {}
-                ),
-            }
-            for entry in ranked
-        ],
+        "shortlist": shortlist,
         "scheduled": scheduled,
         "hours": hours.as_setting(),
         "events": events,
         "source_health": source_health,
+        "planning": planning,
         "undo": undo_label,
         "using_model": brain.using_model if using_model is None else using_model,
         "calendar": {
@@ -957,6 +984,16 @@ def say(body: Say, request: Request) -> dict[str, Any]:
     ai = body.mode == "ai"
     browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
     request_brain = brain.with_api_key(browser_key) if browser_key else brain
+    intent = body.intent or (classify_ask_intent(body.text) if ai else None)
+    if intent is not None:
+        view = today_view(owner_id, using_model=request_brain.using_model)
+        return {
+            "kind": "answered",
+            "source": "cooper",
+            "intent": intent,
+            **answer_planning_intent(intent, body.text, view),
+            "view": view,
+        }
     with store.session() as session:
         open_items = store.open_items(session, owner_id)
         open_items = [item for item in open_items if _is_local_item(item, owner_id)]
@@ -993,11 +1030,321 @@ def say(body: Say, request: Request) -> dict[str, Any]:
             }
 
     result = run(owner_id, action)
-    return {
-        **result,
-        "source": action.source,
-        "view": today_view(owner_id, using_model=request_brain.using_model),
+    view = today_view(owner_id, using_model=request_brain.using_model)
+    item_ids = result.pop("_item_ids", None)
+    if result.get("kind") in {"added", "scheduled"} and (
+        item_ids or isinstance(result.get("item"), dict)
+    ):
+        result = _verified_write_response(
+            result,
+            view,
+            operation="schedule" if result["kind"] == "scheduled" else "create",
+            item_ids=item_ids or [result["item"]["id"]],
+        )
+    return {**result, "source": action.source, "view": view}
+
+
+def answer_planning_intent(
+    intent: AskIntent, question: str, view: dict[str, Any]
+) -> dict[str, Any]:
+    """Render common planning answers from the canonical snapshot, never from model opinion."""
+    planning = view["planning"]
+    tasks = planning["tasks"]
+    commitments = planning["commitments"]
+    warnings = [
+        entry.get("message") or f"{str(entry['source']).title()} calendar is unavailable."
+        for entry in planning["source_health"]
+        if entry["status"] != "ok"
+    ]
+    facts: list[str] = []
+
+    if intent == "focus_week":
+        if not tasks:
+            message = "You have no open COOPER tasks to prioritize this week."
+        else:
+            task = tasks[0]
+            reason = _recommendation_reason(task, view["timezone"])
+            message = f"Focus on {task['title']} first{reason}."
+            facts.append(f"{task['title']} · {reason.removeprefix(' because ')}")
+    elif intent == "remaining_today":
+        remaining = _commitments_on_day(
+            commitments,
+            view["today"],
+            view["timezone"],
+            after=dt.datetime.fromisoformat(view["now"]),
+        )
+        if not remaining:
+            message = "You have no remaining calendar commitments today."
+        else:
+            facts = [_commitment_fact(entry, view["timezone"]) for entry in remaining]
+            message = f"You still have {len(remaining)} today: " + "; ".join(facts) + "."
+    elif intent == "work_next":
+        identity = planning["focus"]["now_id"] or planning["focus"]["next_id"]
+        commitment = next((entry for entry in commitments if entry["id"] == identity), None)
+        task = next((entry for entry in tasks if entry["id"] == identity), None)
+        if commitment:
+            fact = _commitment_fact(commitment, view["timezone"])
+            message = f"Your next commitment is {fact}."
+            facts.append(fact)
+        elif task:
+            reason = _recommendation_reason(task, view["timezone"])
+            message = f"Work on {task['title']} next{reason}."
+            facts.append(f"{task['title']} · {reason.removeprefix(' because ')}")
+        else:
+            message = "Nothing is waiting in your COOPER plan right now."
+    elif intent == "fit_duration":
+        requested = _requested_minutes(question)
+        free = planning["metrics"]["largest_free_block_minutes"]
+        if not planning["complete"]:
+            message = "I can’t confirm a free block while a connected calendar is unavailable."
+        elif requested is None:
+            message = f"Your largest remaining free block today is {free} minutes."
+        elif free >= requested:
+            message = f"Yes. A {requested}-minute session fits in your {free}-minute free block."
+        else:
+            message = (
+                f"Not as one block today. You need {requested} minutes, and your largest free "
+                f"block is {free} minutes."
+            )
+        facts.append(f"Largest free block · {free} minutes")
+    elif intent == "deadline_summary":
+        zone = ZoneInfo(view["timezone"])
+        today = dt.date.fromisoformat(view["today"])
+        deadlines = [
+            task
+            for task in tasks
+            if task.get("due")
+            and dt.datetime.fromisoformat(task["due"]).astimezone(zone).date()
+            <= today + dt.timedelta(days=7)
+        ]
+        if not deadlines:
+            message = "You have no open deadlines in the next seven days."
+        else:
+            facts = [
+                f"{task['title']} · due "
+                f"{dt.datetime.fromisoformat(task['due']).astimezone(zone).strftime('%a %d %b')}"
+                for task in deadlines
+            ]
+            noun = "deadlines" if len(deadlines) != 1 else "deadline"
+            message = f"You have {len(deadlines)} {noun}: " + "; ".join(facts) + "."
+    else:
+        target = (
+            dt.date.fromisoformat(view["today"]) + dt.timedelta(days=1)
+            if "tomorrow" in question.casefold()
+            else dt.date.fromisoformat(view["today"])
+        )
+        day_commitments = _commitments_on_day(commitments, target.isoformat(), view["timezone"])
+        conflicts = _conflict_count(day_commitments)
+        occupied = _occupied_minutes(day_commitments, target, view["timezone"])
+        overloaded = conflicts > 0 or occupied >= 7 * 60
+        label = "tomorrow" if target.isoformat() != view["today"] else "today"
+        message = (
+            f"{label.title()} looks overloaded: {len(day_commitments)} commitments occupy "
+            f"{occupied} minutes, with {conflicts} conflict{'s' if conflicts != 1 else ''}."
+            if overloaded
+            else f"{label.title()} is not overloaded: {len(day_commitments)} commitments "
+            f"occupy {occupied} minutes."
+        )
+        facts.extend([f"Scheduled · {len(day_commitments)}", f"Occupied · {occupied} minutes"])
+
+    return {"message": message, "facts": facts, "warnings": warnings}
+
+
+def _verified_write_response(
+    result: dict[str, Any],
+    view: dict[str, Any],
+    *,
+    operation: Literal["create", "schedule"],
+    item_ids: list[str],
+) -> dict[str, Any]:
+    receipt = _mutation_receipt(view, operation=operation, item_ids=item_ids)
+    receipt["warnings"] = list(dict.fromkeys([*receipt["warnings"], *result.pop("_warnings", [])]))
+    return {**result, "message": _receipt_message(receipt), "receipt": receipt}
+
+
+def _mutation_receipt(
+    view: dict[str, Any],
+    *,
+    operation: Literal["create", "schedule"],
+    item_ids: list[str],
+) -> dict[str, Any]:
+    planning = view["planning"]
+    tasks = {task["id"]: task for task in planning["tasks"]}
+    commitments = {
+        commitment["local_item_id"]: commitment
+        for commitment in planning["commitments"]
+        if commitment.get("local_item_id")
     }
+    verified = []
+    warnings = [
+        health.get("message") or f"{str(health['source']).title()} calendar is unavailable."
+        for health in planning["source_health"]
+        if health["status"] != "ok"
+    ]
+    at = dt.datetime.fromisoformat(view["now"])
+    for item_id in item_ids:
+        task = tasks.get(item_id)
+        commitment = commitments.get(item_id)
+        if task is None and commitment is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "COOPER saved the change but could not verify its current state. "
+                    "Refresh before trying again."
+                ),
+            )
+        item = task or commitment.get("item") or commitment
+        state = task.get("state") if task else _commitment_state(commitment, at)
+        waiting_reason = task.get("waiting_reason") if task else None
+        if waiting_reason:
+            warnings.append(waiting_reason)
+        verified.append(
+            {
+                "id": item_id,
+                "title": item["title"],
+                "state": state,
+                "start_at": task.get("start_at") if task else commitment["start_at"],
+                "end_at": task.get("end_at") if task else commitment["end_at"],
+            }
+        )
+    return {
+        "operation": operation,
+        "items": verified,
+        "warnings": list(dict.fromkeys(warnings)),
+        "snapshot_generated_at": planning["generated_at"],
+    }
+
+
+def _commitment_state(commitment: dict[str, Any], at: dt.datetime) -> str:
+    start = dt.datetime.fromisoformat(commitment["start_at"])
+    end = dt.datetime.fromisoformat(commitment["end_at"])
+    if start <= at < end:
+        return "in_progress"
+    if end <= at:
+        return "missed_block"
+    return "scheduled"
+
+
+def _receipt_message(receipt: dict[str, Any]) -> str:
+    items = receipt["items"]
+    operation = receipt["operation"]
+    if len(items) != 1:
+        verb = "Added" if operation == "create" else "Scheduled"
+        noun = "tasks" if operation == "create" else "items"
+        message = f"{verb} {len(items)} {noun} in COOPER."
+    else:
+        item = items[0]
+        verb = "Added" if operation == "create" else "Scheduled"
+        message = f"{verb} “{item['title']}” in COOPER."
+    if len(items) == 1 and item["start_at"] and item["end_at"]:
+        zone = ZoneInfo(settings.timezone)
+        start = dt.datetime.fromisoformat(item["start_at"]).astimezone(zone)
+        end = dt.datetime.fromisoformat(item["end_at"]).astimezone(zone)
+        message = (
+            f"{verb} “{item['title']}” in COOPER for "
+            f"{start.strftime('%a %-I:%M %p')}–{end.strftime('%-I:%M %p')}."
+        )
+    warnings = " ".join(receipt["warnings"])
+    return f"{message} {warnings}" if warnings else message
+
+
+def _recommendation_reason(task: dict[str, Any], timezone: str) -> str:
+    if task.get("pinned"):
+        return " because you pinned it"
+    if task.get("due"):
+        due = dt.datetime.fromisoformat(task["due"]).astimezone(ZoneInfo(timezone))
+        return f" because it is due {due.strftime('%a %d %b')}"
+    if task.get("importance", 3) >= 4:
+        return " because it is marked important"
+    return ""
+
+
+def _day_bounds(day: str, timezone: str) -> tuple[dt.datetime, dt.datetime]:
+    zone = ZoneInfo(timezone)
+    local_day = dt.date.fromisoformat(day)
+    start = dt.datetime.combine(local_day, dt.time(), tzinfo=zone).astimezone(dt.UTC)
+    end = dt.datetime.combine(local_day + dt.timedelta(days=1), dt.time(), tzinfo=zone).astimezone(
+        dt.UTC
+    )
+    return start, end
+
+
+def _commitments_on_day(
+    commitments: list[dict[str, Any]],
+    day: str,
+    timezone: str,
+    *,
+    after: dt.datetime | None = None,
+) -> list[dict[str, Any]]:
+    start, end = _day_bounds(day, timezone)
+    threshold = after.astimezone(dt.UTC) if after else start
+    return [
+        entry
+        for entry in commitments
+        if dt.datetime.fromisoformat(entry["start_at"]) < end
+        and max(start, threshold) < dt.datetime.fromisoformat(entry["end_at"])
+    ]
+
+
+def _commitment_fact(commitment: dict[str, Any], timezone: str) -> str:
+    if commitment.get("all_day"):
+        return f"{commitment['title']} all day"
+    starts = dt.datetime.fromisoformat(commitment["start_at"]).astimezone(ZoneInfo(timezone))
+    return f"{commitment['title']} at {starts.strftime('%-I:%M %p')}"
+
+
+def _requested_minutes(question: str) -> int | None:
+    lowered = question.casefold().replace("-", " ")
+    words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+    }
+    match = re.search(
+        r"\b(?P<amount>\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight)\s*"
+        r"(?P<unit>hours?|hrs?|minutes?|mins?)\b",
+        lowered,
+    )
+    if not match:
+        return None
+    raw = match.group("amount")
+    amount = float(words.get(raw, raw))
+    return round(amount * 60) if match.group("unit").startswith(("h", "hr")) else round(amount)
+
+
+def _conflict_count(commitments: list[dict[str, Any]]) -> int:
+    count = 0
+    for index, first in enumerate(commitments):
+        first_start = dt.datetime.fromisoformat(first["start_at"])
+        first_end = dt.datetime.fromisoformat(first["end_at"])
+        for second in commitments[index + 1 :]:
+            if (
+                first_start < dt.datetime.fromisoformat(second["end_at"])
+                and dt.datetime.fromisoformat(second["start_at"]) < first_end
+            ):
+                count += 1
+    return count
+
+
+def _occupied_minutes(commitments: list[dict[str, Any]], day: dt.date, timezone: str) -> int:
+    start, end = _day_bounds(day.isoformat(), timezone)
+    spans = sources.merge_intervals(
+        [
+            (
+                max(start, dt.datetime.fromisoformat(entry["start_at"])),
+                min(end, dt.datetime.fromisoformat(entry["end_at"])),
+            )
+            for entry in commitments
+        ]
+    )
+    return round(
+        sum((span_end - span_start).total_seconds() / 60 for span_start, span_end in spans)
+    )
 
 
 def answer_with_tools(
@@ -1120,6 +1467,7 @@ def run(owner_id: str, action: Action) -> dict[str, Any]:
             "kind": "scheduled",
             "message": f"Placed {len(placed)} into your hours.",
             "chip": [f"{slot.title} · {slot.start.strftime('%a %H:%M')}" for slot in placed],
+            "_item_ids": [slot.item_id for slot in placed],
         }
 
     if action.verb == "add":
@@ -1183,17 +1531,18 @@ def add(owner_id: str, action: Action) -> dict[str, Any]:
         }
 
     if payload["start_at"]:
-        notices = _fixed_event_notices(owner_id, payload)
+        warnings = _fixed_event_warnings(owner_id, payload)
         return {
             "kind": "added",
-            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}." + notices,
+            "message": f"Added “{payload['title']}”, {to_local(payload['start_at'])}.",
             "item": payload,
+            "_warnings": warnings,
         }
 
     return {"kind": "added", "message": f"Added “{payload['title']}”.", "item": payload}
 
 
-def _fixed_event_notices(owner_id: str, payload: dict[str, Any]) -> str:
+def _fixed_event_warnings(owner_id: str, payload: dict[str, Any]) -> list[str]:
     """Report overlaps without moving a fixed appointment or losing it to a source outage."""
     start = dt.datetime.fromisoformat(payload["start_at"])
     end = dt.datetime.fromisoformat(payload["end_at"])
@@ -1218,7 +1567,7 @@ def _fixed_event_notices(owner_id: str, payload: dict[str, Any]) -> str:
         notices.append(
             "Connected calendar conflicts beyond the checked range could not be checked."
         )
-    return " " + " ".join(notices) if notices else ""
+    return notices
 
 
 def _external_availability(owner_id: str, *, days: int = 14) -> dict[str, Any]:
@@ -1429,6 +1778,7 @@ def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
         "kind": "added",
         "message": message,
         "item": first,
+        "_item_ids": created,
         "chip": [
             f"{payload['title']} · {to_local(payload['start_at'])}"
             if payload["start_at"]
@@ -1676,7 +2026,14 @@ def create(body: NewItem, request: Request) -> dict[str, Any]:
     if action.is_question:
         raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
     result = add(owner_id, action)
-    return {**result, "source": "form", "view": today_view(owner_id)}
+    view = today_view(owner_id)
+    result = _verified_write_response(
+        result,
+        view,
+        operation="create",
+        item_ids=[result["item"]["id"]],
+    )
+    return {**result, "source": "form", "view": view}
 
 
 class BulkMatch(BaseModel):
@@ -1790,12 +2147,17 @@ def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
             if result.get("start_at")
             else result["waiting_reason"]
         )
-        return {
+        view = today_view(owner_id)
+        response = {
             "kind": "scheduled" if result.get("start_at") else "note",
             "message": message,
             "item": result,
-            "view": today_view(owner_id),
         }
+        if response["kind"] == "scheduled":
+            response = _verified_write_response(
+                response, view, operation="schedule", item_ids=[item_id]
+            )
+        return {**response, "view": view}
     if verb not in ("complete", "drop", "pin"):
         raise HTTPException(status_code=404, detail="Unknown action.")
     with store.session() as session:
@@ -1812,7 +2174,8 @@ def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
 def do_schedule(request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
     slots = schedule_now(owner_id)
-    return {
+    view = today_view(owner_id)
+    response = {
         "placed": [
             {
                 "item_id": slot.item_id,
@@ -1823,8 +2186,14 @@ def do_schedule(request: Request) -> dict[str, Any]:
             }
             for slot in slots
         ],
-        "view": today_view(owner_id),
+        "view": view,
     }
+    if slots:
+        receipt = _mutation_receipt(
+            view, operation="schedule", item_ids=[slot.item_id for slot in slots]
+        )
+        response["receipt"] = receipt
+    return response
 
 
 @app.post("/api/undo")

@@ -24,9 +24,9 @@ from cooper import (  # noqa: E402
     brain,
     sources,
 )
-from cooper.brain import parse_with_rules  # noqa: E402
+from cooper.brain import classify_ask_intent, parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
-from cooper.planner import Hours, place, rank  # noqa: E402
+from cooper.planner import Hours, build_planning_snapshot, place, rank, task_state  # noqa: E402
 
 TZ = "Asia/Singapore"
 ZONE = ZoneInfo(TZ)
@@ -39,6 +39,24 @@ def read(sentence: str):
 
 
 class TestReadingSentences:
+    @pytest.mark.parametrize(
+        ("question", "intent"),
+        [
+            ("What should I focus on this week?", "focus_week"),
+            ("How much is left on my plate today?", "remaining_today"),
+            ("What should I work on next?", "work_next"),
+            ("Can I fit a two-hour study session tonight?", "fit_duration"),
+            ("What deadlines do I have this week?", "deadline_summary"),
+            ("Am I overloaded tomorrow?", "overload_check"),
+        ],
+    )
+    def test_product_questions_have_bounded_intents(self, question: str, intent: str) -> None:
+        assert classify_ask_intent(question) == intent
+
+    def test_create_requests_are_not_swallowed_as_planning_questions(self) -> None:
+        assert classify_ask_intent("Schedule a two-hour study session tonight") is None
+        assert classify_ask_intent("Add my exam Friday at 3pm") is None
+
     def test_a_plain_sentence_becomes_a_task(self) -> None:
         action = read("write the quarterly report")
 
@@ -152,6 +170,181 @@ def task(**fields: object) -> Item:
 
 
 class TestCommitmentSources:
+    @staticmethod
+    def provider_event(source: str = "google", **overrides: object) -> dict[str, object]:
+        start = NOW + dt.timedelta(hours=1)
+        values: dict[str, object] = {
+            "source": source,
+            "event_id": "remote-1",
+            "title": "Team review",
+            "start_at": start.isoformat(),
+            "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+            "category": "work",
+            "all_day": False,
+        }
+        return values | overrides
+
+    def test_local_scheduled_task_becomes_an_editable_commitment(self) -> None:
+        item = task(
+            id="local-1",
+            title="Write report",
+            start_at=NOW,
+            end_at=NOW + dt.timedelta(hours=1),
+            category="work",
+        )
+
+        commitment = sources.normalize_local_commitment(item)
+
+        assert commitment is not None
+        assert commitment.id == "cooper:local-1"
+        assert commitment.source == "cooper"
+        assert commitment.source_id == "local-1"
+        assert commitment.aliases == ("cooper:local-1",)
+        assert commitment.kind == "task"
+        assert commitment.start == NOW
+        assert commitment.editable is True
+        assert commitment.local_item_id == "local-1"
+
+    def test_local_fixed_event_and_gmail_item_keep_their_sources(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="event-1",
+                kind="event",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        gmail = sources.normalize_local_commitment(
+            task(
+                id="gmail-1",
+                kind="event",
+                source="gmail",
+                source_ref="meetup:123",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+
+        assert local is not None and local.source == "cooper" and local.editable
+        assert gmail is not None
+        assert gmail.source == "gmail"
+        assert gmail.source_id == "meetup:123"
+        assert gmail.aliases == ("cooper:gmail-1", "gmail:meetup:123")
+        assert gmail.editable is False
+
+    @pytest.mark.parametrize("source", ["google", "icloud"])
+    def test_provider_events_are_normalized_to_utc(self, source: str) -> None:
+        commitment = sources.normalize_provider_commitment(
+            self.provider_event(
+                source,
+                start_at="2026-08-31T10:00:00+08:00",
+                end_at="2026-08-31T11:00:00+08:00",
+                all_day=True,
+            )
+        )
+
+        assert commitment.source == source
+        assert commitment.id == f"{source}:remote-1"
+        assert commitment.start == dt.datetime(2026, 8, 31, 2, tzinfo=dt.UTC)
+        assert commitment.end == dt.datetime(2026, 8, 31, 3, tzinfo=dt.UTC)
+        assert commitment.all_day is True
+        assert commitment.editable is False
+
+    def test_same_provider_identity_is_counted_once(self) -> None:
+        first = sources.normalize_provider_commitment(self.provider_event())
+        second = sources.normalize_provider_commitment(self.provider_event(title="Updated title"))
+
+        assert len(sources.deduplicate_commitments([first, second])) == 1
+
+    def test_explicit_google_link_collapses_into_the_local_record(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(
+            self.provider_event(title="A changed legacy copy")
+        )
+
+        assert local is not None
+        [merged] = sources.deduplicate_commitments([google, local])
+        assert merged.id == "cooper:local-1"
+        assert merged.editable is True
+        assert merged.aliases == ("cooper:local-1", "google:remote-1")
+
+    def test_gmail_source_ref_is_not_a_google_event_identity(self) -> None:
+        gmail = sources.normalize_local_commitment(
+            task(
+                id="gmail-1",
+                source="gmail",
+                source_ref="remote-1",
+                title="Meetup",
+                start_at=NOW,
+                end_at=NOW + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(
+            self.provider_event(
+                title="Different meeting",
+                start_at=(NOW + dt.timedelta(hours=3)).isoformat(),
+                end_at=(NOW + dt.timedelta(hours=4)).isoformat(),
+            )
+        )
+
+        assert gmail is not None
+        assert len(sources.deduplicate_commitments([gmail, google])) == 2
+
+    def test_exact_cross_provider_signature_collapses_but_retains_aliases(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event("icloud", event_id="icloud-7", title="  TEAM   REVIEW ")
+        )
+
+        [merged] = sources.deduplicate_commitments([google, icloud])
+        assert merged.title == "Team review"
+        assert merged.aliases == ("google:remote-1", "icloud:icloud-7")
+
+    def test_overlaps_with_different_titles_remain_visible(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event("icloud", event_id="icloud-7", title="Client call")
+        )
+
+        assert len(sources.deduplicate_commitments([google, icloud])) == 2
+
+    def test_same_title_at_different_times_remains_visible(self) -> None:
+        google = sources.normalize_provider_commitment(self.provider_event("google"))
+        icloud = sources.normalize_provider_commitment(
+            self.provider_event(
+                "icloud",
+                event_id="icloud-7",
+                start_at=(NOW + dt.timedelta(hours=4)).isoformat(),
+                end_at=(NOW + dt.timedelta(hours=5)).isoformat(),
+            )
+        )
+
+        assert len(sources.deduplicate_commitments([google, icloud])) == 2
+
+    def test_deduplicated_intervals_do_not_double_charge_a_linked_event(self) -> None:
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                start_at=NOW + dt.timedelta(hours=1),
+                end_at=NOW + dt.timedelta(hours=2),
+            )
+        )
+        google = sources.normalize_provider_commitment(self.provider_event())
+
+        assert local is not None
+        commitments = sources.deduplicate_commitments([local, google])
+        assert sources.commitment_intervals(commitments) == [
+            (NOW + dt.timedelta(hours=1), NOW + dt.timedelta(hours=2))
+        ]
+
     def test_gmail_commitments_are_collected_once_not_as_local_blocks(self, store: Store) -> None:
         """If Gmail rows re-enter collect_local, each imported event blocks the planner twice."""
         gmail_start = NOW + dt.timedelta(days=1)
@@ -246,6 +439,21 @@ class TestCommitmentSources:
 
 
 class TestRanking:
+    def test_importance_breaks_ties_between_comparable_tasks(self) -> None:
+        normal = task(title="normal", importance=3, due=NOW + dt.timedelta(days=3))
+        critical = task(title="critical", importance=5, due=normal.due)
+
+        assert [entry.item.title for entry in rank([normal, critical], at=NOW)] == [
+            "critical",
+            "normal",
+        ]
+
+    def test_a_deadline_today_beats_critical_work_due_much_later(self) -> None:
+        today = task(title="due today", importance=3, due=NOW + dt.timedelta(hours=8))
+        later = task(title="critical later", importance=5, due=NOW + dt.timedelta(days=13))
+
+        assert rank([later, today], at=NOW)[0].item.title == "due today"
+
     def test_an_urgent_task_beats_a_relaxed_one(self) -> None:
         soon = task(title="urgent", due=NOW + dt.timedelta(hours=6), importance=5)
         later = task(title="someday", importance=2)
@@ -273,7 +481,8 @@ class TestRanking:
     def test_every_row_explains_itself(self) -> None:
         entry = rank([task(importance=5, due=NOW)], at=NOW)[0]
 
-        assert set(entry.why) == {"due", "age", "quick"}
+        assert set(entry.why) == {"due", "importance", "age", "quick"}
+        assert entry.why["importance"] == 1.0
         assert entry.score > 0
 
     def test_an_overdue_task_saturates_its_urgency(self) -> None:
@@ -285,6 +494,199 @@ class TestRanking:
         items = [task(title=name) for name in ("a", "b", "c")]
 
         assert [e.item.id for e in rank(items, at=NOW)] == [e.item.id for e in rank(items, at=NOW)]
+
+
+class TestTaskState:
+    def test_terminal_states_are_preserved(self) -> None:
+        assert task_state(task(status="done"), at=NOW) == "completed"
+        assert task_state(task(status="dropped"), at=NOW) == "dropped"
+
+    def test_unscheduled_open_work_is_not_started(self) -> None:
+        assert task_state(task(), at=NOW) == "not_started"
+
+    def test_future_work_is_scheduled(self) -> None:
+        start = NOW + dt.timedelta(hours=2)
+        assert (
+            task_state(task(start_at=start, end_at=start + dt.timedelta(hours=1)), at=NOW)
+            == "scheduled"
+        )
+
+    def test_current_work_is_in_progress(self) -> None:
+        assert (
+            task_state(
+                task(
+                    start_at=NOW - dt.timedelta(minutes=15),
+                    end_at=NOW + dt.timedelta(minutes=45),
+                ),
+                at=NOW,
+            )
+            == "in_progress"
+        )
+
+    def test_unplaced_work_is_blocked_when_availability_is_unknown(self) -> None:
+        assert task_state(task(minutes=60), at=NOW, availability_complete=False) == "blocked"
+
+    def test_scheduled_work_is_not_blocked_by_provider_health(self) -> None:
+        start = NOW + dt.timedelta(hours=2)
+        assert (
+            task_state(
+                task(start_at=start, end_at=start + dt.timedelta(hours=1)),
+                at=NOW,
+                availability_complete=False,
+            )
+            == "scheduled"
+        )
+
+    def test_incomplete_work_after_its_deadline_is_overdue(self) -> None:
+        assert task_state(task(due=NOW - dt.timedelta(minutes=1)), at=NOW) == "overdue"
+
+    def test_past_work_block_without_a_passed_deadline_is_missed(self) -> None:
+        assert (
+            task_state(
+                task(
+                    start_at=NOW - dt.timedelta(hours=2),
+                    end_at=NOW - dt.timedelta(hours=1),
+                    due=NOW + dt.timedelta(days=1),
+                ),
+                at=NOW,
+            )
+            == "missed_block"
+        )
+
+
+class TestPlanningSnapshot:
+    @staticmethod
+    def commitment(
+        identity: str,
+        *,
+        start: dt.datetime,
+        end: dt.datetime,
+        source: str = "google",
+        aliases: tuple[str, ...] | None = None,
+        title: str = "Commitment",
+        all_day: bool = False,
+    ) -> sources.Commitment:
+        return sources.Commitment(
+            id=identity,
+            source=source,
+            source_id=identity.split(":", 1)[-1],
+            aliases=aliases or (identity,),
+            title=title,
+            kind="event",
+            start=start,
+            end=end,
+            all_day=all_day,
+            category="work",
+            editable=source == "cooper",
+        )
+
+    @staticmethod
+    def hours() -> Hours:
+        return Hours(
+            timezone="UTC",
+            weekdays=tuple(range(7)),
+            start_hour=9,
+            end_hour=18,
+            max_per_day=8,
+        )
+
+    def test_metrics_count_every_mixed_source_commitment_once(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
+        local_item = task(
+            id="local-1",
+            start_at=start,
+            end_at=start + dt.timedelta(hours=1),
+        )
+        local = sources.normalize_local_commitment(local_item)
+        assert local is not None
+        commitments = [
+            local,
+            self.commitment(
+                "google:g1", start=start + dt.timedelta(hours=2), end=start + dt.timedelta(hours=3)
+            ),
+            self.commitment(
+                "google:g2", start=start + dt.timedelta(hours=4), end=start + dt.timedelta(hours=5)
+            ),
+            self.commitment(
+                "icloud:i1",
+                source="icloud",
+                start=start + dt.timedelta(hours=6),
+                end=start + dt.timedelta(hours=7),
+            ),
+        ]
+
+        snapshot = build_planning_snapshot(
+            items=[local_item],
+            commitments=commitments,
+            source_health=[{"source": "google", "status": "ok"}],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["scheduled_count"] == 4
+        assert snapshot["metrics"]["occupied_minutes"] == 240
+
+    def test_occupied_minutes_clip_at_local_midnight(self) -> None:
+        late = dt.datetime(2026, 8, 31, 23, tzinfo=dt.UTC)
+        snapshot = build_planning_snapshot(
+            items=[],
+            commitments=[
+                self.commitment("google:overnight", start=late, end=late + dt.timedelta(hours=2))
+            ],
+            source_health=[],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["scheduled_count"] == 1
+        assert snapshot["metrics"]["occupied_minutes"] == 60
+
+    def test_remaining_effort_ignores_terminal_and_provider_events(self) -> None:
+        snapshot = build_planning_snapshot(
+            items=[
+                task(minutes=45),
+                task(minutes=90, status="done"),
+                task(minutes=120, status="dropped"),
+                task(kind="event", minutes=60),
+            ],
+            commitments=[],
+            source_health=[],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["remaining_effort_minutes"] == 45
+
+    def test_focus_conflicts_and_provider_risk_are_derived_once(self) -> None:
+        active_start = NOW - dt.timedelta(minutes=15)
+        active_end = NOW + dt.timedelta(minutes=45)
+        next_start = NOW + dt.timedelta(hours=2)
+        snapshot = build_planning_snapshot(
+            items=[task(id="overdue", due=NOW - dt.timedelta(minutes=1))],
+            commitments=[
+                self.commitment("google:active", start=active_start, end=active_end),
+                self.commitment(
+                    "icloud:overlap",
+                    source="icloud",
+                    start=NOW,
+                    end=NOW + dt.timedelta(hours=1),
+                ),
+                self.commitment(
+                    "google:next", start=next_start, end=next_start + dt.timedelta(hours=1)
+                ),
+            ],
+            source_health=[
+                {"source": "google", "status": "ok"},
+                {"source": "icloud", "status": "unavailable"},
+            ],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["complete"] is False
+        assert snapshot["focus"] == {"now_id": "google:active", "next_id": "google:next"}
+        assert snapshot["metrics"]["conflict_count"] == 1
+        assert {risk["kind"] for risk in snapshot["risks"]} >= {"overdue", "source_unavailable"}
 
 
 class TestPlacing:

@@ -49,15 +49,13 @@ export function Home({
   const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
   const next = shortlist[0];
 
-  const strip = calendarEntries(view.scheduled, view.events, zone, today);
+  const strip = calendarEntries(view.planning.commitments, zone, today);
   /** Still to come today, so the strip can lead with what has not happened yet. */
   const ahead = strip.filter((entry) => entry.end.getTime() >= now.getTime());
 
   const attention = shortlist.filter((item) => item.due !== null && item.due.slice(0, 10) <= today);
   const unbooked = shortlist.filter((item) => item.start_at === null);
-  const scheduledCount = view.scheduled.filter(
-    (item) => item.start_at && item.source !== "gmail",
-  ).length;
+  const scheduledCount = view.planning.metrics.scheduled_count;
 
   const nothingAtAll = shortlist.length === 0 && strip.length === 0;
 

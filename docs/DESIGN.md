@@ -45,8 +45,14 @@ Chat is the input surface for sentence and question requests. User messages appe
 Cooper replies appear on the left with the reply tone and, when relevant, the mascot.
 
 Mutation replies include the parsed title and fields so the result can be checked in place. An
-answer remains text and cannot mutate data. Conversation history stays in `localStorage`, capped
-at sixty turns.
+answer remains text and cannot mutate data. A success reply names COOPER and reflects the refreshed
+committed state, including its actual time. Waiting, overlap, and provider-health warnings stay in
+the reply instead of being hidden by optimistic copy. Conversation history stays in `localStorage`,
+capped at sixty turns.
+
+Suggested Ask prompts are typed product questions, not generic chatbot starters. Their labels map
+to bounded planning intents and render the backend's message, facts, and warnings from the same
+snapshot used by Calendar. Do not compose a second recommendation in the browser.
 
 ## Offline behavior
 
@@ -77,6 +83,8 @@ ambiguous reference, or when the backend is unavailable. Do not add decorative m
 ## Interaction rules
 
 - Show score details in a disclosure instead of making users infer the ranking.
+- Derive badges and per-day density from every normalized commitment, regardless of source; retain
+  source identity for detail and editability without making external events visually disappear.
 - Put undo on the mutation reply instead of using stacked toasts.
 - Use a frame for requested detail, not for permission. Close it with Escape or an outside click.
 - Keep light, dark, and system appearance choices in `localStorage`. Resolve system to light or

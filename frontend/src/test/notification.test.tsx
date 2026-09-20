@@ -41,7 +41,7 @@ function ranked(): Ranked {
     pinned: false,
     created_at: "2026-08-31T01:00:00+00:00",
     score: 0.5,
-    why: { due: 0, age: 0.2, quick: 0.8 },
+    why: { due: 0, importance: 0.5, age: 0.2, quick: 0.8 },
   };
 }
 
@@ -53,6 +53,24 @@ function view(overrides: Partial<View> = {}): View {
     shortlist: [ranked()],
     scheduled: [],
     events: [],
+    planning: {
+      generated_at: "2026-08-31T01:00:00+00:00",
+      today: "2026-08-31",
+      timezone: "Asia/Manila",
+      complete: true,
+      source_health: [],
+      commitments: [],
+      tasks: [ranked()],
+      focus: { now_id: null, next_id: "task-1" },
+      risks: [],
+      metrics: {
+        scheduled_count: 0,
+        occupied_minutes: 0,
+        remaining_effort_minutes: 30,
+        largest_free_block_minutes: 0,
+        conflict_count: 0,
+      },
+    },
     undo: null,
     using_model: false,
     hours: {

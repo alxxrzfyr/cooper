@@ -234,7 +234,7 @@ export function Calendar({
   const [chosen, setChosen] = useState<Item | null>(null);
   const [chosenEvent, setChosenEvent] = useState<CalendarEvent | null>(null);
 
-  const entries = calendarEntries(view.scheduled, view.events, zone);
+  const entries = calendarEntries(view.planning.commitments, zone);
   const days = daysShown(mode, anchor, zone);
 
   /** Which day a switch to day view should land on: the one whose frame you last opened. */
@@ -351,8 +351,8 @@ export function Calendar({
     </div>
   );
 
-  const sourceWarnings = view.source_health
-    ?.filter((source) => source.status === "unavailable")
+  const sourceWarnings = view.planning.source_health
+    .filter((source) => source.status === "unavailable")
     .map((source) => (
       <p className="hint calendar-source-warning" key={source.source} role="status">
         {source.source} calendar could not be refreshed. Imported events may be missing.
@@ -433,7 +433,9 @@ export function Calendar({
           {entry.event?.all_day ? "All day" : clock(entry.start, zone)}
         </span>
         <span className="slot__title">{entry.title}</span>
-        {entry.conflict && <span className="slot__detail">Overlaps another calendar item</span>}
+        {entry.conflict && entry.source === "cooper" && (
+          <span className="slot__detail">Overlaps another calendar item</span>
+        )}
         {entry.event && (
           <>
             <span className="slot__from">

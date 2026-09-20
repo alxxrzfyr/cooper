@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import App, { initialAgentSteps } from "../App";
-import type { CalendarEvent, Item, Ranked, Reply, View } from "../types";
+import type { CalendarEvent, Item, PlanningSnapshot, Ranked, Reply, View } from "../types";
 
 interface TestFirebaseUser {
   uid: string;
@@ -79,13 +79,83 @@ function ranked(overrides: Partial<Ranked> = {}): Ranked {
     pinned: false,
     created_at: "2026-08-29T01:00:00+00:00",
     score: 0.42,
-    why: { due: 0, age: 0.1, quick: 0.6 },
+    why: { due: 0, importance: 0.75, age: 0.1, quick: 0.6 },
     ...overrides,
   };
 }
 
-function view(overrides: Partial<View> = {}): View {
+function planning(
+  shortlist: Ranked[],
+  scheduled: Item[],
+  events: CalendarEvent[],
+  sourceHealth: NonNullable<View["source_health"]> = [],
+): PlanningSnapshot {
+  const commitments: PlanningSnapshot["commitments"] = [
+    ...scheduled.map((item) => ({
+      id: `cooper:${item.id}`,
+      source: item.source === "gmail" ? "gmail" : "cooper",
+      source_id: item.source_ref ?? item.id,
+      aliases: [`cooper:${item.id}`],
+      title: item.title,
+      kind: item.kind,
+      start_at: item.start_at ?? item.created_at,
+      end_at: item.end_at ?? item.start_at ?? item.created_at,
+      all_day: false,
+      category: item.category,
+      editable: item.source === "me",
+      local_item_id: item.id,
+      conflict: false,
+      item: item.source === "me" ? item : undefined,
+    })),
+    ...events
+      .filter((event) => !event.mine)
+      .map((event) => ({
+        id: `${event.source}:${event.event_id ?? event.start_at}`,
+        source: event.source,
+        source_id: event.event_id ?? null,
+        aliases: [`${event.source}:${event.event_id ?? event.start_at}`],
+        title: event.title,
+        kind: "event" as const,
+        start_at: event.start_at,
+        end_at: event.end_at,
+        all_day: event.all_day ?? false,
+        category: event.category,
+        editable: false,
+        local_item_id: null,
+        conflict: false,
+        event,
+      })),
+  ];
+  for (const commitment of commitments) {
+    commitment.conflict = commitments.some(
+      (other) =>
+        other.id !== commitment.id &&
+        new Date(other.start_at).getTime() < new Date(commitment.end_at).getTime() &&
+        new Date(commitment.start_at).getTime() < new Date(other.end_at).getTime(),
+    );
+  }
   return {
+    generated_at: "2026-08-31T01:00:00+00:00",
+    today: "2026-08-31",
+    timezone: "Asia/Singapore",
+    complete: sourceHealth.every((source) => source.status === "ok"),
+    source_health: sourceHealth,
+    commitments,
+    tasks: shortlist,
+    focus: { now_id: null, next_id: shortlist[0]?.id ?? commitments[0]?.id ?? null },
+    risks: [],
+    metrics: {
+      scheduled_count: commitments.length,
+      occupied_minutes: 0,
+      remaining_effort_minutes: shortlist.reduce((total, item) => total + (item.minutes ?? 0), 0),
+      largest_free_block_minutes: 0,
+      conflict_count: 0,
+    },
+  };
+}
+
+function view(overrides: Partial<View> = {}): View {
+  const merged = {
     now: "2026-08-31T01:00:00+00:00",
     today: "2026-08-31",
     timezone: "Asia/Singapore",
@@ -111,6 +181,12 @@ function view(overrides: Partial<View> = {}): View {
       skipped: 0,
     },
     ...overrides,
+  };
+  return {
+    ...merged,
+    planning:
+      overrides.planning ??
+      planning(merged.shortlist, merged.scheduled, merged.events, merged.source_health ?? []),
   };
 }
 
@@ -392,7 +468,7 @@ describe("first impression", () => {
     expect(
       await screen.findByRole("button", { name: /what should I focus on/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /most urgent thing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /what should I work on next/i })).toBeInTheDocument();
   });
 
   test("empty AI chat uses a different mascot from empty Home", async () => {
@@ -413,16 +489,22 @@ describe("first impression", () => {
     );
   });
 
-  test("tapping an example sends it", async () => {
+  test.each([
+    ["What should I focus on this week?", "focus_week"],
+    ["How much is left on my plate today?", "remaining_today"],
+    ["What should I work on next?", "work_next"],
+    ["Can I fit a two-hour focus session today?", "fit_duration"],
+  ])("suggested question %s sends intent %s", async (label, intent) => {
     const calls = stub({ view: view({ shortlist: [], using_model: true }) });
     render(<App />);
     const user = await openAi();
 
-    await user.click(await screen.findByRole("button", { name: /most urgent thing/i }));
+    await user.click(await screen.findByRole("button", { name: label }));
 
     await waitFor(() => {
       const said = calls.find((call) => call.url.includes("/api/say"));
       expect(said?.body.mode).toBe("ai");
+      expect(said?.body.intent).toBe(intent);
     });
   });
 
@@ -835,7 +917,11 @@ describe("the conversation", () => {
   test("asking what to do gets answered in the conversation", async () => {
     stub({
       view: view({ using_model: true }),
-      say: reply({ kind: "shown", message: "Here is what is next." }),
+      say: reply({
+        kind: "answered",
+        message: "Work on write the quarterly report next because it is marked important.",
+        facts: ["write the quarterly report · marked important"],
+      }),
     });
     render(<App />);
     const user = await openAi();
@@ -843,8 +929,11 @@ describe("the conversation", () => {
     await user.type(screen.getByLabelText("Say something to Cooper"), "what should i do{Enter}");
 
     const log = await screen.findByRole("log", { name: "Conversation" });
-    expect(within(log).getByText(/Start with write the quarterly report/)).toBeInTheDocument();
-    expect(within(log).getByText(/1\. write the quarterly report/)).toBeInTheDocument();
+    expect(within(log).getByText(/Work on write the quarterly report next/)).toBeInTheDocument();
+    expect(
+      within(log).getByText("write the quarterly report · marked important"),
+    ).toBeInTheDocument();
+    expect(within(log).queryByText(/Start with/)).not.toBeInTheDocument();
   });
 
   test("the field clears after sending", async () => {
@@ -1104,12 +1193,46 @@ describe("navigation", () => {
 
   test("each section counts its own contents", async () => {
     const booked = { ...ranked(), id: "b1", start_at: "2026-08-31T02:00:00+00:00" };
-    stub({ view: view({ shortlist: [ranked()], scheduled: [booked] }) });
+    stub({
+      view: view({
+        shortlist: [ranked()],
+        scheduled: [booked],
+        events: [
+          {
+            event_id: "g1",
+            title: "Google meeting",
+            start_at: "2026-08-31T01:00:00+00:00",
+            end_at: "2026-08-31T01:30:00+00:00",
+            category: "work",
+            mine: false,
+            source: "google",
+          },
+          {
+            event_id: "g2",
+            title: "Google class",
+            start_at: "2026-08-31T03:00:00+00:00",
+            end_at: "2026-08-31T04:00:00+00:00",
+            category: "academics",
+            mine: false,
+            source: "google",
+          },
+          {
+            event_id: "i1",
+            title: "iCloud appointment",
+            source: "icloud",
+            start_at: "2026-08-31T05:00:00+00:00",
+            end_at: "2026-08-31T06:00:00+00:00",
+            category: "personal",
+            mine: false,
+          },
+        ],
+      }),
+    });
     render(<App />);
 
     const nav = (await screen.findAllByRole("navigation", { name: "Sections" }))[0];
     expect(within(nav).getByRole("button", { name: /Home/ })).toHaveTextContent("1");
-    expect(within(nav).getByRole("button", { name: /Calendar/ })).toHaveTextContent("1");
+    expect(within(nav).getByRole("button", { name: /Calendar/ })).toHaveTextContent("4");
   });
 
   test("an empty home explains where things come from", async () => {
