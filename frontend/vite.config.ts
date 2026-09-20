@@ -28,6 +28,10 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: "./src/test/setup.ts",
+      // App.test exercises complete user journeys through a deliberately small, single App
+      // component. Those interactions are reliable but can exceed Vitest's 5s default on a
+      // cold transform or a constrained runner, especially when user-event types into fields.
+      testTimeout: 10_000,
       env: {
         TZ: "Asia/Singapore",
       },
