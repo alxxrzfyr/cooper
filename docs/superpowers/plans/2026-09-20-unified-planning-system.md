@@ -82,6 +82,44 @@ and grounded Ask responses would still solve a valuable product problem. If the 
 cannot make the existing suggested prompts and mixed-source counts deterministic, stop before
 adding more UI or mutation vocabulary and revisit the projection boundary.
 
+## Founder release sequence
+
+The architecture stays the same, but implementation follows user value rather than document order.
+Execute the tasks in this release sequence:
+
+### Release 1: Prove the trusted planning loop
+
+- Task 1: meaningful deadline-first priority and derived state;
+- Task 2: normalization and conservative deduplication;
+- Task 3: canonical planning snapshot;
+- Task 4: unified Calendar and navigation counts;
+- Task 6: grounded Ask intents;
+- Task 7: verified create and schedule receipts;
+- Task 8: typed suggested prompts and grounded rendering.
+
+Release 1 passes only after seven days of real mixed-source use show that counts agree, suggested
+questions use actual state, provider failures do not invent availability, and success replies match
+committed state. Record mismatches as product bugs. Do not hide them as model-quality variance.
+
+### Release 2: Earn the Home command center
+
+- Task 5: rebuild Home from the trusted snapshot;
+- Task 5B: add local rescheduling only after the create and schedule receipt path is proven;
+- verify Now, Next, Today, At Risk, and Upcoming against real schedules.
+
+Do not start Release 2 because the backend types exist. Start it because Release 1 has proven that
+the underlying planning facts are trustworthy.
+
+### Release 3: Remove compatibility fields
+
+- Task 9: remove legacy response fields and frontend reconstruction;
+- Task 10: complete documentation, live-provider acceptance, and release verification.
+
+The backend and frontend deploy independently. Deploy the additive `planning` response first, then
+the snapshot-driven frontend. Remove `shortlist`, `scheduled`, and `events` in a later release only
+after the hosted frontend has been verified. A permanent dual API is forbidden; a bounded
+compatibility window is required.
+
 ## Target contracts
 
 The backend response should converge on these shapes. Exact Python/TypeScript syntax may adapt to
@@ -438,6 +476,57 @@ git add -p frontend/src/theme.css
 git commit -m "feat(home): surface the live planning state" -m "Turn Home into a focused Now, Next, Today, and risk view without duplicating the underlying tasks and events."
 ```
 
+### Task 5B: Add verified local rescheduling
+
+**Files:**
+
+- Modify: `cooper/brain.py`
+- Modify: `cooper/app.py`
+- Modify: `frontend/src/types.ts`
+- Modify: `frontend/src/api.ts`
+- Modify: `frontend/src/Home.tsx`
+- Test: `tests/test_cooper.py`
+- Test: `tests/test_api.py`
+- Test: `frontend/src/test/App.test.tsx`
+
+**Gate:** Start only after Release 1 proves the existing create and schedule receipts against real
+mixed-source calendars.
+
+- [ ] **Step 1: Add failing parser and validation tests.**
+
+Cover an exact-time local move, an ambiguous target, invalid or past times, missing duration, and a
+request targeting an external event.
+
+- [ ] **Step 2: Add failing API persistence tests.**
+
+Prove that a local move changes database state, records undo, appears at the same time in the fresh
+snapshot, and returns the read-only boundary for provider items.
+
+- [ ] **Step 3: Implement one validated reschedule path.**
+
+Use the existing `Action` validation, `find()` ambiguity behavior, owner checks, undo record, and
+`app.py` transaction. Extend `ItemIn` only if the direct edit endpoint also needs exact start/end.
+Do not add drag-and-drop or provider write-back.
+
+- [ ] **Step 4: Wire Home and Ask to the same receipt.**
+
+Both surfaces must render the actual committed start and end from the refreshed snapshot.
+
+- [ ] **Step 5: Run focused backend and frontend tests.**
+
+```bash
+uv run pytest tests/test_cooper.py tests/test_api.py -k "move or reschedul or owner or external" -q
+cd frontend
+npm test -- src/test/App.test.tsx --no-file-parallelism
+```
+
+- [ ] **Step 6: Commit local rescheduling.**
+
+```bash
+git add cooper/brain.py cooper/app.py frontend/src/types.ts frontend/src/api.ts frontend/src/Home.tsx tests/test_cooper.py tests/test_api.py frontend/src/test/App.test.tsx
+git commit -m "feat(planning): reschedule local work truthfully" -m "Move COOPER-owned commitments through the existing validated writer and report only the timing found in committed state."
+```
+
 ## Task 6: Ground Ask Mode in explicit planning intents
 
 **Files:**
@@ -501,47 +590,43 @@ git add cooper/brain.py cooper/app.py cooper/mcp.py tests/test_cooper.py tests/t
 git commit -m "feat(ai): ground Ask in the planning snapshot" -m "Resolve common planning questions deterministically and keep provider contents outside model prompts while preserving useful calendar awareness."
 ```
 
-## Task 7: Add verified mutation receipts and local rescheduling
+## Task 7: Add verified creation and scheduling receipts
 
 **Files:**
 
-- Modify: `cooper/brain.py`
 - Modify: `cooper/app.py`
 - Modify: `frontend/src/types.ts`
 - Modify: `frontend/src/api.ts`
-- Test: `tests/test_cooper.py`
 - Test: `tests/test_api.py`
 
 **Interfaces:**
 
-- Add a validated local `move` or `reschedule` action with exact start/end semantics.
-- Extend `ItemIn` only as needed for local start/end edits; continue using `_require_local_item`.
 - Add a structured `MutationReceipt` to successful write replies.
 - Build receipt messages from the committed item found in a fresh snapshot.
+- Cover the existing add, batch-add, manual-create, schedule-one, and schedule-all write paths.
 
-- [ ] **Step 1: Add failing parser and validation tests.**
+- [ ] **Step 1: Add failing receipt contract tests.**
 
-Cover an exact-time local move, an ambiguous target, invalid or past times, missing duration, and a
-request targeting an external event.
+Assert a stable receipt shape for a local add, manually created item, and scheduled task. The receipt
+must identify the operation, committed item, resulting state, actual timing, warnings, and snapshot
+generation time.
 
 - [ ] **Step 2: Add failing API persistence tests.**
 
 Prove that:
 
-- a local move changes database state and appears at the same time in the refreshed snapshot;
 - a successful add receipt references the committed item;
 - a scheduling adjustment reports requested and actual time;
 - an incomplete provider capture remains unscheduled with a reason;
-- provider items return the read-only boundary;
 - simulated post-commit verification failure returns no success language.
 
 The last case must describe the outcome as unverified and instruct the user to refresh before
 retrying; it must not claim the already-committed write rolled back.
 
-- [ ] **Step 3: Implement the action and write path.**
+- [ ] **Step 3: Implement one receipt builder after existing write paths.**
 
-Use the existing `Action` validation, `find()` ambiguity behavior, owner checks, undo record, and
-single transaction. Do not add a second mutation path for AI.
+Use the existing `Action` validation, owner checks, undo records, and transactions. Do not add a
+second mutation path for AI and do not add rescheduling in Release 1.
 
 - [ ] **Step 4: Rebuild and verify the snapshot after commit.**
 
@@ -550,20 +635,20 @@ If the item cannot be verified, raise an explicit server error.
 
 - [ ] **Step 5: Add TypeScript receipt types and preserve API error language.**
 
-Do not optimistically show “added,” “scheduled,” or “moved.” Existing uncertain-network copy must
+Do not optimistically show “added” or “scheduled.” Existing uncertain-network copy must
 continue telling the user to refresh before retrying.
 
 - [ ] **Step 6: Run mutation and ownership tests.**
 
 ```bash
-uv run pytest tests/test_cooper.py tests/test_api.py -k "move or reschedul or receipt or owner or external" -q
+uv run pytest tests/test_api.py -k "receipt or add or schedule or owner" -q
 ```
 
 - [ ] **Step 7: Commit truthful mutations.**
 
 ```bash
-git add cooper/brain.py cooper/app.py frontend/src/types.ts frontend/src/api.ts tests/test_cooper.py tests/test_api.py
-git commit -m "feat(ai): verify planning mutations before replying" -m "Generate creation and rescheduling confirmations only from committed state while keeping external events read-only."
+git add cooper/app.py frontend/src/types.ts frontend/src/api.ts tests/test_api.py
+git commit -m "feat(ai): verify planning mutations before replying" -m "Generate creation and scheduling confirmations only from committed state while keeping uncertain outcomes explicit."
 ```
 
 ## Task 8: Replace prompt examples with typed product actions
@@ -760,6 +845,207 @@ git commit -m "docs(planning): define COOPER's unified source of truth" -m "Docu
 
 Do not push until the user explicitly requests release or the active task already includes a push.
 
+## GStack CEO review synthesis
+
+### What already exists
+
+- `cooper/app.py::today_view()` already fetches local work and provider events, but exposes them as
+  separate collections.
+- `cooper/sources.py::busy_windows()` already protects placement from Google, iCloud, Gmail, and
+  local busy intervals.
+- `cooper/planner.py` already ranks and places tasks deterministically.
+- `cooper/brain.py` already validates `Action` values and sanitizes model-bound user text.
+- `cooper/app.py::run()` already keeps mutations in the sole database-writer boundary.
+- `frontend/src/calendar-data.ts` already demonstrates the frontend's desired mixed-source display,
+  but must stop being an independent source of planning truth.
+- Existing API tests already prove local AI adds persist and external provider contents stay out of
+  model prompts.
+
+The plan extends these boundaries instead of replacing them.
+
+### Not in scope
+
+- Persisted external-event ledger: unproven operational cost and a new table.
+- Provider write-back: contradicts the current read-only provider contract.
+- Fuzzy event matching: risks hiding distinct commitments.
+- Snooze workflow: requires real persisted semantics, not a renamed deadline.
+- Projects, assignments, permissions, and reporting: do not serve the seven PRD requirements.
+- New queue, watcher, cache, or analytics stack: measure the existing request path first.
+- AI reranking: deterministic ranking must remain explainable.
+
+### Dream-state delta
+
+This plan reaches a trustworthy single-owner planning workspace: all surfaces agree, common Ask
+questions are grounded, provider time affects decisions, and writes are verified. It does not prove
+multi-user demand, automatic provider write-back, or a general autonomous planning agent. Those are
+future product decisions, not hidden requirements of this delivery.
+
+### System architecture
+
+```text
+authenticated request
+        |
+        v
+     app.py ------------------------------------------------------+
+        |                                                         |
+        +--> Store: owner-scoped local Items                       |
+        +--> Google/iCloud/Gmail: read-only provider records       |
+        |                                                         |
+        v                                                         |
+ sources.py: normalize -> explicit links -> exact dedup -> health |
+        |                                                         |
+        v                                                         |
+ planner.py: states -> rank -> conflicts -> free blocks -> metrics|
+        |                                                         |
+        v                                                         |
+ planning snapshot                                                |
+   |             |              |              |                  |
+   v             v              v              v                  |
+ Calendar       Home            Ask          badges               |
+                                  |                               |
+                                  +-- mutation intent ------------+
+                                      validate -> commit -> rebuild
+                                                     |
+                                                     v
+                                              verified receipt
+```
+
+### Snapshot data flow and shadow paths
+
+```text
+INPUT --------> VALIDATE -------> NORMALIZE -------> PROJECT -------> OUTPUT
+local/provider  owner + shape     UTC + identity     snapshot         consumers
+    |               |                  |                 |                |
+    + no provider -> local-only, complete for configured sources --------+
+    + empty source -> valid empty collection, count zero ----------------+
+    + bad record --> reject that malformed record with source warning ---+
+    + provider error --------------------------------> incomplete snapshot
+    + duplicate ----------------> alias one commitment, count once -------+
+```
+
+Disconnected is not failure. A connected source that cannot be read makes the snapshot incomplete.
+Only availability-dependent decisions block; safe local inspection and mutation continue with a
+warning.
+
+### Task-state machine
+
+```text
+                         scheduled block begins
+NOT STARTED ----schedule--------------------------> IN PROGRESS
+    |                 |                                  |
+    |                 + future ----------------> SCHEDULED
+    |                                                    |
+    + provider unknown -------------------------> BLOCKED|
+    |                                                    |
+    + deadline passes --------------------------> OVERDUE|
+                                                         |
+scheduled block passes without completion ----> MISSED BLOCK
+
+any active state --complete--> COMPLETED
+any active state --drop------> DROPPED
+```
+
+Derived state never creates an invalid persisted transition. The database continues storing only
+`open`, `done`, or `dropped`; timing, deadline, and provider health produce the richer projection.
+
+### Error and rescue registry
+
+| Method or path           | Failure                                                  | Rescue                                                            | User sees                                      |
+| ------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
+| Provider fetch           | `CalendarError`, timeout, invalid credential             | Preserve local data, mark source unavailable                      | Incomplete schedule warning                    |
+| Event normalization      | malformed time or missing identity                       | Reject record, mark affected source incomplete                    | Provider data may be incomplete                |
+| Snapshot projection      | invalid timezone or interval                             | Fail request with explicit server error; never guess              | Could not load planning state                  |
+| Gemini intent/answer     | malformed JSON, empty response, refusal, transport error | Use validated rules or deterministic intent answer when available | Factual fallback or clear unavailable response |
+| Database mutation        | validation, ambiguity, ownership, integrity error        | Existing 409/422 boundary; transaction rollback                   | Specific correction request                    |
+| Post-commit verification | affected item absent from fresh snapshot                 | Mark outcome unverified; instruct refresh before retry            | No success claim                               |
+| Frontend request         | network failure after POST                               | Keep uncertain-state copy                                         | Refresh before retrying                        |
+| Partial frontend load    | snapshot absent or stale response epoch                  | Keep structural loading state; discard stale auth epoch           | Loading or current signed-in state             |
+
+No error path may log a token, prompt, external title, email body, message ID, attendee, address, or
+location.
+
+### Failure modes registry
+
+| Code path          | Failure mode                           | Rescued?                            | Test?                | User sees                           | Logged?                  |
+| ------------------ | -------------------------------------- | ----------------------------------- | -------------------- | ----------------------------------- | ------------------------ |
+| Mixed-source count | aliases counted twice                  | Yes                                 | Pure + API + UI      | Correct count                       | Aggregate only           |
+| Deduplication      | two real events share a title          | Yes, exact time/type still required | Pure                 | Both remain visible                 | No content               |
+| Availability       | provider unavailable                   | Yes                                 | API                  | Incomplete warning; no invented fit | Source/status only       |
+| Ask intent         | generic model answer bypasses snapshot | Yes, curated intents deterministic  | API                  | Specific factual answer             | Intent type only         |
+| AI privacy         | external content enters prompt         | Yes, captured-prompt assertion      | API                  | No visible leak                     | Never content            |
+| Mutation           | model claims an unsaved change         | Yes, receipt after commit           | Persistence/API      | Verified result only                | Operation/status only    |
+| Post-commit check  | committed write cannot be verified     | Yes                                 | API                  | Outcome unknown; refresh            | Request correlation only |
+| UI migration       | old frontend meets new backend         | Yes, compatibility window           | Build + hosted smoke | No broken workspace                 | Deployment health        |
+| Home rendering     | same task appears in several sections  | Yes, stable reference IDs           | UI                   | One rendered item                   | No content               |
+
+No row is unrescued, untested, silent, and unlogged.
+
+### Deployment sequence
+
+```text
+Release 1A: additive backend snapshot + legacy fields
+        |
+        v
+Release 1B: Calendar, badges, Ask, and receipts consume snapshot
+        |
+        v
+7-day trust gate with real mixed-source schedule
+        |
+        +-- fails --> fix snapshot/receipt; do not start Home
+        |
+        v
+Release 2: Home command center + local rescheduling
+        |
+        v
+hosted frontend verified on snapshot contract
+        |
+        v
+Release 3: remove legacy API fields and browser reconstruction
+```
+
+### Rollback flow
+
+```text
+snapshot/backend regression?
+  -> revert additive backend commit; legacy frontend remains compatible
+
+snapshot frontend regression?
+  -> revert frontend commit; additive backend still serves legacy fields
+
+Home/reschedule regression?
+  -> revert Release 2 commits; trusted Release 1 loop remains
+
+legacy-field removal regression?
+  -> restore fields from prior commit; no database rollback required
+```
+
+### Review findings by section
+
+1. **Architecture:** one issue resolved by keeping normalization, calculation, orchestration, and
+   rendering in separate existing modules.
+2. **Errors:** post-commit uncertainty and partial-provider behavior are explicitly mapped.
+3. **Security:** no new secret, dependency, table, provider scope, or external model content.
+4. **Data and interaction:** nil, empty, duplicate, partial, stale response, and retry paths are
+   covered by the plan.
+5. **Code quality:** the main risk is a monolithic snapshot builder; module boundaries prevent it.
+6. **Tests:** pure logic, API integration, frontend behavior, privacy capture, and live acceptance
+   are separated.
+7. **Performance:** provider I/O is the first likely bottleneck; each source is fetched once per
+   snapshot and caching is deferred until measured.
+8. **Observability:** source health and privacy-safe operation/status context are sufficient for the
+   current single-owner scale; no dashboard stack is added.
+9. **Deployment:** the two-release compatibility window resolves independent frontend/backend
+   deployment risk.
+10. **Trajectory:** reversibility is 5/5 because there is no schema or provider-write migration.
+11. **Design:** the information hierarchy, mobile flow, loading, empty, success, error, and partial
+    states are specified; a rendered design review remains required after implementation.
+
+### Implementation tasks
+
+The ten task sections above are the executable task list. P1 release blockers are Tasks 1–4 and
+6–8. Task 5 and Task 5B are gated on real-use trust evidence. Task 9 must ship separately from the
+additive API release. Task 10 is the release gate.
+
 ## Final release acceptance matrix
 
 Before declaring the implementation complete, attach evidence for every row:
@@ -779,3 +1065,18 @@ Before declaring the implementation complete, attach evidence for every row:
 | Model privacy boundary            | Captured-prompt tests                | No secrets or provider contents in logs     |
 | Offline/local operation           | API/frontend tests                   | No Gemini and no provider smoke test        |
 | Full quality gate                 | pytest, Ruff, Vitest, Prettier, Vite | Running application inspection              |
+
+## GSTACK REVIEW REPORT
+
+| Review        | Trigger               | Why                               | Runs | Status  | Findings                                                                               |
+| ------------- | --------------------- | --------------------------------- | ---- | ------- | -------------------------------------------------------------------------------------- |
+| CEO Review    | `/plan-ceo-review`    | Scope and strategy                | 1    | CLEAR   | 3 approaches considered, shared snapshot accepted, ledger and surface patches rejected |
+| Codex Review  | `/codex review`       | Independent second opinion        | 0    | SKIPPED | Running under Codex; nested Codex review intentionally skipped                         |
+| Eng Review    | `/plan-eng-review`    | Architecture and tests (required) | 0    | NOT RUN | Required before implementation begins                                                  |
+| Design Review | `/plan-design-review` | UI and UX gaps                    | 0    | NOT RUN | Recommended before the Home release                                                    |
+| DX Review     | `/plan-devex-review`  | Developer experience gaps         | 0    | NOT RUN | Not required for this product change                                                   |
+
+**VERDICT:** CEO REVIEW CLEAR. Founder sequence approved. Engineering review required before
+implementation; design review required before Release 2 Home work.
+
+NO UNRESOLVED DECISIONS
