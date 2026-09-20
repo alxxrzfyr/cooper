@@ -1860,7 +1860,316 @@ describe("the dashboard", () => {
     };
   }
 
-  test("today's strip shows today, and only today", async () => {
+  function snapshotView(overrides: Partial<PlanningSnapshot>): View {
+    const base = planning([], [], []);
+    return view({
+      shortlist: [],
+      scheduled: [],
+      events: [],
+      planning: { ...base, ...overrides },
+    });
+  }
+
+  test("Home uses snapshot focus as references to one Today agenda", async () => {
+    const current = {
+      ...block({ id: "current", title: "Team check-in", start_at: atLocal(TODAY, 9) }),
+      source: "me" as const,
+    };
+    const next = {
+      ...block({ id: "next", title: "Design review", start_at: atLocal(TODAY, 11) }),
+      source: "me" as const,
+    };
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "cooper:current",
+            source: "cooper",
+            source_id: "current",
+            aliases: ["cooper:current"],
+            title: current.title,
+            kind: "task",
+            start_at: current.start_at!,
+            end_at: current.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: current.id,
+            conflict: false,
+            item: current,
+          },
+          {
+            id: "cooper:next",
+            source: "cooper",
+            source_id: "next",
+            aliases: ["cooper:next"],
+            title: next.title,
+            kind: "task",
+            start_at: next.start_at!,
+            end_at: next.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: next.id,
+            conflict: false,
+            item: next,
+          },
+        ],
+        focus: { now_id: "cooper:current", next_id: "cooper:next" },
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Now")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Now: Team check-in" })).toHaveAttribute(
+      "href",
+      "#agenda-cooper:current",
+    );
+    expect(screen.getByRole("link", { name: "Next: Design review" })).toHaveAttribute(
+      "href",
+      "#agenda-cooper:next",
+    );
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.getAllByText("Team check-in")).toHaveLength(1);
+    expect(screen.getAllByText("Design review")).toHaveLength(1);
+  });
+
+  test("Home surfaces a free-block recommendation from the snapshot", async () => {
+    const task = ranked({ id: "proposal", title: "Draft the proposal", minutes: 45 });
+    stub({
+      view: snapshotView({
+        tasks: [task],
+        focus: { now_id: task.id, next_id: null },
+        metrics: {
+          scheduled_count: 0,
+          occupied_minutes: 0,
+          remaining_effort_minutes: 45,
+          largest_free_block_minutes: 90,
+          conflict_count: 0,
+        },
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "Now: Draft the proposal" })).toHaveTextContent(
+      "90 min free",
+    );
+    expect(screen.getAllByText("Draft the proposal")).toHaveLength(1);
+  });
+
+  test("Home renders a mixed local and external snapshot agenda once", async () => {
+    const local = block({ id: "local", title: "Write brief", start_at: atLocal(TODAY, 10) });
+    const external: CalendarEvent = {
+      event_id: "external",
+      title: "Dentist appointment",
+      start_at: atLocal(TODAY, 13),
+      end_at: atLocal(TODAY, 14),
+      category: "personal",
+      mine: false,
+      source: "google",
+    };
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "cooper:local",
+            source: "cooper",
+            source_id: local.id,
+            aliases: ["cooper:local"],
+            title: local.title,
+            kind: "task",
+            start_at: local.start_at!,
+            end_at: local.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: local.id,
+            conflict: false,
+            item: local,
+          },
+          {
+            id: "google:external",
+            source: "google",
+            source_id: external.event_id!,
+            aliases: ["google:external"],
+            title: external.title,
+            kind: "event",
+            start_at: external.start_at,
+            end_at: external.end_at,
+            all_day: false,
+            category: "personal",
+            editable: false,
+            local_item_id: null,
+            conflict: false,
+            event: external,
+          },
+        ],
+        focus: { now_id: null, next_id: null },
+      }),
+    });
+    render(<App />);
+
+    const agenda = (await screen.findByText("Today")).closest("section") as HTMLElement;
+    expect(within(agenda).getByText("Write brief")).toBeInTheDocument();
+    expect(within(agenda).getByText("Dentist appointment")).toBeInTheDocument();
+    expect(within(agenda).getByText("Google")).toBeInTheDocument();
+  });
+
+  test("Today includes commitments that began before midnight and are still in progress", async () => {
+    const overnight = block({
+      id: "overnight",
+      title: "Overnight maintenance",
+      start_at: atLocal("2026-08-30", 23),
+      end_at: atLocal(TODAY, 1),
+    });
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "cooper:overnight",
+            source: "cooper",
+            source_id: overnight.id,
+            aliases: ["cooper:overnight"],
+            title: overnight.title,
+            kind: "event",
+            start_at: overnight.start_at!,
+            end_at: overnight.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: overnight.id,
+            conflict: false,
+            item: overnight,
+          },
+        ],
+      }),
+    });
+    render(<App />);
+
+    const agenda = (await screen.findByText("Today")).closest("section") as HTMLElement;
+    expect(within(agenda).getByText("Overnight maintenance")).toBeInTheDocument();
+  });
+
+  test("Home links risks to the single affected agenda item", async () => {
+    const task = block({ id: "risk", title: "Submit the grant", start_at: atLocal(TODAY, 15) });
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "cooper:risk",
+            source: "cooper",
+            source_id: task.id,
+            aliases: ["cooper:risk"],
+            title: task.title,
+            kind: "task",
+            start_at: task.start_at!,
+            end_at: task.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: task.id,
+            conflict: true,
+            item: task,
+          },
+        ],
+        risks: [
+          {
+            kind: "conflict",
+            commitment_ids: ["cooper:risk"],
+          },
+        ],
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByText("At risk")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "At risk: Submit the grant" })).toHaveAttribute(
+      "href",
+      "#agenda-cooper:risk",
+    );
+    expect(screen.getByText("Overlaps another commitment")).toBeInTheDocument();
+    expect(screen.getAllByText("Submit the grant")).toHaveLength(1);
+  });
+
+  test("At Risk references keep their underlying item in the restrained Upcoming list", async () => {
+    const tasks = Array.from({ length: 6 }, (_, index) =>
+      ranked({ id: `task-${index + 1}`, title: `Task ${index + 1}` }),
+    );
+    stub({
+      view: snapshotView({
+        tasks,
+        risks: [{ kind: "overdue", item_id: "task-6", message: "Deadline has passed" }],
+      }),
+    });
+    render(<App />);
+
+    const risk = await screen.findByRole("link", { name: "At risk: Task 6" });
+    expect(risk).toHaveAttribute("href", "#task-task-6");
+    expect(document.getElementById("task-task-6")).not.toBeNull();
+    expect(screen.getAllByText("Task 6")).toHaveLength(1);
+  });
+
+  test("external snapshot events are readable without mutation controls", async () => {
+    const external: CalendarEvent = {
+      event_id: "read-only",
+      title: "Partner call",
+      start_at: atLocal(TODAY, 13),
+      end_at: atLocal(TODAY, 14),
+      category: "work",
+      mine: false,
+      source: "google",
+    };
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "google:read-only",
+            source: "google",
+            source_id: external.event_id!,
+            aliases: ["google:read-only"],
+            title: external.title,
+            kind: "event",
+            start_at: external.start_at,
+            end_at: external.end_at,
+            all_day: false,
+            category: "work",
+            editable: false,
+            local_item_id: null,
+            conflict: false,
+            event: external,
+          },
+        ],
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /Partner call/ }));
+    expect(await screen.findByRole("dialog", { name: "Partner call" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  test("Home keeps available work visible when provider data is incomplete", async () => {
+    const task = ranked({ id: "waiting", title: "Outline the launch", minutes: 30 });
+    stub({
+      view: snapshotView({
+        complete: false,
+        source_health: [
+          { source: "google", status: "unavailable", message: "Google Calendar is unavailable." },
+        ],
+        tasks: [task],
+        focus: { now_id: null, next_id: null },
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Planning is incomplete");
+    expect(screen.getByText("Outline the launch")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Plan my day" })).toBeDisabled();
+  });
+
+  test("Today stays focused while upcoming commitments remain available below", async () => {
     stub({
       view: view({
         scheduled: [
@@ -1871,9 +2180,9 @@ describe("the dashboard", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /morning run/ })).toBeInTheDocument();
-    // Tomorrow belongs on the Calendar. A dashboard that shows everything shows nothing.
-    expect(screen.queryByRole("button", { name: /next week's audit/ })).not.toBeInTheDocument();
+    expect(await screen.findByText("morning run")).toBeInTheDocument();
+    const upcoming = screen.getByText("Upcoming").closest("section") as HTMLElement;
+    expect(within(upcoming).getByText("next week's audit")).toBeInTheDocument();
   });
 
   test("someone else's event opens its full details from the home strip", async () => {
@@ -1906,7 +2215,7 @@ describe("the dashboard", () => {
     expect(dentist.closest(".slot")).toHaveClass("slot--google");
 
     await user.click(dentist.closest("button")!);
-    expect((await screen.findAllByText("Dental clinic"))[1]).toBeInTheDocument();
+    expect((await screen.findAllByText("Dental clinic"))[0]).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join meeting" })).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "https://meet.example.com/dentist" }),
@@ -1942,7 +2251,7 @@ describe("the dashboard", () => {
     expect(screen.getAllByText("write the report")).toHaveLength(1);
   });
 
-  test("overdue and due-today are pulled out into their own group", async () => {
+  test("open tasks remain together in the ranked upcoming list", async () => {
     stub({
       view: view({
         shortlist: [
@@ -1954,12 +2263,11 @@ describe("the dashboard", () => {
     });
     render(<App />);
 
-    const group = (await screen.findByText("Needs attention")).closest("section");
+    const group = (await screen.findByText("Upcoming")).closest("section");
     expect(group).not.toBeNull();
     expect(within(group as HTMLElement).getByText("late thing")).toBeInTheDocument();
     expect(within(group as HTMLElement).getByText("today thing")).toBeInTheDocument();
-    // Not a problem yet, so it stays out of the group whose whole job is to be small.
-    expect(within(group as HTMLElement).queryByText("later thing")).not.toBeInTheDocument();
+    expect(within(group as HTMLElement).getByText("later thing")).toBeInTheDocument();
   });
 
   test("an errand is listed but never offered a block", async () => {
@@ -1968,8 +2276,8 @@ describe("the dashboard", () => {
     stub({ view: view({ shortlist: [ranked({ title: "buy milk", minutes: null })] }) });
     render(<App />);
 
-    expect(await screen.findByText("Waiting for a time")).toBeInTheDocument();
-    const waiting = screen.getByText("Waiting for a time").closest("section") as HTMLElement;
+    expect(await screen.findByText("Upcoming")).toBeInTheDocument();
+    const waiting = screen.getByText("Upcoming").closest("section") as HTMLElement;
     expect(within(waiting).getByText("buy milk")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Plan my day" })).not.toBeInTheDocument();
   });

@@ -1,9 +1,8 @@
 import { Mascot } from "./Mascot";
 import { Row } from "./Row";
-import { calendarEntries, calendarEventContext } from "./calendar-data";
-import type { CalendarEvent, Item, Ranked, View } from "./types";
+import type { CalendarEvent, Item, PlanningCommitment, Ranked, View } from "./types";
 
-/** Dashboard backed by the single `/api/today` payload. */
+/** Dashboard backed exclusively by the resolved planning snapshot. */
 
 function clock(at: Date, timeZone: string): string {
   return at.toLocaleTimeString(undefined, { timeZone, hour: "numeric", minute: "2-digit" });
@@ -18,14 +17,189 @@ function greeting(at: Date, timeZone: string): string {
   return "Good evening";
 }
 
-/** Why this task is where it is, in the words you typed rather than the number behind them. */
-function why(item: Item, today: string): string {
-  if (!item.due) return "no deadline";
-  const day = item.due.slice(0, 10);
-  if (day < today) return "overdue";
-  if (day === today) return "due today";
-  const days = Math.round((new Date(day).getTime() - new Date(today).getTime()) / 86_400_000);
-  return days === 1 ? "due tomorrow" : `due in ${days} days`;
+function localDay(at: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(at));
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function commitmentDay(commitment: PlanningCommitment, at: string, timeZone: string): string {
+  if (commitment.all_day && commitment.source === "google") return at.slice(0, 10);
+  return localDay(at, timeZone);
+}
+
+function isOnDay(commitment: PlanningCommitment, day: string, timeZone: string): boolean {
+  const lastMoment = new Date(
+    Math.max(Date.parse(commitment.start_at), Date.parse(commitment.end_at) - 1),
+  );
+  return (
+    commitmentDay(commitment, commitment.start_at, timeZone) <= day &&
+    day <= commitmentDay(commitment, lastMoment.toISOString(), timeZone)
+  );
+}
+
+function sourceLabel(source: string): string {
+  if (source === "cooper") return "Cooper";
+  if (source === "icloud") return "iCloud";
+  return source === "gmail" ? "Gmail" : "Google";
+}
+
+function riskSummary(kind: string, message: string | undefined): string {
+  if (message) return message;
+  if (kind === "conflict") return "Overlaps another commitment";
+  if (kind === "overdue") return "Deadline has passed";
+  if (kind === "missed_block") return "Scheduled time has passed";
+  if (kind === "blocked") return "Waiting for calendar availability";
+  return "Needs attention";
+}
+
+function taskTarget(item: Ranked): string {
+  return `task-${item.id}`;
+}
+
+function commitmentTarget(commitment: Pick<PlanningCommitment, "id">): string {
+  return `agenda-${commitment.id}`;
+}
+
+type FocusItem =
+  { kind: "commitment"; value: PlanningCommitment } | { kind: "task"; value: Ranked };
+
+type RiskTarget =
+  | { kind: "commitment"; id: string; title: string; message: string }
+  | { kind: "task"; id: string; title: string; message: string };
+
+function findFocus(view: View, id: string | null): FocusItem | null {
+  if (!id) return null;
+  const commitment = view.planning.commitments.find((entry) => entry.id === id);
+  if (commitment) return { kind: "commitment", value: commitment };
+  const task = view.planning.tasks.find((entry) => entry.id === id);
+  return task ? { kind: "task", value: task } : null;
+}
+
+function focusTarget(item: FocusItem): string {
+  return item.kind === "commitment" ? commitmentTarget(item.value) : taskTarget(item.value);
+}
+
+function isLocalTask(item: FocusItem): item is { kind: "task"; value: Ranked } {
+  return item.kind === "task" && item.value.source === "me";
+}
+
+function FocusReference({
+  label,
+  item,
+  freeMinutes,
+  onComplete,
+  busy,
+}: {
+  label: "Now" | "Next";
+  item: FocusItem;
+  freeMinutes?: number;
+  onComplete: (id: string) => void;
+  busy: boolean;
+}) {
+  const freeTime = freeMinutes && freeMinutes > 0 ? `${freeMinutes} min free` : null;
+  return (
+    <section className="home-focus" aria-label={label}>
+      <div className="group__label">
+        {label}
+        {label === "Next" && <span className="group__note">Up next</span>}
+      </div>
+      <div className="home-focus__body">
+        <a
+          className="home-focus__link"
+          href={`#${focusTarget(item)}`}
+          aria-label={`${label}: ${item.value.title}`}
+        >
+          <span>{item.kind === "commitment" ? "On your agenda" : "Recommended work"}</span>
+          <span className="home-focus__meta">
+            {[freeTime, "See it below"].filter(Boolean).join(" · ")}
+          </span>
+        </a>
+        {isLocalTask(item) && (
+          <button
+            type="button"
+            className="btn btn--accent"
+            disabled={busy}
+            onClick={() => onComplete(item.value.id)}
+          >
+            Done
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AgendaItem({
+  commitment,
+  today,
+  timeZone,
+  busy,
+  onComplete,
+  onOpen,
+}: {
+  commitment: PlanningCommitment;
+  today: string;
+  timeZone: string;
+  busy: boolean;
+  onComplete: (id: string) => void;
+  onOpen: (item: Item | Ranked | CalendarEvent) => void;
+}) {
+  const label = `${commitment.title} · ${
+    commitment.all_day
+      ? "All day"
+      : `${clock(new Date(commitment.start_at), timeZone)}–${clock(new Date(commitment.end_at), timeZone)}`
+  }`;
+  const localItem = commitment.editable ? commitment.item : undefined;
+  if (localItem) {
+    return (
+      <div id={commitmentTarget(commitment)}>
+        <Row
+          item={localItem}
+          today={today}
+          busy={busy}
+          onComplete={() => onComplete(localItem.id)}
+          onOpen={() => onOpen(localItem)}
+        />
+      </div>
+    );
+  }
+  const event = commitment.event;
+  return (
+    <div id={commitmentTarget(commitment)}>
+      {event ? (
+        <button
+          type="button"
+          className={`slot slot--${commitment.source} cat--${commitment.category} slot--home-event ${commitment.all_day ? "slot--all-day" : ""}`}
+          title={label}
+          aria-label={label}
+          onClick={() => onOpen(event)}
+        >
+          <span className="slot__time">
+            {commitment.all_day ? "All day" : clock(new Date(commitment.start_at), timeZone)}
+          </span>
+          <span className="slot__title">{commitment.title}</span>
+          <span className="slot__from">{sourceLabel(commitment.source)}</span>
+        </button>
+      ) : (
+        <div
+          className={`slot slot--${commitment.source} cat--${commitment.category}`}
+          title={label}
+        >
+          <span className="slot__time">
+            {commitment.all_day ? "All day" : clock(new Date(commitment.start_at), timeZone)}
+          </span>
+          <span className="slot__title">{commitment.title}</span>
+          <span className="slot__from">{sourceLabel(commitment.source)}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Home({
@@ -43,24 +217,69 @@ export function Home({
   onSchedule: () => void;
   onGoToChat: () => void;
 }) {
-  const today = view.today;
-  const now = new Date(view.now);
-  const zone = view.timezone;
-  const shortlist = view.shortlist.filter((item) => item.source !== "gmail");
-  const next = shortlist[0];
-
-  const strip = calendarEntries(view.planning.commitments, zone, today);
-  /** Still to come today, so the strip can lead with what has not happened yet. */
-  const ahead = strip.filter((entry) => entry.end.getTime() >= now.getTime());
-
-  const attention = shortlist.filter((item) => item.due !== null && item.due.slice(0, 10) <= today);
-  const unbooked = shortlist.filter((item) => item.start_at === null);
-  const scheduledCount = view.planning.metrics.scheduled_count;
-
-  const nothingAtAll = shortlist.length === 0 && strip.length === 0;
+  const { planning } = view;
+  const now = new Date(planning.generated_at);
+  const today = planning.today;
+  const zone = planning.timezone;
+  const agenda = planning.commitments
+    .filter((commitment) => isOnDay(commitment, today, zone))
+    .sort((left, right) => left.start_at.localeCompare(right.start_at));
+  const futureCommitments = planning.commitments
+    .filter((commitment) => commitmentDay(commitment, commitment.start_at, zone) > today)
+    .sort((left, right) => left.start_at.localeCompare(right.start_at));
+  const scheduledTaskIds = new Set(
+    planning.commitments.flatMap((commitment) =>
+      commitment.local_item_id ? [commitment.local_item_id] : [],
+    ),
+  );
+  const upcomingTasks = planning.tasks.filter((task) => !scheduledTaskIds.has(task.id));
+  const current = findFocus(view, planning.focus.now_id);
+  const next = findFocus(view, planning.focus.next_id);
+  const hasWorkToSchedule = upcomingTasks.some((task) => task.minutes !== null);
+  const nothingAtAll = agenda.length === 0 && upcomingTasks.length === 0;
+  const riskTargets = planning.risks.flatMap((risk) => {
+    const ids = risk.commitment_ids ?? (risk.item_id ? [risk.item_id] : []);
+    const message = riskSummary(risk.kind, risk.message);
+    return ids
+      .map((id) => {
+        const commitment = planning.commitments.find(
+          (entry) => entry.id === id || entry.local_item_id === id,
+        );
+        if (commitment) {
+          return {
+            kind: "commitment",
+            id: commitment.id,
+            title: commitment.title,
+            message,
+          } satisfies RiskTarget;
+        }
+        const task = planning.tasks.find((entry) => entry.id === id);
+        return task
+          ? ({
+              kind: "task",
+              id: task.id,
+              title: task.title,
+              message,
+            } satisfies RiskTarget)
+          : null;
+      })
+      .filter((entry): entry is RiskTarget => entry !== null);
+  });
+  const riskTaskIds = new Set(
+    riskTargets.filter((risk) => risk.kind === "task").map((risk) => risk.id),
+  );
+  const riskCommitmentIds = new Set(
+    riskTargets.filter((risk) => risk.kind === "commitment").map((risk) => risk.id),
+  );
+  const visibleFutureCommitments = futureCommitments.filter(
+    (commitment, index) => index < 3 || riskCommitmentIds.has(commitment.id),
+  );
+  const visibleUpcomingTasks = upcomingTasks.filter(
+    (task, index) => index < 5 || riskTaskIds.has(task.id),
+  );
 
   return (
-    <div className="scroll">
+    <div className="scroll home-command-center">
       <h1 className="largetitle">
         {greeting(now, zone)}
         <span className="largetitle__sub">
@@ -72,6 +291,18 @@ export function Home({
           })}
         </span>
       </h1>
+
+      {!planning.complete && (
+        <section className="home-incomplete" role="alert">
+          <strong>Planning is incomplete</strong>
+          <span>
+            {planning.source_health
+              .filter((source) => source.status === "unavailable")
+              .map((source) => source.message ?? `${sourceLabel(source.source)} is unavailable.`)
+              .join(" ") || "A connected calendar is unavailable."}
+          </span>
+        </section>
+      )}
 
       {nothingAtAll && (
         <section className="empty">
@@ -87,172 +318,102 @@ export function Home({
         </section>
       )}
 
-      {next && (
-        <section className="hero">
-          <Mascot name="cooper_laptop" size="md" decorative />
-          <div className="hero__body">
-            <span className="hero__eyebrow">Up next</span>
-            <h2 className="hero__title">{next.title}</h2>
-            <span className="hero__meta">
-              {[
-                next.start_at ? clock(new Date(next.start_at), zone) : null,
-                next.minutes ? `${next.minutes} min` : null,
-                why(next, today),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn--accent"
-            disabled={busy}
-            onClick={() => onComplete(next.id)}
-          >
-            Done
-          </button>
-        </section>
+      {current && (
+        <FocusReference
+          label="Now"
+          item={current}
+          freeMinutes={
+            current.kind === "task" ? planning.metrics.largest_free_block_minutes : undefined
+          }
+          onComplete={onComplete}
+          busy={busy}
+        />
       )}
+      {next && <FocusReference label="Next" item={next} onComplete={onComplete} busy={busy} />}
 
-      {strip.length > 0 && (
-        <section className="group">
+      {agenda.length > 0 && (
+        <section className="group" aria-label="Today">
           <div className="group__label">
             Today
-            <span className="group__note">
-              {ahead.length === 0 ? "all done" : `${ahead.length} left of ${strip.length}`}
-            </span>
+            <span className="group__note">{agenda.length} scheduled</span>
           </div>
           <div className="inset">
-            {strip.map((entry) =>
-              entry.item ? (
-                <button
-                  type="button"
-                  key={entry.key}
-                  className={`slot slot--${entry.source} cat--${entry.category}`}
-                  aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
-                  onClick={() => onOpen(entry.item as Item)}
-                >
-                  <span className="slot__time">{clock(entry.start, zone)}</span>
-                  <span className="slot__title">{entry.title}</span>
-                </button>
-              ) : entry.event ? (
-                <button
-                  type="button"
-                  key={entry.key}
-                  className={`slot slot--${entry.source} cat--${entry.category} slot--home-event ${entry.event.all_day ? "slot--all-day" : ""}`}
-                  title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
-                  aria-label={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
-                  onClick={() => onOpen(entry.event!)}
-                >
-                  <span className="slot__time">
-                    {entry.event.all_day ? "All day" : clock(entry.start, zone)}
-                  </span>
-                  <span className="slot__title">{entry.title}</span>
-                  <span className="slot__from">
-                    {entry.event.source === "gmail" ? "Gmail" : "Google"}
-                  </span>
-                  <span className="slot__detail">{calendarEventContext(entry.event)}</span>
-                </button>
-              ) : (
-                <div
-                  key={entry.key}
-                  className={`slot slot--${entry.source} cat--${entry.category}`}
-                  title={`${entry.title} · ${clock(entry.start, zone)}–${clock(entry.end, zone)}`}
-                >
-                  <span className="slot__time">{clock(entry.start, zone)}</span>
-                  <span className="slot__title">{entry.title}</span>
-                  <span className="slot__from">Gmail</span>
-                </div>
-              ),
-            )}
-          </div>
-        </section>
-      )}
-
-      {attention.length > 0 && (
-        <section className="group">
-          <div className="group__label">
-            Needs attention
-            <span className="group__note">due today or past it</span>
-          </div>
-          <div className="inset">
-            {attention.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
+            {agenda.map((commitment) => (
+              <AgendaItem
+                key={commitment.id}
+                commitment={commitment}
                 today={today}
+                timeZone={zone}
                 busy={busy}
-                onComplete={() => onComplete(item.id)}
-                onOpen={() => onOpen(item)}
+                onComplete={onComplete}
+                onOpen={onOpen}
               />
             ))}
           </div>
         </section>
       )}
 
-      {unbooked.length > 0 && (
-        <section className="group">
+      {riskTargets.length > 0 && (
+        <section className="group home-risks" aria-label="At risk">
+          <div className="group__label">At risk</div>
+          <div className="inset">
+            {riskTargets.map((risk, index) => (
+              <a
+                key={`${risk.id}-${index}`}
+                className="home-risk"
+                href={`#${risk.kind === "task" ? `task-${risk.id}` : commitmentTarget(risk)}`}
+                aria-label={`At risk: ${risk.title}`}
+              >
+                <span>{risk.message ?? "Needs attention"}</span>
+                <span>View item</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(visibleFutureCommitments.length > 0 || visibleUpcomingTasks.length > 0) && (
+        <section className="group" aria-label="Upcoming">
           <div className="group__label">
-            Waiting for a time
+            Upcoming
             <span className="group__note">
-              {unbooked.length === 1 ? "1 task" : `${unbooked.length} tasks`}
+              {futureCommitments.length + upcomingTasks.length} ahead
             </span>
           </div>
           <div className="inset">
-            {unbooked.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
+            {visibleFutureCommitments.map((commitment) => (
+              <AgendaItem
+                key={commitment.id}
+                commitment={commitment}
                 today={today}
+                timeZone={zone}
                 busy={busy}
-                onComplete={() => onComplete(item.id)}
-                onOpen={() => onOpen(item)}
+                onComplete={onComplete}
+                onOpen={onOpen}
               />
             ))}
+            {visibleUpcomingTasks.map((item) => (
+              <div id={taskTarget(item)} key={item.id}>
+                <Row
+                  item={item}
+                  today={today}
+                  busy={busy}
+                  onComplete={() => onComplete(item.id)}
+                  onOpen={() => onOpen(item)}
+                />
+              </div>
+            ))}
           </div>
-          {unbooked.some((item) => item.minutes !== null) && (
+          {hasWorkToSchedule && (
             <button
               type="button"
               className="btn btn--accent btn--full"
-              disabled={busy}
+              disabled={busy || !planning.complete}
               onClick={onSchedule}
             >
               Plan my day
             </button>
           )}
-          <p className="hint">
-            Anything without a length is never given a block, so errands stay on the list rather
-            than eating an hour.
-          </p>
-        </section>
-      )}
-
-      {/*
-        The whole ranked list, absorbed from what used to be its own Plan tab. The three sections
-        above are today's slice of it — what is next, what is late, what is unbooked. This is the
-        rest: everything open, in score order, so the backlog has one home rather than a second
-        screen that mostly repeated this one.
-      */}
-      {shortlist.length > 0 && (
-        <section className="group">
-          <div className="group__label">
-            Everything, ranked
-            <span className="group__note">
-              {shortlist.length} open{scheduledCount > 0 ? ` · ${scheduledCount} booked` : ""}
-            </span>
-          </div>
-          <div className="inset">
-            {shortlist.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
-                today={today}
-                busy={busy}
-                onComplete={() => onComplete(item.id)}
-                onOpen={() => onOpen(item)}
-              />
-            ))}
-          </div>
         </section>
       )}
     </div>
