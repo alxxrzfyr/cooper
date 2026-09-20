@@ -90,6 +90,7 @@ function planning(
   events: CalendarEvent[],
   sourceHealth: NonNullable<View["source_health"]> = [],
 ): PlanningSnapshot {
+  const generatedAt = "2026-08-31T01:00:00+00:00";
   const commitments: PlanningSnapshot["commitments"] = [
     ...scheduled.map((item) => ({
       id: `cooper:${item.id}`,
@@ -134,15 +135,30 @@ function planning(
         new Date(commitment.start_at).getTime() < new Date(other.end_at).getTime(),
     );
   }
+  const generatedTime = Date.parse(generatedAt);
+  const active = commitments.find(
+    (commitment) =>
+      Date.parse(commitment.start_at) <= generatedTime &&
+      generatedTime < Date.parse(commitment.end_at),
+  );
+  const upcoming = commitments.find(
+    (commitment) => Date.parse(commitment.start_at) > generatedTime,
+  );
+  const recommended = shortlist.find(
+    (item) => item.start_at === null && item.minutes !== null && item.minutes > 0,
+  );
   return {
-    generated_at: "2026-08-31T01:00:00+00:00",
+    generated_at: generatedAt,
     today: "2026-08-31",
     timezone: "Asia/Singapore",
     complete: sourceHealth.every((source) => source.status === "ok"),
     source_health: sourceHealth,
     commitments,
     tasks: shortlist,
-    focus: { now_id: null, next_id: shortlist[0]?.id ?? commitments[0]?.id ?? null },
+    focus: {
+      now_id: active?.id ?? recommended?.id ?? null,
+      next_id: upcoming?.id ?? null,
+    },
     risks: [],
     metrics: {
       scheduled_count: commitments.length,
@@ -377,7 +393,7 @@ describe("first impression", () => {
     stub({});
     render(<App />);
 
-    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(await screen.findByText("Now")).toBeInTheDocument();
     expect(screen.queryByText("Cooper guide")).not.toBeInTheDocument();
   });
 
@@ -434,7 +450,7 @@ describe("first impression", () => {
     const loading = screen.getByRole("status", { name: "Loading Cooper’s day" });
     expect(loading).toHaveAttribute("aria-busy", "true");
     expect(loading.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Up next")).not.toBeInTheDocument();
+    expect(screen.queryByText("Now")).not.toBeInTheDocument();
 
     resolveToday(
       new Response(JSON.stringify(view()), {
@@ -442,7 +458,7 @@ describe("first impression", () => {
       }),
     );
 
-    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(await screen.findByText("Now")).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "Loading Cooper’s day" })).not.toBeInTheDocument();
   });
 
@@ -451,7 +467,7 @@ describe("first impression", () => {
     render(<App />);
 
     // Seeing the day should not require asking for it, so the chat is no longer the front door.
-    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(await screen.findByText("Now")).toBeInTheDocument();
     const nav = screen.getAllByRole("navigation", { name: "Sections" })[0];
     expect(within(nav).getByRole("button", { name: /Home/ })).toHaveAttribute(
       "aria-current",
@@ -520,7 +536,7 @@ describe("first impression", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(await screen.findByText("Now")).toBeInTheDocument();
     expect(calls[0]?.headers.get("X-Cooper-Key")).toBe("test-key");
     expect(calls[0]?.headers.has("Authorization")).toBe(false);
   });
@@ -572,7 +588,7 @@ describe("first impression", () => {
     render(<App />);
     await emitFirebaseUser(firebaseUser("firebase-id-token"));
 
-    expect(await screen.findByText("Up next")).toBeInTheDocument();
+    expect(await screen.findByText("Now")).toBeInTheDocument();
     expect(calls[0]?.headers.get("Authorization")).toBe("Bearer firebase-id-token");
     expect(calls[0]?.headers.has("X-Cooper-Key")).toBe(false);
   });
@@ -819,7 +835,7 @@ describe("appearance", () => {
   test("light is what you get before you choose anything", async () => {
     stub({});
     render(<App />);
-    await screen.findByText("Up next");
+    await screen.findByText("Now");
 
     // Only ever "light" or "dark" reaches the CSS. "System" is resolved before it gets there.
     expect(document.documentElement.dataset.theme).toBe("light");
@@ -1111,7 +1127,7 @@ describe("undo", () => {
   test("undo history does not add controls to desktop or mobile navigation", async () => {
     stub({ view: view({ undo: "Added “write the report”" }) });
     render(<App />);
-    await screen.findByText("Up next");
+    await screen.findByText("Now");
 
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
     expect(document.querySelector(".rail__undo")).not.toBeInTheDocument();
@@ -1760,8 +1776,8 @@ describe("gmail confirmations", () => {
     });
     render(<App />);
 
-    const title = await screen.findByText("Design conference");
-    expect(screen.getAllByText("Design conference")).toHaveLength(1);
+    const agenda = await screen.findByRole("region", { name: "Today" });
+    const title = within(agenda).getByText("Design conference");
     expect(title.closest("button")).toBeNull();
     expect(title.closest(".slot")).toHaveClass("slot--gmail");
     expect(title.closest(".slot")).toHaveTextContent("Gmail");
@@ -1921,17 +1937,20 @@ describe("the dashboard", () => {
     render(<App />);
 
     expect(await screen.findByText("Now")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Now: Team check-in" })).toHaveAttribute(
-      "href",
-      "#agenda-cooper:current",
-    );
-    expect(screen.getByRole("link", { name: "Next: Design review" })).toHaveAttribute(
-      "href",
-      "#agenda-cooper:next",
-    );
+    const nowReference = screen.getByRole("link", { name: "Now: Team check-in" });
+    expect(nowReference).toHaveAttribute("href", "#agenda-cooper:current");
+    expect(within(nowReference).getByText("Team check-in")).toBeVisible();
+    expect(nowReference).toHaveTextContent("9:00 AM–10:00 AM");
+
+    const nextReference = screen.getByRole("link", { name: "Next: Design review" });
+    expect(nextReference).toHaveAttribute("href", "#agenda-cooper:next");
+    expect(within(nextReference).getByText("Design review")).toBeVisible();
+    expect(nextReference).toHaveTextContent("11:00 AM–12:00 PM");
+    expect(nextReference).toHaveTextContent("60 min free before");
+
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getAllByText("Team check-in")).toHaveLength(1);
-    expect(screen.getAllByText("Design review")).toHaveLength(1);
+    expect(document.querySelectorAll("#agenda-cooper\\:current")).toHaveLength(1);
+    expect(document.querySelectorAll("#agenda-cooper\\:next")).toHaveLength(1);
   });
 
   test("Home surfaces a free-block recommendation from the snapshot", async () => {
@@ -1951,10 +1970,10 @@ describe("the dashboard", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("link", { name: "Now: Draft the proposal" })).toHaveTextContent(
-      "90 min free",
-    );
-    expect(screen.getAllByText("Draft the proposal")).toHaveLength(1);
+    const nowReference = await screen.findByRole("link", { name: "Now: Draft the proposal" });
+    expect(within(nowReference).getByText("Draft the proposal")).toBeVisible();
+    expect(nowReference).toHaveTextContent("90 min free");
+    expect(document.querySelectorAll("#task-proposal")).toHaveLength(1);
   });
 
   test("Home renders a mixed local and external snapshot agenda once", async () => {
@@ -2083,12 +2102,11 @@ describe("the dashboard", () => {
     render(<App />);
 
     expect(await screen.findByText("At risk")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "At risk: Submit the grant" })).toHaveAttribute(
-      "href",
-      "#agenda-cooper:risk",
-    );
+    const riskReference = screen.getByRole("link", { name: "At risk: Submit the grant" });
+    expect(riskReference).toHaveAttribute("href", "#agenda-cooper:risk");
+    expect(within(riskReference).getByText("Submit the grant")).toBeVisible();
     expect(screen.getByText("Overlaps another commitment")).toBeInTheDocument();
-    expect(screen.getAllByText("Submit the grant")).toHaveLength(1);
+    expect(document.querySelectorAll("#agenda-cooper\\:risk")).toHaveLength(1);
   });
 
   test("At Risk references keep their underlying item in the restrained Upcoming list", async () => {
@@ -2105,8 +2123,8 @@ describe("the dashboard", () => {
 
     const risk = await screen.findByRole("link", { name: "At risk: Task 6" });
     expect(risk).toHaveAttribute("href", "#task-task-6");
+    expect(within(risk).getByText("Task 6")).toBeVisible();
     expect(document.getElementById("task-task-6")).not.toBeNull();
-    expect(screen.getAllByText("Task 6")).toHaveLength(1);
   });
 
   test("external snapshot events are readable without mutation controls", async () => {
@@ -2210,7 +2228,8 @@ describe("the dashboard", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    const dentist = await screen.findByText("dentist");
+    const agenda = await screen.findByRole("region", { name: "Today" });
+    const dentist = within(agenda).getByText("dentist");
     expect(dentist.closest("button")).not.toBeNull();
     expect(dentist.closest(".slot")).toHaveClass("slot--google");
 
@@ -2247,8 +2266,10 @@ describe("the dashboard", () => {
     });
     render(<App />);
 
-    await screen.findByText("Up next");
-    expect(screen.getAllByText("write the report")).toHaveLength(1);
+    await screen.findByText("Now");
+    const agenda = screen.getByRole("region", { name: "Today" });
+    expect(within(agenda).getAllByText("write the report")).toHaveLength(1);
+    expect(document.querySelectorAll("#agenda-cooper\\:s1")).toHaveLength(1);
   });
 
   test("open tasks remain together in the ranked upcoming list", async () => {
@@ -2333,7 +2354,7 @@ describe("the dashboard", () => {
     });
     render(<App />);
     const user = userEvent.setup();
-    await screen.findByText("Up next");
+    await screen.findByText("Now");
 
     await user.type(screen.getByLabelText("Say something to Cooper"), "buy milk{Enter}");
 

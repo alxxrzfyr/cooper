@@ -61,7 +61,7 @@ function view(overrides: Partial<View> = {}): View {
       source_health: [],
       commitments: [],
       tasks: [ranked()],
-      focus: { now_id: null, next_id: "task-1" },
+      focus: { now_id: "task-1", next_id: null },
       risks: [],
       metrics: {
         scheduled_count: 0,

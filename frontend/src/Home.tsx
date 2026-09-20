@@ -85,6 +85,20 @@ function focusTarget(item: FocusItem): string {
   return item.kind === "commitment" ? commitmentTarget(item.value) : taskTarget(item.value);
 }
 
+function focusTime(item: FocusItem, timeZone: string): string | null {
+  if (item.kind !== "commitment") return null;
+  if (item.value.all_day) return "All day";
+  return `${clock(new Date(item.value.start_at), timeZone)}–${clock(new Date(item.value.end_at), timeZone)}`;
+}
+
+function freeMinutesBefore(next: FocusItem, current: FocusItem | null, now: Date): number | null {
+  if (next.kind !== "commitment") return null;
+  const currentEnd =
+    current?.kind === "commitment" ? Date.parse(current.value.end_at) : now.getTime();
+  const availableFrom = Math.max(now.getTime(), currentEnd);
+  return Math.max(0, Math.floor((Date.parse(next.value.start_at) - availableFrom) / 60_000));
+}
+
 function isLocalTask(item: FocusItem): item is { kind: "task"; value: Ranked } {
   return item.kind === "task" && item.value.source === "me";
 }
@@ -92,17 +106,16 @@ function isLocalTask(item: FocusItem): item is { kind: "task"; value: Ranked } {
 function FocusReference({
   label,
   item,
-  freeMinutes,
+  context,
   onComplete,
   busy,
 }: {
   label: "Now" | "Next";
   item: FocusItem;
-  freeMinutes?: number;
+  context: Array<string | null>;
   onComplete: (id: string) => void;
   busy: boolean;
 }) {
-  const freeTime = freeMinutes && freeMinutes > 0 ? `${freeMinutes} min free` : null;
   return (
     <section className="home-focus" aria-label={label}>
       <div className="group__label">
@@ -115,9 +128,9 @@ function FocusReference({
           href={`#${focusTarget(item)}`}
           aria-label={`${label}: ${item.value.title}`}
         >
-          <span>{item.kind === "commitment" ? "On your agenda" : "Recommended work"}</span>
+          <span className="home-focus__title">{item.value.title}</span>
           <span className="home-focus__meta">
-            {[freeTime, "See it below"].filter(Boolean).join(" · ")}
+            {[...context, "See it below"].filter(Boolean).join(" · ")}
           </span>
         </a>
         {isLocalTask(item) && (
@@ -235,6 +248,9 @@ export function Home({
   const upcomingTasks = planning.tasks.filter((task) => !scheduledTaskIds.has(task.id));
   const current = findFocus(view, planning.focus.now_id);
   const next = findFocus(view, planning.focus.next_id);
+  const currentTime = current ? focusTime(current, zone) : null;
+  const nextTime = next ? focusTime(next, zone) : null;
+  const nextFreeMinutes = next ? freeMinutesBefore(next, current, now) : null;
   const hasWorkToSchedule = upcomingTasks.some((task) => task.minutes !== null);
   const nothingAtAll = agenda.length === 0 && upcomingTasks.length === 0;
   const riskTargets = planning.risks.flatMap((risk) => {
@@ -322,14 +338,30 @@ export function Home({
         <FocusReference
           label="Now"
           item={current}
-          freeMinutes={
-            current.kind === "task" ? planning.metrics.largest_free_block_minutes : undefined
-          }
+          context={[
+            currentTime,
+            current.kind === "task" && planning.metrics.largest_free_block_minutes > 0
+              ? `${planning.metrics.largest_free_block_minutes} min free`
+              : null,
+          ]}
           onComplete={onComplete}
           busy={busy}
         />
       )}
-      {next && <FocusReference label="Next" item={next} onComplete={onComplete} busy={busy} />}
+      {next && (
+        <FocusReference
+          label="Next"
+          item={next}
+          context={[
+            nextTime,
+            nextFreeMinutes !== null && nextFreeMinutes > 0
+              ? `${nextFreeMinutes} min free before`
+              : null,
+          ]}
+          onComplete={onComplete}
+          busy={busy}
+        />
+      )}
 
       {agenda.length > 0 && (
         <section className="group" aria-label="Today">
@@ -364,7 +396,10 @@ export function Home({
                 href={`#${risk.kind === "task" ? `task-${risk.id}` : commitmentTarget(risk)}`}
                 aria-label={`At risk: ${risk.title}`}
               >
-                <span>{risk.message ?? "Needs attention"}</span>
+                <span className="home-risk__body">
+                  <strong className="home-risk__title">{risk.title}</strong>
+                  <span>{risk.message}</span>
+                </span>
                 <span>View item</span>
               </a>
             ))}

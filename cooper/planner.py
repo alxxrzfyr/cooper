@@ -159,9 +159,27 @@ def build_planning_snapshot(
         for entry in ranked
     ]
 
+    largest_free = _largest_free_block(
+        hours=hours,
+        at=at,
+        day_start=day_start,
+        day_end=day_end,
+        occupied=occupied,
+    )
+
     active = next((entry for entry in unique if entry.start <= at < entry.end), None)
     upcoming = next((entry for entry in unique if entry.start > at), None)
-    next_id = upcoming.id if upcoming else (tasks[0]["id"] if tasks else None)
+    recommended = next(
+        (
+            task
+            for task in tasks
+            if complete
+            and task["start_at"] is None
+            and task["minutes"] is not None
+            and 0 < task["minutes"] <= largest_free
+        ),
+        None,
+    )
 
     risks: list[dict[str, Any]] = []
     for entry in ranked:
@@ -193,13 +211,6 @@ def build_planning_snapshot(
                 )
 
     occupied_minutes = round(sum((end - start).total_seconds() / 60 for start, end in occupied))
-    largest_free = _largest_free_block(
-        hours=hours,
-        at=at,
-        day_start=day_start,
-        day_end=day_end,
-        occupied=occupied,
-    )
     return {
         "generated_at": at.isoformat(),
         "today": today.isoformat(),
@@ -210,7 +221,10 @@ def build_planning_snapshot(
             _commitment_dict(entry, conflict=entry.id in conflict_ids) for entry in unique
         ],
         "tasks": tasks,
-        "focus": {"now_id": active.id if active else None, "next_id": next_id},
+        "focus": {
+            "now_id": active.id if active else recommended["id"] if recommended else None,
+            "next_id": upcoming.id if upcoming else None,
+        },
         "risks": risks,
         "metrics": {
             "scheduled_count": len(today_commitments),

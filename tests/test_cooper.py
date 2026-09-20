@@ -688,6 +688,28 @@ class TestPlanningSnapshot:
         assert snapshot["metrics"]["conflict_count"] == 1
         assert {risk["kind"] for risk in snapshot["risks"]} >= {"overdue", "source_unavailable"}
 
+    def test_idle_focus_recommends_a_fitting_task_and_keeps_the_next_commitment(self) -> None:
+        recommended = task(id="recommended", title="Draft proposal", minutes=45, importance=5)
+        later = self.commitment(
+            "google:later",
+            start=NOW + dt.timedelta(hours=2),
+            end=NOW + dt.timedelta(hours=3),
+        )
+
+        snapshot = build_planning_snapshot(
+            items=[recommended],
+            commitments=[later],
+            source_health=[],
+            hours=self.hours(),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["largest_free_block_minutes"] >= recommended.minutes
+        assert snapshot["focus"] == {
+            "now_id": recommended.id,
+            "next_id": later.id,
+        }
+
 
 class TestPlacing:
     def hours(self, **overrides: object) -> Hours:

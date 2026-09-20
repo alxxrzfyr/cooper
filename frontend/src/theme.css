@@ -4784,6 +4784,11 @@ button.slot:active {
   font-weight: 500;
 }
 
+.home-focus__title {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
 .home-incomplete {
   align-items: flex-start;
   flex-direction: column;
@@ -4806,7 +4811,26 @@ button.slot:active {
   font-size: 13px;
 }
 
-.home-risk span:last-child {
+.home-risk__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-risk__title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-risk__body span {
+  color: var(--muted);
+}
+
+.home-risk > span:last-child {
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
