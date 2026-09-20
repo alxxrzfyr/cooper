@@ -38,7 +38,9 @@ from cooper.auth import AuthFailure, AuthIdentity, verify_firebase_token
 from cooper.brain import (
     COOPER_IDENTITY,
     Action,
+    AskIntent,
     Brain,
+    classify_ask_intent,
     guess_category,
     looks_like_a_question,
     sanitize_for_prompt,
@@ -227,6 +229,7 @@ class Say(BaseModel):
     mode: Literal["manual", "ai"] = "manual"
     # This key is request-scoped and is never persisted, logged, or returned.
     gemini_api_key: str | None = Field(default=None, max_length=256)
+    intent: AskIntent | None = None
 
 
 class HoursIn(BaseModel):
@@ -981,6 +984,16 @@ def say(body: Say, request: Request) -> dict[str, Any]:
     ai = body.mode == "ai"
     browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
     request_brain = brain.with_api_key(browser_key) if browser_key else brain
+    intent = body.intent or (classify_ask_intent(body.text) if ai else None)
+    if intent is not None:
+        view = today_view(owner_id, using_model=request_brain.using_model)
+        return {
+            "kind": "answered",
+            "source": "cooper",
+            "intent": intent,
+            **answer_planning_intent(intent, body.text, view),
+            "view": view,
+        }
     with store.session() as session:
         open_items = store.open_items(session, owner_id)
         open_items = [item for item in open_items if _is_local_item(item, owner_id)]
@@ -1022,6 +1035,211 @@ def say(body: Say, request: Request) -> dict[str, Any]:
         "source": action.source,
         "view": today_view(owner_id, using_model=request_brain.using_model),
     }
+
+
+def answer_planning_intent(
+    intent: AskIntent, question: str, view: dict[str, Any]
+) -> dict[str, Any]:
+    """Render common planning answers from the canonical snapshot, never from model opinion."""
+    planning = view["planning"]
+    tasks = planning["tasks"]
+    commitments = planning["commitments"]
+    warnings = [
+        entry.get("message") or f"{str(entry['source']).title()} calendar is unavailable."
+        for entry in planning["source_health"]
+        if entry["status"] != "ok"
+    ]
+    facts: list[str] = []
+
+    if intent == "focus_week":
+        if not tasks:
+            message = "You have no open COOPER tasks to prioritize this week."
+        else:
+            task = tasks[0]
+            reason = _recommendation_reason(task, view["timezone"])
+            message = f"Focus on {task['title']} first{reason}."
+            facts.append(f"{task['title']} · {reason.removeprefix(' because ')}")
+    elif intent == "remaining_today":
+        remaining = _commitments_on_day(
+            commitments,
+            view["today"],
+            view["timezone"],
+            after=dt.datetime.fromisoformat(view["now"]),
+        )
+        if not remaining:
+            message = "You have no remaining calendar commitments today."
+        else:
+            facts = [_commitment_fact(entry, view["timezone"]) for entry in remaining]
+            message = f"You still have {len(remaining)} today: " + "; ".join(facts) + "."
+    elif intent == "work_next":
+        identity = planning["focus"]["now_id"] or planning["focus"]["next_id"]
+        commitment = next((entry for entry in commitments if entry["id"] == identity), None)
+        task = next((entry for entry in tasks if entry["id"] == identity), None)
+        if commitment:
+            fact = _commitment_fact(commitment, view["timezone"])
+            message = f"Your next commitment is {fact}."
+            facts.append(fact)
+        elif task:
+            reason = _recommendation_reason(task, view["timezone"])
+            message = f"Work on {task['title']} next{reason}."
+            facts.append(f"{task['title']} · {reason.removeprefix(' because ')}")
+        else:
+            message = "Nothing is waiting in your COOPER plan right now."
+    elif intent == "fit_duration":
+        requested = _requested_minutes(question)
+        free = planning["metrics"]["largest_free_block_minutes"]
+        if not planning["complete"]:
+            message = "I can’t confirm a free block while a connected calendar is unavailable."
+        elif requested is None:
+            message = f"Your largest remaining free block today is {free} minutes."
+        elif free >= requested:
+            message = f"Yes. A {requested}-minute session fits in your {free}-minute free block."
+        else:
+            message = (
+                f"Not as one block today. You need {requested} minutes, and your largest free "
+                f"block is {free} minutes."
+            )
+        facts.append(f"Largest free block · {free} minutes")
+    elif intent == "deadline_summary":
+        zone = ZoneInfo(view["timezone"])
+        today = dt.date.fromisoformat(view["today"])
+        deadlines = [
+            task
+            for task in tasks
+            if task.get("due")
+            and dt.datetime.fromisoformat(task["due"]).astimezone(zone).date()
+            <= today + dt.timedelta(days=7)
+        ]
+        if not deadlines:
+            message = "You have no open deadlines in the next seven days."
+        else:
+            facts = [
+                f"{task['title']} · due "
+                f"{dt.datetime.fromisoformat(task['due']).astimezone(zone).strftime('%a %d %b')}"
+                for task in deadlines
+            ]
+            noun = "deadlines" if len(deadlines) != 1 else "deadline"
+            message = f"You have {len(deadlines)} {noun}: " + "; ".join(facts) + "."
+    else:
+        target = (
+            dt.date.fromisoformat(view["today"]) + dt.timedelta(days=1)
+            if "tomorrow" in question.casefold()
+            else dt.date.fromisoformat(view["today"])
+        )
+        day_commitments = _commitments_on_day(commitments, target.isoformat(), view["timezone"])
+        conflicts = _conflict_count(day_commitments)
+        occupied = _occupied_minutes(day_commitments, target, view["timezone"])
+        overloaded = conflicts > 0 or occupied >= 7 * 60
+        label = "tomorrow" if target.isoformat() != view["today"] else "today"
+        message = (
+            f"{label.title()} looks overloaded: {len(day_commitments)} commitments occupy "
+            f"{occupied} minutes, with {conflicts} conflict{'s' if conflicts != 1 else ''}."
+            if overloaded
+            else f"{label.title()} is not overloaded: {len(day_commitments)} commitments "
+            f"occupy {occupied} minutes."
+        )
+        facts.extend([f"Scheduled · {len(day_commitments)}", f"Occupied · {occupied} minutes"])
+
+    return {"message": message, "facts": facts, "warnings": warnings}
+
+
+def _recommendation_reason(task: dict[str, Any], timezone: str) -> str:
+    if task.get("pinned"):
+        return " because you pinned it"
+    if task.get("due"):
+        due = dt.datetime.fromisoformat(task["due"]).astimezone(ZoneInfo(timezone))
+        return f" because it is due {due.strftime('%a %d %b')}"
+    if task.get("importance", 3) >= 4:
+        return " because it is marked important"
+    return ""
+
+
+def _day_bounds(day: str, timezone: str) -> tuple[dt.datetime, dt.datetime]:
+    zone = ZoneInfo(timezone)
+    local_day = dt.date.fromisoformat(day)
+    start = dt.datetime.combine(local_day, dt.time(), tzinfo=zone).astimezone(dt.UTC)
+    end = dt.datetime.combine(local_day + dt.timedelta(days=1), dt.time(), tzinfo=zone).astimezone(
+        dt.UTC
+    )
+    return start, end
+
+
+def _commitments_on_day(
+    commitments: list[dict[str, Any]],
+    day: str,
+    timezone: str,
+    *,
+    after: dt.datetime | None = None,
+) -> list[dict[str, Any]]:
+    start, end = _day_bounds(day, timezone)
+    threshold = after.astimezone(dt.UTC) if after else start
+    return [
+        entry
+        for entry in commitments
+        if dt.datetime.fromisoformat(entry["start_at"]) < end
+        and max(start, threshold) < dt.datetime.fromisoformat(entry["end_at"])
+    ]
+
+
+def _commitment_fact(commitment: dict[str, Any], timezone: str) -> str:
+    if commitment.get("all_day"):
+        return f"{commitment['title']} all day"
+    starts = dt.datetime.fromisoformat(commitment["start_at"]).astimezone(ZoneInfo(timezone))
+    return f"{commitment['title']} at {starts.strftime('%-I:%M %p')}"
+
+
+def _requested_minutes(question: str) -> int | None:
+    lowered = question.casefold().replace("-", " ")
+    words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+    }
+    match = re.search(
+        r"\b(?P<amount>\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight)\s*"
+        r"(?P<unit>hours?|hrs?|minutes?|mins?)\b",
+        lowered,
+    )
+    if not match:
+        return None
+    raw = match.group("amount")
+    amount = float(words.get(raw, raw))
+    return round(amount * 60) if match.group("unit").startswith(("h", "hr")) else round(amount)
+
+
+def _conflict_count(commitments: list[dict[str, Any]]) -> int:
+    count = 0
+    for index, first in enumerate(commitments):
+        first_start = dt.datetime.fromisoformat(first["start_at"])
+        first_end = dt.datetime.fromisoformat(first["end_at"])
+        for second in commitments[index + 1 :]:
+            if (
+                first_start < dt.datetime.fromisoformat(second["end_at"])
+                and dt.datetime.fromisoformat(second["start_at"]) < first_end
+            ):
+                count += 1
+    return count
+
+
+def _occupied_minutes(commitments: list[dict[str, Any]], day: dt.date, timezone: str) -> int:
+    start, end = _day_bounds(day.isoformat(), timezone)
+    spans = sources.merge_intervals(
+        [
+            (
+                max(start, dt.datetime.fromisoformat(entry["start_at"])),
+                min(end, dt.datetime.fromisoformat(entry["end_at"])),
+            )
+            for entry in commitments
+        ]
+    )
+    return round(
+        sum((span_end - span_start).total_seconds() / 60 for span_start, span_end in spans)
+    )
 
 
 def answer_with_tools(

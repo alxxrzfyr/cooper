@@ -13,6 +13,14 @@ from zoneinfo import ZoneInfo
 
 Verb = Literal["add", "batch", "complete", "drop", "pin", "schedule", "show", "undo", "ask"]
 Category = Literal["academics", "work", "organizations", "personal"]
+AskIntent = Literal[
+    "focus_week",
+    "remaining_today",
+    "work_next",
+    "fit_duration",
+    "deadline_summary",
+    "overload_check",
+]
 
 VERBS = ("add", "batch", "complete", "drop", "pin", "schedule", "show", "undo", "ask")
 CATEGORIES = ("academics", "work", "organizations", "personal")
@@ -723,6 +731,26 @@ def looks_like_a_question(text: str) -> bool:
     if _CREATE_REQUEST.match(lowered):
         return False
     return lowered.endswith("?") or bool(_QUESTION.match(lowered))
+
+
+def classify_ask_intent(text: str) -> AskIntent | None:
+    """Map common planning questions to bounded product calculations."""
+    lowered = " ".join(text.casefold().split())
+    if not lowered or not looks_like_a_question(lowered):
+        return None
+    if re.search(r"\b(?:fit|enough time|free block)\b", lowered):
+        return "fit_duration"
+    if re.search(r"\b(?:deadline|deadlines|due)\b", lowered):
+        return "deadline_summary"
+    if re.search(r"\b(?:overloaded|overbooked|too busy|busy day)\b", lowered):
+        return "overload_check"
+    if re.search(r"\b(?:left|remain|remaining|still have|on my plate)\b", lowered):
+        return "remaining_today"
+    if re.search(r"\b(?:next|work on now|do now|do first)\b", lowered):
+        return "work_next"
+    if re.search(r"\b(?:focus|prioriti[sz]e|this week)\b", lowered):
+        return "focus_week"
+    return None
 
 
 def parse_with_rules(sentence: str, *, tz: str) -> Action:

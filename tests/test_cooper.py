@@ -24,7 +24,7 @@ from cooper import (  # noqa: E402
     brain,
     sources,
 )
-from cooper.brain import parse_with_rules  # noqa: E402
+from cooper.brain import classify_ask_intent, parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
 from cooper.planner import Hours, build_planning_snapshot, place, rank, task_state  # noqa: E402
 
@@ -39,6 +39,24 @@ def read(sentence: str):
 
 
 class TestReadingSentences:
+    @pytest.mark.parametrize(
+        ("question", "intent"),
+        [
+            ("What should I focus on this week?", "focus_week"),
+            ("How much is left on my plate today?", "remaining_today"),
+            ("What should I work on next?", "work_next"),
+            ("Can I fit a two-hour study session tonight?", "fit_duration"),
+            ("What deadlines do I have this week?", "deadline_summary"),
+            ("Am I overloaded tomorrow?", "overload_check"),
+        ],
+    )
+    def test_product_questions_have_bounded_intents(self, question: str, intent: str) -> None:
+        assert classify_ask_intent(question) == intent
+
+    def test_create_requests_are_not_swallowed_as_planning_questions(self) -> None:
+        assert classify_ask_intent("Schedule a two-hour study session tonight") is None
+        assert classify_ask_intent("Add my exam Friday at 3pm") is None
+
     def test_a_plain_sentence_becomes_a_task(self) -> None:
         action = read("write the quarterly report")
 

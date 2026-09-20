@@ -606,10 +606,92 @@ class TestTheTwoModes:
             module.brain, "_generate", lambda prompt, **kwargs: "Start with the report."
         )
 
-        reply = ask(client, "what should I focus on")
+        reply = ask(client, "how long is the report?")
 
         assert reply["kind"] == "answered"
         assert reply["message"] == "Start with the report."
+
+    def test_focus_question_is_grounded_without_calling_a_model(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        say(client, "write the report, 90m, important")
+        monkeypatch.setattr(
+            module.brain,
+            "_generate",
+            lambda *args, **kwargs: pytest.fail("a curated planning question reached Gemini"),
+        )
+
+        reply = ask(client, "What should I focus on this week?")
+
+        assert reply["kind"] == "answered"
+        assert "write the report" in reply["message"].lower()
+        assert reply["intent"] == "focus_week"
+        assert reply["facts"]
+
+    def test_remaining_today_includes_external_calendar_commitments(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        fixed = dt.datetime(2026, 9, 20, 1, 0, tzinfo=dt.UTC)
+        monkeypatch.setattr(module, "now", lambda: fixed)
+
+        def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+            health.append({"source": "google", "status": "ok"})
+            return [
+                {
+                    "source": "google",
+                    "event_id": "meeting-1",
+                    "title": "Design review",
+                    "start_at": (fixed + dt.timedelta(hours=2)).isoformat(),
+                    "end_at": (fixed + dt.timedelta(hours=3)).isoformat(),
+                    "category": "work",
+                    "mine": False,
+                    "all_day": False,
+                }
+            ]
+
+        monkeypatch.setattr(module, "google_events", google_events)
+
+        reply = ask(client, "What do I still have today?")
+
+        assert reply["kind"] == "answered"
+        assert "Design review" in reply["message"]
+        assert reply["intent"] == "remaining_today"
+
+    def test_fit_question_refuses_to_invent_time_when_a_provider_is_unavailable(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        def unavailable(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+            health.append(
+                {
+                    "source": "google",
+                    "status": "unavailable",
+                    "message": "Google calendar could not be refreshed.",
+                }
+            )
+            return []
+
+        monkeypatch.setattr(module, "google_events", unavailable)
+
+        reply = ask(client, "Can I fit a two-hour study session tonight?")
+
+        assert reply["kind"] == "answered"
+        assert "can’t confirm" in reply["message"].lower()
+        assert reply["warnings"]
+
+    def test_unknown_typed_intent_is_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/say",
+            json={"text": "What next?", "mode": "ai", "intent": "make_it_up"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
 
     def test_an_answer_never_changes_anything(self, client: TestClient, monkeypatch) -> None:
         import cooper.app as module
@@ -675,7 +757,7 @@ class TestTheTwoModes:
             lambda prompt, **kwargs: prompts.append(prompt) or "Nothing from my local plan.",
         )
 
-        reply = ask(client, "what should I do first")
+        reply = ask(client, "how much time have I estimated?")
 
         assert reply["kind"] == "answered"
         assert prompts
@@ -693,7 +775,7 @@ class TestTheTwoModes:
         monkeypatch.setattr(module.brain, "_key", "pretend-there-is-a-key")
         monkeypatch.setattr(module.brain, "_generate", explode)
 
-        reply = ask(client, "what should I do first")
+        reply = ask(client, "how long is my first task?")
 
         assert reply["kind"] == "shown"
 
@@ -791,7 +873,7 @@ class TestTheTwoModes:
         assert secret not in response.text
         assert "gemini_api_key" in response.text
 
-    def test_ai_question_uses_one_model_call_with_a_browser_key(
+    def test_curated_ai_question_does_not_spend_the_browser_key(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import cooper.app as module
@@ -811,7 +893,8 @@ class TestTheTwoModes:
 
         assert response.status_code == 200
         assert response.json()["kind"] == "answered"
-        assert len(calls) == 1
+        assert response.json()["source"] == "cooper"
+        assert calls == []
 
 
 class TestGmailReconciliation:
@@ -1372,7 +1455,7 @@ class TestRequestOwnership:
 
             response = client.post(
                 "/api/say",
-                json={"text": "what is on my plate", "mode": "ai"},
+                json={"text": "how long is my report?", "mode": "ai"},
                 headers={"Authorization": "Bearer verified"},
             )
 
@@ -2522,7 +2605,7 @@ class TestTheAIPathDoesNotCreateOffTopicContent:
 
         monkeypatch.setattr(module.brain, "_generate", capture)
 
-        body = ask(client, "what is on my plate")
+        body = ask(client, "how long is my reminder?")
 
         assert body["kind"] == "answered"
         assert seen, "the model was never called"
