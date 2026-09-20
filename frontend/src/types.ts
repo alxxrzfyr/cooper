@@ -173,6 +173,19 @@ export interface PlanningSnapshot {
   };
 }
 
+export interface MutationReceipt {
+  operation: "create" | "schedule";
+  items: Array<{
+    id: string;
+    title: string;
+    state: PlanningTaskState;
+    start_at: string | null;
+    end_at: string | null;
+  }>;
+  warnings: string[];
+  snapshot_generated_at: string;
+}
+
 export interface GmailHealth {
   configured: boolean;
   connected: boolean;
@@ -232,8 +245,20 @@ export interface Reply {
   chip?: string[];
   source?: string;
   tools?: { name: string; ok: boolean }[];
+  intent?: AskIntent;
+  facts?: string[];
+  warnings?: string[];
+  receipt?: MutationReceipt;
   view: View;
 }
+
+export type AskIntent =
+  | "focus_week"
+  | "remaining_today"
+  | "work_next"
+  | "fit_duration"
+  | "deadline_summary"
+  | "overload_check";
 
 /** A backend failure worth showing rather than swallowing. */
 export class ApiError extends Error {

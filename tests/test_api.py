@@ -195,6 +195,47 @@ def test_today_exposes_one_planning_snapshot_for_local_and_provider_items(
     assert body["planning"]["source_health"] == body["source_health"]
 
 
+def test_successful_add_returns_a_receipt_from_committed_state(client: TestClient) -> None:
+    body = say(client, "write the report, 60m")
+
+    receipt = body["receipt"]
+    assert receipt["operation"] == "create"
+    assert receipt["items"][0]["id"] == body["item"]["id"]
+    assert receipt["items"][0]["state"] in {"scheduled", "in_progress"}
+    assert receipt["items"][0]["start_at"] == body["item"]["start_at"]
+    assert receipt["snapshot_generated_at"] == body["view"]["planning"]["generated_at"]
+    assert "COOPER" in body["message"]
+
+
+def test_manual_create_returns_the_same_verified_receipt(client: TestClient) -> None:
+    response = client.post(
+        "/api/items",
+        headers=HEADERS,
+        json={"title": "Buy printer ink"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["receipt"]["operation"] == "create"
+    assert body["receipt"]["items"][0]["id"] == body["item"]["id"]
+    assert body["receipt"]["items"][0]["state"] == "not_started"
+
+
+def test_schedule_one_receipt_matches_the_refreshed_snapshot(client: TestClient) -> None:
+    created = say(client, "review notes")
+    item_id = created["item"]["id"]
+    client.patch(f"/api/items/{item_id}", headers=HEADERS, json={"minutes": 30})
+
+    response = client.post(f"/api/items/{item_id}/schedule", headers=HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    verified = next(item for item in body["view"]["planning"]["tasks"] if item["id"] == item_id)
+    assert body["receipt"]["operation"] == "schedule"
+    assert body["receipt"]["items"][0]["start_at"] == verified["start_at"]
+    assert body["receipt"]["items"][0]["state"] in {"scheduled", "in_progress"}
+
+
 def test_mcp_catalog_and_disconnected_read(client):
     def rpc(method, params=None):
         return client.post(

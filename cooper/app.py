@@ -1030,11 +1030,18 @@ def say(body: Say, request: Request) -> dict[str, Any]:
             }
 
     result = run(owner_id, action)
-    return {
-        **result,
-        "source": action.source,
-        "view": today_view(owner_id, using_model=request_brain.using_model),
-    }
+    view = today_view(owner_id, using_model=request_brain.using_model)
+    item_ids = result.pop("_item_ids", None)
+    if result.get("kind") in {"added", "scheduled"} and (
+        item_ids or isinstance(result.get("item"), dict)
+    ):
+        result = _verified_write_response(
+            result,
+            view,
+            operation="schedule" if result["kind"] == "scheduled" else "create",
+            item_ids=item_ids or [result["item"]["id"]],
+        )
+    return {**result, "source": action.source, "view": view}
 
 
 def answer_planning_intent(
@@ -1141,6 +1148,100 @@ def answer_planning_intent(
         facts.extend([f"Scheduled · {len(day_commitments)}", f"Occupied · {occupied} minutes"])
 
     return {"message": message, "facts": facts, "warnings": warnings}
+
+
+def _verified_write_response(
+    result: dict[str, Any],
+    view: dict[str, Any],
+    *,
+    operation: Literal["create", "schedule"],
+    item_ids: list[str],
+) -> dict[str, Any]:
+    receipt = _mutation_receipt(view, operation=operation, item_ids=item_ids)
+    return {**result, "message": _receipt_message(receipt), "receipt": receipt}
+
+
+def _mutation_receipt(
+    view: dict[str, Any],
+    *,
+    operation: Literal["create", "schedule"],
+    item_ids: list[str],
+) -> dict[str, Any]:
+    planning = view["planning"]
+    tasks = {task["id"]: task for task in planning["tasks"]}
+    commitments = {
+        commitment["local_item_id"]: commitment
+        for commitment in planning["commitments"]
+        if commitment.get("local_item_id")
+    }
+    verified = []
+    warnings = [
+        health.get("message") or f"{str(health['source']).title()} calendar is unavailable."
+        for health in planning["source_health"]
+        if health["status"] != "ok"
+    ]
+    at = dt.datetime.fromisoformat(view["now"])
+    for item_id in item_ids:
+        task = tasks.get(item_id)
+        commitment = commitments.get(item_id)
+        if task is None and commitment is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "COOPER saved the change but could not verify its current state. "
+                    "Refresh before trying again."
+                ),
+            )
+        item = task or commitment.get("item") or commitment
+        state = task.get("state") if task else _commitment_state(commitment, at)
+        waiting_reason = task.get("waiting_reason") if task else None
+        if waiting_reason:
+            warnings.append(waiting_reason)
+        verified.append(
+            {
+                "id": item_id,
+                "title": item["title"],
+                "state": state,
+                "start_at": task.get("start_at") if task else commitment["start_at"],
+                "end_at": task.get("end_at") if task else commitment["end_at"],
+            }
+        )
+    return {
+        "operation": operation,
+        "items": verified,
+        "warnings": list(dict.fromkeys(warnings)),
+        "snapshot_generated_at": planning["generated_at"],
+    }
+
+
+def _commitment_state(commitment: dict[str, Any], at: dt.datetime) -> str:
+    start = dt.datetime.fromisoformat(commitment["start_at"])
+    end = dt.datetime.fromisoformat(commitment["end_at"])
+    if start <= at < end:
+        return "in_progress"
+    if end <= at:
+        return "missed_block"
+    return "scheduled"
+
+
+def _receipt_message(receipt: dict[str, Any]) -> str:
+    items = receipt["items"]
+    operation = receipt["operation"]
+    if len(items) != 1:
+        verb = "Added" if operation == "create" else "Scheduled"
+        noun = "tasks" if operation == "create" else "items"
+        return f"{verb} {len(items)} {noun} in COOPER."
+    item = items[0]
+    verb = "Added" if operation == "create" else "Scheduled"
+    if item["start_at"] and item["end_at"]:
+        zone = ZoneInfo(settings.timezone)
+        start = dt.datetime.fromisoformat(item["start_at"]).astimezone(zone)
+        end = dt.datetime.fromisoformat(item["end_at"]).astimezone(zone)
+        return (
+            f"{verb} “{item['title']}” in COOPER for "
+            f"{start.strftime('%a %-I:%M %p')}–{end.strftime('%-I:%M %p')}."
+        )
+    return f"{verb} “{item['title']}” in COOPER."
 
 
 def _recommendation_reason(task: dict[str, Any], timezone: str) -> str:
@@ -1362,6 +1463,7 @@ def run(owner_id: str, action: Action) -> dict[str, Any]:
             "kind": "scheduled",
             "message": f"Placed {len(placed)} into your hours.",
             "chip": [f"{slot.title} · {slot.start.strftime('%a %H:%M')}" for slot in placed],
+            "_item_ids": [slot.item_id for slot in placed],
         }
 
     if action.verb == "add":
@@ -1671,6 +1773,7 @@ def add_batch(owner_id: str, action: Action) -> dict[str, Any]:
         "kind": "added",
         "message": message,
         "item": first,
+        "_item_ids": created,
         "chip": [
             f"{payload['title']} · {to_local(payload['start_at'])}"
             if payload["start_at"]
@@ -1918,7 +2021,14 @@ def create(body: NewItem, request: Request) -> dict[str, Any]:
     if action.is_question:
         raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
     result = add(owner_id, action)
-    return {**result, "source": "form", "view": today_view(owner_id)}
+    view = today_view(owner_id)
+    result = _verified_write_response(
+        result,
+        view,
+        operation="create",
+        item_ids=[result["item"]["id"]],
+    )
+    return {**result, "source": "form", "view": view}
 
 
 class BulkMatch(BaseModel):
@@ -2032,12 +2142,17 @@ def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
             if result.get("start_at")
             else result["waiting_reason"]
         )
-        return {
+        view = today_view(owner_id)
+        response = {
             "kind": "scheduled" if result.get("start_at") else "note",
             "message": message,
             "item": result,
-            "view": today_view(owner_id),
         }
+        if response["kind"] == "scheduled":
+            response = _verified_write_response(
+                response, view, operation="schedule", item_ids=[item_id]
+            )
+        return {**response, "view": view}
     if verb not in ("complete", "drop", "pin"):
         raise HTTPException(status_code=404, detail="Unknown action.")
     with store.session() as session:
@@ -2054,7 +2169,8 @@ def act(item_id: str, verb: str, request: Request) -> dict[str, Any]:
 def do_schedule(request: Request) -> dict[str, Any]:
     owner_id = request_owner(request).uid
     slots = schedule_now(owner_id)
-    return {
+    view = today_view(owner_id)
+    response = {
         "placed": [
             {
                 "item_id": slot.item_id,
@@ -2065,8 +2181,14 @@ def do_schedule(request: Request) -> dict[str, Any]:
             }
             for slot in slots
         ],
-        "view": today_view(owner_id),
+        "view": view,
     }
+    if slots:
+        receipt = _mutation_receipt(
+            view, operation="schedule", item_ids=[slot.item_id for slot in slots]
+        )
+        response["receipt"] = receipt
+    return response
 
 
 @app.post("/api/undo")
