@@ -26,7 +26,7 @@ from cooper import (  # noqa: E402
 )
 from cooper.brain import parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
-from cooper.planner import Hours, place, rank  # noqa: E402
+from cooper.planner import Hours, place, rank, task_state  # noqa: E402
 
 TZ = "Asia/Singapore"
 ZONE = ZoneInfo(TZ)
@@ -246,6 +246,21 @@ class TestCommitmentSources:
 
 
 class TestRanking:
+    def test_importance_breaks_ties_between_comparable_tasks(self) -> None:
+        normal = task(title="normal", importance=3, due=NOW + dt.timedelta(days=3))
+        critical = task(title="critical", importance=5, due=normal.due)
+
+        assert [entry.item.title for entry in rank([normal, critical], at=NOW)] == [
+            "critical",
+            "normal",
+        ]
+
+    def test_a_deadline_today_beats_critical_work_due_much_later(self) -> None:
+        today = task(title="due today", importance=3, due=NOW + dt.timedelta(hours=8))
+        later = task(title="critical later", importance=5, due=NOW + dt.timedelta(days=13))
+
+        assert rank([later, today], at=NOW)[0].item.title == "due today"
+
     def test_an_urgent_task_beats_a_relaxed_one(self) -> None:
         soon = task(title="urgent", due=NOW + dt.timedelta(hours=6), importance=5)
         later = task(title="someday", importance=2)
@@ -273,7 +288,8 @@ class TestRanking:
     def test_every_row_explains_itself(self) -> None:
         entry = rank([task(importance=5, due=NOW)], at=NOW)[0]
 
-        assert set(entry.why) == {"due", "age", "quick"}
+        assert set(entry.why) == {"due", "importance", "age", "quick"}
+        assert entry.why["importance"] == 1.0
         assert entry.score > 0
 
     def test_an_overdue_task_saturates_its_urgency(self) -> None:
@@ -285,6 +301,64 @@ class TestRanking:
         items = [task(title=name) for name in ("a", "b", "c")]
 
         assert [e.item.id for e in rank(items, at=NOW)] == [e.item.id for e in rank(items, at=NOW)]
+
+
+class TestTaskState:
+    def test_terminal_states_are_preserved(self) -> None:
+        assert task_state(task(status="done"), at=NOW) == "completed"
+        assert task_state(task(status="dropped"), at=NOW) == "dropped"
+
+    def test_unscheduled_open_work_is_not_started(self) -> None:
+        assert task_state(task(), at=NOW) == "not_started"
+
+    def test_future_work_is_scheduled(self) -> None:
+        start = NOW + dt.timedelta(hours=2)
+        assert (
+            task_state(task(start_at=start, end_at=start + dt.timedelta(hours=1)), at=NOW)
+            == "scheduled"
+        )
+
+    def test_current_work_is_in_progress(self) -> None:
+        assert (
+            task_state(
+                task(
+                    start_at=NOW - dt.timedelta(minutes=15),
+                    end_at=NOW + dt.timedelta(minutes=45),
+                ),
+                at=NOW,
+            )
+            == "in_progress"
+        )
+
+    def test_unplaced_work_is_blocked_when_availability_is_unknown(self) -> None:
+        assert task_state(task(minutes=60), at=NOW, availability_complete=False) == "blocked"
+
+    def test_scheduled_work_is_not_blocked_by_provider_health(self) -> None:
+        start = NOW + dt.timedelta(hours=2)
+        assert (
+            task_state(
+                task(start_at=start, end_at=start + dt.timedelta(hours=1)),
+                at=NOW,
+                availability_complete=False,
+            )
+            == "scheduled"
+        )
+
+    def test_incomplete_work_after_its_deadline_is_overdue(self) -> None:
+        assert task_state(task(due=NOW - dt.timedelta(minutes=1)), at=NOW) == "overdue"
+
+    def test_past_work_block_without_a_passed_deadline_is_missed(self) -> None:
+        assert (
+            task_state(
+                task(
+                    start_at=NOW - dt.timedelta(hours=2),
+                    end_at=NOW - dt.timedelta(hours=1),
+                    due=NOW + dt.timedelta(days=1),
+                ),
+                at=NOW,
+            )
+            == "missed_block"
+        )
 
 
 class TestPlacing:

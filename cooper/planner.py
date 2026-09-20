@@ -11,14 +11,16 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from cooper.db import Item, aware
 
 # Score weights sum to 1. The deadline has the greatest weight.
 W_DUE = 0.60
-W_AGE = 0.15
-W_QUICK = 0.25
+W_IMPORTANCE = 0.20
+W_AGE = 0.10
+W_QUICK = 0.10
 
 HORIZON_DAYS = 14
 GAP = 10
@@ -43,7 +45,12 @@ def rank(items: list[Item], *, at: dt.datetime) -> list[Scored]:
         if item.status != "open" or item.kind != "task":
             continue
         why = _terms(item, at=at)
-        total = why["due"] * W_DUE + why["age"] * W_AGE + why["quick"] * W_QUICK
+        total = (
+            why["due"] * W_DUE
+            + why["importance"] * W_IMPORTANCE
+            + why["age"] * W_AGE
+            + why["quick"] * W_QUICK
+        )
         scored.append(Scored(item=item, score=round(total, 3), why=why))
 
     scored.sort(
@@ -73,9 +80,46 @@ def _terms(item: Item, *, at: dt.datetime) -> dict[str, float]:
 
     return {
         "due": round(due_term, 3),
+        "importance": round((item.importance - 1) / 4, 3),
         "age": round(min(age_days / 21, 1.0), 3),
         "quick": round(quick, 3),
     }
+
+
+TaskState = Literal[
+    "not_started",
+    "scheduled",
+    "in_progress",
+    "blocked",
+    "overdue",
+    "missed_block",
+    "completed",
+    "dropped",
+]
+
+
+def task_state(item: Item, *, at: dt.datetime, availability_complete: bool = True) -> TaskState:
+    """Derive the useful planning state without adding workflow columns."""
+    if item.status == "done":
+        return "completed"
+    if item.status == "dropped":
+        return "dropped"
+
+    due = aware(item.due)
+    if due is not None and due < at:
+        return "overdue"
+
+    start, end = aware(item.start_at), aware(item.end_at)
+    if start is not None and end is not None:
+        if start <= at < end:
+            return "in_progress"
+        if end <= at:
+            return "missed_block"
+        return "scheduled"
+
+    if not availability_complete and item.minutes is not None and item.minutes > 0:
+        return "blocked"
+    return "not_started"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
