@@ -581,14 +581,15 @@ class TestPlanningSnapshot:
         )
 
     @staticmethod
-    def hours() -> Hours:
-        return Hours(
-            timezone="UTC",
-            weekdays=tuple(range(7)),
-            start_hour=9,
-            end_hour=18,
-            max_per_day=8,
-        )
+    def hours(**overrides: object) -> Hours:
+        defaults: dict[str, object] = {
+            "timezone": "UTC",
+            "weekdays": tuple(range(7)),
+            "start_hour": 9,
+            "end_hour": 18,
+            "max_per_day": 8,
+        }
+        return Hours(**(defaults | overrides))  # type: ignore[arg-type]
 
     def test_metrics_count_every_mixed_source_commitment_once(self) -> None:
         start = NOW + dt.timedelta(hours=1)
@@ -700,14 +701,39 @@ class TestPlanningSnapshot:
             items=[recommended],
             commitments=[later],
             source_health=[],
-            hours=self.hours(),
+            hours=self.hours(start_hour=0),
             at=NOW,
         )
 
+        assert snapshot["metrics"]["current_free_block_minutes"] >= recommended.minutes
         assert snapshot["metrics"]["largest_free_block_minutes"] >= recommended.minutes
         assert snapshot["focus"] == {
             "now_id": recommended.id,
             "next_id": later.id,
+        }
+
+    def test_idle_focus_only_recommends_work_that_fits_before_the_next_commitment(self) -> None:
+        too_long = task(id="too-long", title="Write report", minutes=11, importance=5)
+        fits_now = task(id="fits-now", title="Send reply", minutes=10, importance=4)
+        imminent = self.commitment(
+            "google:imminent",
+            start=NOW + dt.timedelta(minutes=10),
+            end=NOW + dt.timedelta(hours=1),
+        )
+
+        snapshot = build_planning_snapshot(
+            items=[too_long, fits_now],
+            commitments=[imminent],
+            source_health=[],
+            hours=self.hours(start_hour=0),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["current_free_block_minutes"] == 10
+        assert snapshot["metrics"]["largest_free_block_minutes"] >= too_long.minutes
+        assert snapshot["focus"] == {
+            "now_id": fits_now.id,
+            "next_id": imminent.id,
         }
 
 

@@ -166,6 +166,13 @@ def build_planning_snapshot(
         day_end=day_end,
         occupied=occupied,
     )
+    current_free = _current_free_block(
+        hours=hours,
+        at=at,
+        day_start=day_start,
+        day_end=day_end,
+        occupied=occupied,
+    )
 
     active = next((entry for entry in unique if entry.start <= at < entry.end), None)
     upcoming = next((entry for entry in unique if entry.start > at), None)
@@ -176,7 +183,7 @@ def build_planning_snapshot(
             if complete
             and task["start_at"] is None
             and task["minutes"] is not None
-            and 0 < task["minutes"] <= largest_free
+            and 0 < task["minutes"] <= current_free
         ),
         None,
     )
@@ -232,6 +239,7 @@ def build_planning_snapshot(
             "remaining_effort_minutes": sum(
                 item.minutes or 0 for item in items if item.kind == "task" and item.status == "open"
             ),
+            "current_free_block_minutes": current_free,
             "largest_free_block_minutes": largest_free,
             "conflict_count": conflicts,
         },
@@ -275,6 +283,29 @@ def _largest_free_block(
             cursor = max(cursor, busy_end)
         largest = max(largest, (limit - cursor).total_seconds() / 60)
     return max(0, round(largest))
+
+
+def _current_free_block(
+    *,
+    hours: Hours,
+    at: dt.datetime,
+    day_start: dt.datetime,
+    day_end: dt.datetime,
+    occupied: list[tuple[dt.datetime, dt.datetime]],
+) -> int:
+    for window_start, window_end in _windows(hours, day_start, 1):
+        limit = min(window_end, day_end)
+        if not window_start <= at < limit:
+            continue
+        for busy_start, busy_end in occupied:
+            if busy_end <= at:
+                continue
+            if busy_start <= at:
+                return 0
+            limit = min(limit, busy_start)
+            break
+        return max(0, int((limit - at).total_seconds() // 60))
+    return 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

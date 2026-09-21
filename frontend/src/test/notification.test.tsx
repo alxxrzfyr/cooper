@@ -67,6 +67,7 @@ function view(overrides: Partial<View> = {}): View {
         scheduled_count: 0,
         occupied_minutes: 0,
         remaining_effort_minutes: 30,
+        current_free_block_minutes: 0,
         largest_free_block_minutes: 0,
         conflict_count: 0,
       },

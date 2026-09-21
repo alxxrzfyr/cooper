@@ -168,6 +168,7 @@ export interface PlanningSnapshot {
     scheduled_count: number;
     occupied_minutes: number;
     remaining_effort_minutes: number;
+    current_free_block_minutes: number;
     largest_free_block_minutes: number;
     conflict_count: number;
   };

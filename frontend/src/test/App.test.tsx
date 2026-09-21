@@ -164,6 +164,7 @@ function planning(
       scheduled_count: commitments.length,
       occupied_minutes: 0,
       remaining_effort_minutes: shortlist.reduce((total, item) => total + (item.minutes ?? 0), 0),
+      current_free_block_minutes: 0,
       largest_free_block_minutes: 0,
       conflict_count: 0,
     },
@@ -1963,6 +1964,7 @@ describe("the dashboard", () => {
           scheduled_count: 0,
           occupied_minutes: 0,
           remaining_effort_minutes: 45,
+          current_free_block_minutes: 90,
           largest_free_block_minutes: 90,
           conflict_count: 0,
         },
@@ -2185,6 +2187,48 @@ describe("the dashboard", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Planning is incomplete");
     expect(screen.getByText("Outline the launch")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Plan my day" })).toBeDisabled();
+  });
+
+  test("Home does not claim free time before Next when provider data is incomplete", async () => {
+    const next = block({
+      id: "next",
+      title: "Provider-dependent meeting",
+      start_at: atLocal(TODAY, 11),
+    });
+    stub({
+      view: snapshotView({
+        complete: false,
+        source_health: [
+          { source: "google", status: "unavailable", message: "Google Calendar is unavailable." },
+        ],
+        commitments: [
+          {
+            id: "cooper:next",
+            source: "cooper",
+            source_id: next.id,
+            aliases: ["cooper:next"],
+            title: next.title,
+            kind: "task",
+            start_at: next.start_at!,
+            end_at: next.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: next.id,
+            conflict: false,
+            item: next,
+          },
+        ],
+        focus: { now_id: null, next_id: "cooper:next" },
+      }),
+    });
+    render(<App />);
+
+    const nextReference = await screen.findByRole("link", {
+      name: "Next: Provider-dependent meeting",
+    });
+    expect(nextReference).toHaveTextContent("11:00 AM–12:00 PM");
+    expect(nextReference).not.toHaveTextContent(/min free before/);
   });
 
   test("Today stays focused while upcoming commitments remain available below", async () => {

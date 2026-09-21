@@ -250,7 +250,7 @@ export function Home({
   const next = findFocus(view, planning.focus.next_id);
   const currentTime = current ? focusTime(current, zone) : null;
   const nextTime = next ? focusTime(next, zone) : null;
-  const nextFreeMinutes = next ? freeMinutesBefore(next, current, now) : null;
+  const nextFreeMinutes = planning.complete && next ? freeMinutesBefore(next, current, now) : null;
   const hasWorkToSchedule = upcomingTasks.some((task) => task.minutes !== null);
   const nothingAtAll = agenda.length === 0 && upcomingTasks.length === 0;
   const riskTargets = planning.risks.flatMap((risk) => {
@@ -340,8 +340,10 @@ export function Home({
           item={current}
           context={[
             currentTime,
-            current.kind === "task" && planning.metrics.largest_free_block_minutes > 0
-              ? `${planning.metrics.largest_free_block_minutes} min free`
+            planning.complete &&
+            current.kind === "task" &&
+            planning.metrics.current_free_block_minutes > 0
+              ? `${planning.metrics.current_free_block_minutes} min free`
               : null,
           ]}
           onComplete={onComplete}
