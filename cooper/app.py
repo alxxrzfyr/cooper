@@ -1865,44 +1865,108 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
 def reschedule(owner_id: str, action: Action, *, item_id: str | None = None) -> dict[str, Any]:
     """Resolve one visible target, then use the single existing-item writer to move it."""
     words = item_id or action.which or ""
-    with store.session() as session:
-        item = (
-            store.get_item(session, owner_id, item_id)
-            if item_id is not None
-            else find(session, owner_id, words, include_external=True)
-        )
+    if item_id is not None:
+        with store.session() as session:
+            item = store.get_item(session, owner_id, item_id)
+        if item is None:
+            _require_provider_identifier_read_only(owner_id, item_id)
+        resolved_id = item.id if item is not None else item_id
+    else:
+        resolved_id = _resolve_visible_move_target(owner_id, words)
+        if resolved_id is None:
+            return {
+                "kind": "question",
+                "message": f"I could not find “{action.which}”. Which one did you mean?",
+            }
+    return change_existing(owner_id, action, item_id=resolved_id)
 
-    if item is None:
-        _require_provider_item_read_only(owner_id, words)
-    return change_existing(owner_id, action, item_id=item.id if item is not None else item_id)
 
-
-def _require_provider_item_read_only(owner_id: str, words: str) -> None:
-    """Explain the provider boundary when a visible event has no local `Item` row."""
+def _resolve_visible_move_target(owner_id: str, words: str) -> str | None:
+    """Resolve Ask text across local rows and provider-only visible commitments together."""
     needle = words.strip().casefold()
+    if not needle:
+        return None
+
+    with store.session() as session:
+        candidates = [
+            {
+                "item_id": item.id,
+                "title": item.title,
+                "identifiers": {item.id.casefold()},
+                "provider_only": False,
+            }
+            for item in store.open_items(session, owner_id)
+        ]
+    commitments = today_view(owner_id)["planning"]["commitments"]
+    candidates.extend(
+        {
+            "item_id": None,
+            "title": str(entry["title"]),
+            "identifiers": {
+                str(identifier).casefold()
+                for identifier in [entry["id"], entry.get("source_id"), *entry["aliases"]]
+                if identifier
+            },
+            "provider_only": True,
+        }
+        for entry in commitments
+        if not entry["editable"] and entry.get("local_item_id") is None
+    )
+
+    exact = [
+        candidate
+        for candidate in candidates
+        if needle == candidate["title"].casefold() or needle in candidate["identifiers"]
+    ]
+    contained = [candidate for candidate in candidates if needle in candidate["title"].casefold()]
+    words_in_needle = [word for word in needle.split() if len(word) > 3]
+    loose = [
+        candidate
+        for candidate in candidates
+        if words_in_needle
+        and all(word in candidate["title"].casefold() for word in words_in_needle)
+    ]
+    matches = exact or contained or loose
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=f"“{words}” matches {len(matches)} items: "
+            + ", ".join(candidate["title"] for candidate in matches[:4]),
+        )
+    if not matches:
+        return None
+    match = matches[0]
+    if match["provider_only"]:
+        _raise_provider_read_only()
+    return str(match["item_id"])
+
+
+def _require_provider_identifier_read_only(owner_id: str, identifier: str) -> None:
+    """Recognize a provider-only direct target only by its opaque identifiers."""
+    needle = identifier.strip().casefold()
     if not needle:
         return
     commitments = today_view(owner_id)["planning"]["commitments"]
-    external = [entry for entry in commitments if not entry["editable"]]
-    exact = [
-        entry
-        for entry in external
-        if needle
-        in {
-            str(entry["id"]).casefold(),
-            str(entry.get("source_id") or "").casefold(),
-            str(entry["title"]).casefold(),
+    for entry in commitments:
+        if entry["editable"]:
+            continue
+        identifiers = {
+            str(value).casefold()
+            for value in [entry["id"], entry.get("source_id"), *entry["aliases"]]
+            if value
         }
-    ]
-    contained = [entry for entry in external if needle in str(entry["title"]).casefold()]
-    if exact or contained:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "External calendar items are read-only in COOPER. "
-                "Change this event in its source calendar instead."
-            ),
-        )
+        if needle in identifiers:
+            _raise_provider_read_only()
+
+
+def _raise_provider_read_only() -> None:
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "External calendar items are read-only in COOPER. "
+            "Change this event in its source calendar instead."
+        ),
+    )
 
 
 def schedule_now(owner_id: str) -> list[Slot]:

@@ -812,7 +812,7 @@ def parse_with_rules(sentence: str, *, tz: str) -> Action:
 
     move_match = _MOVE.match(lowered)
     if move_match:
-        parts = re.split(r"\s+to\s+", move_match.group("rest"), maxsplit=1)
+        parts = move_match.group("rest").rsplit(" to ", maxsplit=1)
         if len(parts) != 2 or not _clean(parts[0]):
             return Action(verb="ask", question="Which item should I move, and to what exact time?")
         which, when = _clean(parts[0]), parts[1]
@@ -824,7 +824,13 @@ def parse_with_rules(sentence: str, *, tz: str) -> Action:
         minutes = None
         if duration:
             amount, unit = float(duration.group(1)), duration.group(2)
-            minutes = int(round(amount * 60)) if unit.startswith("h") else int(round(amount))
+            exact_minutes = amount * 60 if unit.startswith("h") else amount
+            if not exact_minutes.is_integer():
+                return Action(
+                    verb="ask",
+                    question="Keep the moved duration in whole minutes, up to 24 hours.",
+                )
+            minutes = int(exact_minutes)
         return _sanity_check(
             Action(
                 verb="move",

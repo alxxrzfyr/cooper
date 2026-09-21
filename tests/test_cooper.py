@@ -155,6 +155,21 @@ class TestReadingSentences:
         assert action.end == action.start + dt.timedelta(minutes=45)
         assert action.minutes == 45
 
+    def test_a_move_parses_the_time_clause_from_the_right(self) -> None:
+        action = read("move notes to self to tomorrow at 3pm for 30m")
+
+        assert action.verb == "move"
+        assert action.which == "notes to self"
+
+    def test_a_move_rejects_fractional_minutes_but_accepts_fractional_hours(self) -> None:
+        fractional_minutes = read("move the report to tomorrow at 3pm for 1.5m")
+        fractional_hours = read("move the report to tomorrow at 3pm for 1.5h")
+
+        assert fractional_minutes.verb == "ask"
+        assert "whole" in (fractional_minutes.question or "").lower()
+        assert fractional_hours.verb == "move"
+        assert fractional_hours.minutes == 90
+
     def test_rescheduling_without_a_duration_asks(self) -> None:
         action = read("reschedule the quarterly report to tomorrow at 3pm")
 

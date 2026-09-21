@@ -333,6 +333,147 @@ def test_reschedule_keeps_ambiguous_targets_as_a_409(client: TestClient) -> None
     assert "matches 2 items" in response.json()["detail"]
 
 
+def test_reschedule_preserves_a_title_containing_to_and_moves_only_that_item(
+    client: TestClient,
+) -> None:
+    import cooper.app as module
+
+    notes = client.post("/api/items", headers=HEADERS, json={"title": "Notes"}).json()["item"]
+    notes_to_self = client.post(
+        "/api/items", headers=HEADERS, json={"title": "Notes to self"}
+    ).json()["item"]
+    target_day = dt.datetime.now(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={"text": "move notes to self to tomorrow at 3pm for 30m"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["receipt"]["items"][0]["id"] == notes_to_self["id"]
+    expected = dt.datetime.combine(target_day, dt.time(15), tzinfo=ZoneInfo("Asia/Singapore"))
+    with module.store.session() as session:
+        untouched = module.store.get_item(session, "local", notes["id"])
+        moved = module.store.get_item(session, "local", notes_to_self["id"])
+        assert untouched is not None
+        assert moved is not None
+        assert notes["start_at"] is None
+        assert untouched.start_at is None
+        assert moved.start_at == expected
+
+
+def test_reschedule_is_ambiguous_across_local_and_provider_titles(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    created = client.post("/api/items", headers=HEADERS, json={"title": "Partner briefing"}).json()[
+        "item"
+    ]
+    provider_start = module.now() + dt.timedelta(days=3)
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [
+            {
+                "source": "google",
+                "event_id": "same-visible-title",
+                "title": "Partner briefing",
+                "start_at": provider_start.isoformat(),
+                "end_at": (provider_start + dt.timedelta(hours=1)).isoformat(),
+                "category": "work",
+                "mine": False,
+                "all_day": False,
+            }
+        ]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    assert created["start_at"] is None
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={"text": "move Partner briefing to tomorrow at 3pm for 30m"},
+    )
+
+    assert response.status_code == 409
+    assert "matches 2 items" in response.json()["detail"]
+    with module.store.session() as session:
+        unchanged = module.store.get_item(session, "local", created["id"])
+        assert unchanged is not None
+        assert unchanged.start_at is None
+
+
+def test_direct_reschedule_does_not_match_a_provider_title_by_substring(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    start = module.now() + dt.timedelta(days=1)
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [
+            {
+                "source": "google",
+                "event_id": "different-provider-id",
+                "title": "Review opaque-fragment notes",
+                "start_at": start.isoformat(),
+                "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+                "category": "work",
+                "mine": False,
+                "all_day": False,
+            }
+        ]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    target_day = start.astimezone(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/items/opaque-fragment/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T15:00", "minutes": 30},
+    )
+
+    assert response.status_code == 404
+
+
+def test_direct_reschedule_recognizes_an_exact_provider_source_id(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    start = module.now() + dt.timedelta(days=1)
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [
+            {
+                "source": "google",
+                "event_id": "exact-provider-id",
+                "title": "Provider review",
+                "start_at": start.isoformat(),
+                "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+                "category": "work",
+                "mine": False,
+                "all_day": False,
+            }
+        ]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    target_day = start.astimezone(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/items/exact-provider-id/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T15:00", "minutes": 30},
+    )
+
+    assert response.status_code == 409
+    assert "read-only" in response.json()["detail"].lower()
+
+
 def test_reschedule_refuses_an_external_item_with_the_read_only_boundary(
     client: TestClient,
 ) -> None:
