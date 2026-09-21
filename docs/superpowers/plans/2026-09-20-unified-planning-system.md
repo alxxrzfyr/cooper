@@ -89,9 +89,10 @@ Execute the tasks in this release sequence:
 
 ### Release 1: Prove the trusted planning loop
 
-**Implementation status (2026-09-20):** Tasks 1, 2, 3, 4, 6, 7, and 8 are implemented and pass the
-automated backend and frontend gates. Release 1 remains in its real-use acceptance period; the
-seven-day mixed-source trust gate below is intentionally not marked complete.
+**Implementation status (updated 2026-09-21):** Tasks 1, 2, 3, 4, 6, 7, and 8 are implemented and
+passed their automated backend and frontend gates. The owner explicitly advanced Release 2 before
+the seven-day mixed-source timing gate completed. That sequencing decision does not mark the gate
+complete or create retrospective real-use evidence.
 
 - Task 1: meaningful deadline-first priority and derived state;
 - Task 2: normalization and conservative deduplication;
@@ -107,14 +108,23 @@ committed state. Record mismatches as product bugs. Do not hide them as model-qu
 
 ### Release 2: Earn the Home command center
 
-- Task 5: rebuild Home from the trusted snapshot;
-- Task 5B: add local rescheduling only after the create and schedule receipt path is proven;
-- verify Now, Next, Today, At Risk, and Upcoming against real schedules.
+**Implementation status (2026-09-21):** Tasks 5 and 5B are implemented. Home consumes the snapshot
+for Now, Next, Today, At Risk, and Upcoming, and exact local moves from Ask and Home converge on the
+same writer and verified receipt. External commitments remain visible and read-only. Final release
+verification and any new connected-account acceptance remain separate evidence gates.
 
-Do not start Release 2 because the backend types exist. Start it because Release 1 has proven that
-the underlying planning facts are trustworthy.
+- Task 5: rebuilt Home from the trusted snapshot;
+- Task 5B: added verified local rescheduling after the create and schedule receipt path;
+- automated fixtures and browser QA covered Now, Next, Today, At Risk, and Upcoming; this does not
+  replace connected-account acceptance.
+
+The original plan required the full seven-day Release 1 timing gate before this work. The owner
+explicitly advanced that gate; record this as an authorization decision, not as proof the period ran.
 
 ### Release 3: Remove compatibility fields
+
+**Implementation status:** Not started. Tasks 9 and 10 remain incomplete; this bounded Release 2
+documentation sync does not remove compatibility fields or complete Release 3 verification.
 
 - Task 9: remove legacy response fields and frontend reconstruction;
 - Task 10: complete documentation, live-provider acceptance, and release verification.
@@ -438,7 +448,7 @@ git commit -m "fix(calendar): count every unified commitment" -m "Render and cou
 - Render risk summaries as links or references to the single affected item.
 - Preserve separate desktop and mobile layout behavior.
 
-- [ ] **Step 1: Add failing Home behavior tests.**
+- [x] **Step 1: Add failing Home behavior tests.**
 
 Cover:
 
@@ -449,22 +459,22 @@ Cover:
 - external read-only affordances;
 - empty, loading, and incomplete-provider states.
 
-- [ ] **Step 2: Replace shortlist-first selection.**
+- [x] **Step 2: Replace shortlist-first selection.**
 
 Remove `const next = shortlist[0]` and browser-side `calendarEntries(...)` usage. Render Now, Next,
 Today, At Risk, and Upcoming from the snapshot.
 
-- [ ] **Step 3: Wire meaningful local actions.**
+- [x] **Step 3: Wire meaningful local actions.**
 
 Preserve complete, schedule, pin, edit, and drop behavior. Do not show mutation controls on external
 events. Do not introduce drag-and-drop.
 
-- [ ] **Step 4: Refine responsive presentation.**
+- [x] **Step 4: Refine responsive presentation.**
 
 Keep mobile as one vertical flow. Use existing tokens and continuous-corner geometry. Preserve the
 unrelated `theme.css` diff and edit only Home-specific selectors.
 
-- [ ] **Step 5: Run targeted tests and a production build.**
+- [x] **Step 5: Run targeted tests and a production build.**
 
 ```bash
 cd frontend
@@ -472,7 +482,7 @@ npm test -- src/test/App.test.tsx --no-file-parallelism
 npm run build
 ```
 
-- [ ] **Step 6: Commit the Home migration.**
+- [x] **Step 6: Commit the Home migration.**
 
 ```bash
 git add frontend/src/Home.tsx frontend/src/App.tsx frontend/src/test/App.test.tsx
@@ -493,30 +503,30 @@ git commit -m "feat(home): surface the live planning state" -m "Turn Home into a
 - Test: `tests/test_api.py`
 - Test: `frontend/src/test/App.test.tsx`
 
-**Gate:** Start only after Release 1 proves the existing create and schedule receipts against real
-mixed-source calendars.
+**Gate:** The owner explicitly advanced this timing gate after the create and schedule receipt path
+was implemented. This records authorization to proceed, not completed real-use acceptance.
 
-- [ ] **Step 1: Add failing parser and validation tests.**
+- [x] **Step 1: Add failing parser and validation tests.**
 
 Cover an exact-time local move, an ambiguous target, invalid or past times, missing duration, and a
 request targeting an external event.
 
-- [ ] **Step 2: Add failing API persistence tests.**
+- [x] **Step 2: Add failing API persistence tests.**
 
 Prove that a local move changes database state, records undo, appears at the same time in the fresh
 snapshot, and returns the read-only boundary for provider items.
 
-- [ ] **Step 3: Implement one validated reschedule path.**
+- [x] **Step 3: Implement one validated reschedule path.**
 
 Use the existing `Action` validation, `find()` ambiguity behavior, owner checks, undo record, and
 `app.py` transaction. Extend `ItemIn` only if the direct edit endpoint also needs exact start/end.
 Do not add drag-and-drop or provider write-back.
 
-- [ ] **Step 4: Wire Home and Ask to the same receipt.**
+- [x] **Step 4: Wire Home and Ask to the same receipt.**
 
 Both surfaces must render the actual committed start and end from the refreshed snapshot.
 
-- [ ] **Step 5: Run focused backend and frontend tests.**
+- [x] **Step 5: Run focused backend and frontend tests.**
 
 ```bash
 uv run pytest tests/test_cooper.py tests/test_api.py -k "move or reschedul or owner or external" -q
@@ -524,7 +534,7 @@ cd frontend
 npm test -- src/test/App.test.tsx --no-file-parallelism
 ```
 
-- [ ] **Step 6: Commit local rescheduling.**
+- [x] **Step 6: Commit local rescheduling.**
 
 ```bash
 git add cooper/brain.py cooper/app.py frontend/src/types.ts frontend/src/api.ts frontend/src/Home.tsx tests/test_cooper.py tests/test_api.py frontend/src/test/App.test.tsx
@@ -994,6 +1004,7 @@ Release 1B: Calendar, badges, Ask, and receipts consume snapshot
         |
         v
 7-day trust gate with real mixed-source schedule
+  (owner advanced timing; acceptance evidence remains open)
         |
         +-- fails --> fix snapshot/receipt; do not start Home
         |
@@ -1047,8 +1058,9 @@ legacy-field removal regression?
 ### Implementation tasks
 
 The ten task sections above are the executable task list. P1 release blockers are Tasks 1–4 and
-6–8. Task 5 and Task 5B are gated on real-use trust evidence. Task 9 must ship separately from the
-additive API release. Task 10 is the release gate.
+6–8. Tasks 5 and 5B were originally gated on real-use trust evidence; the owner explicitly advanced
+that timing gate and both are now implemented. Task 9 must ship separately from the additive API
+release. Task 10 remains the final release gate.
 
 ## Final release acceptance matrix
 

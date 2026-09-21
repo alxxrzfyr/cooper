@@ -63,7 +63,7 @@ items and go through `rank()`, not through `sources.py`.
 ```
 frontend/src/
   App.tsx           one screen: banner, plan, setup, composer
-  Home.tsx          the dashboard, and the landing screen — next, today, attention, waiting
+  Home.tsx          snapshot command center — Now, Next, Today, At Risk, Upcoming, local moves
   Form.tsx          Manual mode as fields rather than a sentence — the built requirement 6
   AvailabilitySettings.tsx weekday windows, overnight hours, breaks, and daily limits
   Chat.tsx          the conversation, grouped into runs like a messages app
@@ -93,10 +93,18 @@ only writer. Bulk verbs are `POST /api/bulk/match` (lists hits, writes nothing) 
 /api/bulk` (acts on confirmed ids, one change row for the batch); `undo_last` has a `bulk` branch
 that restores every snapshot in a single step.
 
-`Home.tsx` reuses `Row.tsx` and the `slot` classes from `Calendar.tsx`, because the dashboard is a
-new arrangement of things that already render rather than a new set of components. The one piece
-of real logic in it is deciding what counts as today, which is done from the local calendar day so
-it cannot drift with the viewer's zone.
+`Home.tsx` renders one snapshot-backed agenda. `focus.now_id`, `focus.next_id`, and risk ids are
+references to that canonical task or commitment, not copies of it. Now recommends unscheduled work
+only when it fits the safe interval from the current moment to the next commitment; an incomplete
+snapshot suppresses free-time claims. Today mixes local and external commitments, while external
+rows expose details but no mutation controls. Upcoming keeps unscheduled work and future commitments
+reachable without cloning their cards into the focus or risk sections.
+
+An editable local commitment can be moved from Home with an exact start and duration through
+`POST /api/items/{id}/move`. Ask parses the same bounded move shape. Both enter
+`app.py::reschedule`, use
+the existing-item writer and undo record, refresh the planning snapshot, and return the timing found
+in committed state. No frontend-only move state becomes authoritative.
 
 ## Data
 
@@ -178,6 +186,12 @@ after commit and generate a receipt from the state found there. If the item cann
 route reports an error instead of fabricating confirmation; overlap, waiting, and source-health
 warnings remain attached to the receipt.
 
+Local rescheduling uses the same rule: `brain.py` can propose a validated `move` action but cannot
+write it. `app.py` resolves the target across visible local and provider commitments, preserves a
+409 for ambiguity (including a local/provider title collision), rejects unknown direct ids, and
+refuses exact provider targets as read-only. A successful receipt is generated only after the moved
+local item is found at its committed start and end in a fresh snapshot.
+
 The important part of that diagram is the join. An event parsed out of an email is a _proposal_
 and goes through the same validation as a sentence you typed. There is no second write path.
 
@@ -195,7 +209,8 @@ add to them. A slot must fit the exact requested duration and finish before its 
 
 **Unsure means ask.** `find()` in `app.py` resolves by exact id, exact title, then unique
 substring. Two matches raise a 409 listing them. Zero matches returns a question. It never
-picks the closest. Bulk verbs return the list for confirmation rather than acting.
+picks the closest. Move resolution extends that ambiguity check across local rows and visible
+provider commitments before writing. Bulk verbs return the list for confirmation rather than acting.
 
 **Times are UTC in the database.** The `Utc` column type converts on write and re-tags on read.
 SQLite drops offsets, and without this a 3pm appointment displayed at 11pm and every due date
@@ -211,7 +226,8 @@ part of Cooper that can fail while nobody is watching, so it is the only part th
 that it is alive.
 
 **Read-only means read-only.** Google Calendar, iCloud, and the watcher provide commitments.
-Cooper writes new items only to its own database and calendar, and preserves legacy Google copies.
+Cooper writes new items and moves only to its own database and calendar, preserves legacy Google
+copies, and directs provider-owned move attempts back to their source calendar.
 
 ## Scoring
 
