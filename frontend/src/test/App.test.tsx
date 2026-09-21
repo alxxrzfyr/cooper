@@ -1954,7 +1954,6 @@ describe("the dashboard", () => {
     expect(nextReference).toHaveAttribute("href", "#agenda-cooper:next");
     expect(within(nextReference).getByText("Design review")).toBeVisible();
     expect(nextReference).toHaveTextContent("11:00 AM–12:00 PM");
-    expect(nextReference).toHaveTextContent("60 min free before");
 
     expect(screen.getByText("Today")).toBeInTheDocument();
     expect(document.querySelectorAll("#agenda-cooper\\:current")).toHaveLength(1);
@@ -2340,6 +2339,102 @@ describe("the dashboard", () => {
     });
     expect(nextReference).toHaveTextContent("11:00 AM–12:00 PM");
     expect(nextReference).not.toHaveTextContent(/min free before/);
+  });
+
+  test("Home renders a missed yesterday block referenced by focus and risk", async () => {
+    const missed = block({
+      id: "missed",
+      title: "Yesterday standup",
+      start_at: atLocal("2026-08-30", 9),
+    });
+    stub({
+      view: snapshotView({
+        commitments: [
+          {
+            id: "cooper:missed",
+            source: "cooper",
+            source_id: missed.id,
+            aliases: ["cooper:missed"],
+            title: missed.title,
+            kind: "task",
+            start_at: missed.start_at!,
+            end_at: missed.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: missed.id,
+            conflict: false,
+            item: { ...missed, source: "me" as const },
+          },
+        ],
+        focus: { now_id: "cooper:missed", next_id: null },
+        risks: [{ kind: "missed_block", item_id: missed.id }],
+      }),
+    });
+    render(<App />);
+
+    const catchUp = (await screen.findByText("Catch up")).closest("section") as HTMLElement;
+    expect(within(catchUp).getByText("Yesterday standup")).toBeInTheDocument();
+    expect(document.querySelector("#agenda-cooper\\:missed")).toBeTruthy();
+  });
+
+  test("Home renders a focused task ranked below the fifth upcoming slot", async () => {
+    const tasks = Array.from({ length: 6 }, (_, index) =>
+      ranked({ id: `task-${index + 1}`, title: `Task ${index + 1}`, minutes: 30 }),
+    );
+    const focused = tasks[5];
+    stub({
+      view: snapshotView({
+        tasks,
+        focus: { now_id: focused.id, next_id: null },
+      }),
+    });
+    render(<App />);
+
+    const nowReference = await screen.findByRole("link", { name: "Now: Task 6" });
+    expect(nowReference).toHaveAttribute("href", "#task-task-6");
+    expect(document.querySelector("#task-task-6")).toBeTruthy();
+  });
+
+  test("Google all-day events stay on the configured local day", async () => {
+    stub({
+      view: snapshotView({
+        timezone: "Asia/Manila",
+        commitments: [
+          {
+            id: "google:holiday",
+            source: "google",
+            source_id: "holiday",
+            aliases: ["google:holiday"],
+            title: "Holiday",
+            kind: "event",
+            start_at: "2026-09-10T16:00:00+00:00",
+            end_at: "2026-09-11T16:00:00+00:00",
+            all_day: true,
+            category: "personal",
+            editable: false,
+            local_item_id: null,
+            conflict: false,
+            event: {
+              event_id: "holiday",
+              title: "Holiday",
+              start_at: "2026-09-10T16:00:00+00:00",
+              end_at: "2026-09-11T16:00:00+00:00",
+              category: "personal",
+              mine: false,
+              source: "google",
+              all_day: true,
+            },
+          },
+        ],
+        today: "2026-09-11",
+        generated_at: "2026-09-11T01:00:00+08:00",
+      }),
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Holiday")).toBeInTheDocument();
+    expect(screen.getByText("Today")).toBeInTheDocument();
   });
 
   test("Today stays focused while upcoming commitments remain available below", async () => {

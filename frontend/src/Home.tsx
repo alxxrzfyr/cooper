@@ -31,7 +31,6 @@ function localDay(at: string, timeZone: string): string {
 }
 
 function commitmentDay(commitment: PlanningCommitment, at: string, timeZone: string): string {
-  if (commitment.all_day && commitment.source === "google") return at.slice(0, 10);
   return localDay(at, timeZone);
 }
 
@@ -105,14 +104,6 @@ function focusTime(item: FocusItem, timeZone: string): string | null {
   if (item.kind !== "commitment") return null;
   if (item.value.all_day) return "All day";
   return `${clock(new Date(item.value.start_at), timeZone)}–${clock(new Date(item.value.end_at), timeZone)}`;
-}
-
-function freeMinutesBefore(next: FocusItem, current: FocusItem | null, now: Date): number | null {
-  if (next.kind !== "commitment") return null;
-  const currentEnd =
-    current?.kind === "commitment" ? Date.parse(current.value.end_at) : now.getTime();
-  const availableFrom = Math.max(now.getTime(), currentEnd);
-  return Math.max(0, Math.floor((Date.parse(next.value.start_at) - availableFrom) / 60_000));
 }
 
 function isLocalTask(item: FocusItem): item is { kind: "task"; value: Ranked } {
@@ -342,7 +333,11 @@ export function Home({
   const next = findFocus(view, planning.focus.next_id);
   const currentTime = current ? focusTime(current, zone) : null;
   const nextTime = next ? focusTime(next, zone) : null;
-  const nextFreeMinutes = planning.complete && next ? freeMinutesBefore(next, current, now) : null;
+  const focusIds = new Set(
+    [planning.focus.now_id, planning.focus.next_id].filter((entry): entry is string =>
+      Boolean(entry),
+    ),
+  );
   const hasWorkToSchedule = upcomingTasks.some((task) => task.minutes !== null);
   const nothingAtAll = agenda.length === 0 && upcomingTasks.length === 0;
   const riskTargets = planning.risks.flatMap((risk) => {
@@ -380,10 +375,16 @@ export function Home({
     riskTargets.filter((risk) => risk.kind === "commitment").map((risk) => risk.id),
   );
   const visibleFutureCommitments = futureCommitments.filter(
-    (commitment, index) => index < 3 || riskCommitmentIds.has(commitment.id),
+    (commitment, index) =>
+      index < 3 || riskCommitmentIds.has(commitment.id) || focusIds.has(commitment.id),
   );
   const visibleUpcomingTasks = upcomingTasks.filter(
-    (task, index) => index < 5 || riskTaskIds.has(task.id),
+    (task, index) => index < 5 || riskTaskIds.has(task.id) || focusIds.has(task.id),
+  );
+  const catchUpCommitments = planning.commitments.filter(
+    (commitment) =>
+      (focusIds.has(commitment.id) || riskCommitmentIds.has(commitment.id)) &&
+      !isOnDay(commitment, today, zone),
   );
 
   return (
@@ -446,15 +447,30 @@ export function Home({
         <FocusReference
           label="Next"
           item={next}
-          context={[
-            nextTime,
-            nextFreeMinutes !== null && nextFreeMinutes > 0
-              ? `${nextFreeMinutes} min free before`
-              : null,
-          ]}
+          context={[nextTime]}
           onComplete={onComplete}
           busy={busy}
         />
+      )}
+
+      {catchUpCommitments.length > 0 && (
+        <section className="group" aria-label="Catch up">
+          <div className="group__label">Catch up</div>
+          <div className="inset">
+            {catchUpCommitments.map((commitment) => (
+              <AgendaItem
+                key={commitment.id}
+                commitment={commitment}
+                today={today}
+                timeZone={zone}
+                busy={busy}
+                onComplete={onComplete}
+                onOpen={onOpen}
+                onMove={onMove}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {agenda.length > 0 && (

@@ -436,6 +436,71 @@ def place(
     return slots
 
 
+def accepts_interval(
+    *,
+    start: dt.datetime,
+    end: dt.datetime,
+    busy: Sequence[tuple[dt.datetime, dt.datetime]],
+    hours: Hours,
+    at: dt.datetime,
+    deadline: dt.datetime | None = None,
+    scheduled: Sequence[Item] | None = None,
+    skip_item_id: str | None = None,
+    days: int = 7,
+) -> bool:
+    """Return whether one exact interval satisfies the same rules as `place()`."""
+    zone = ZoneInfo(hours.timezone)
+    start = start.astimezone(dt.UTC)
+    end = end.astimezone(dt.UTC)
+    at = at.astimezone(dt.UTC)
+    if end <= start:
+        return False
+    deadline_utc = deadline.astimezone(dt.UTC) if deadline else None
+    if deadline_utc is not None and end > deadline_utc:
+        return False
+
+    gap = dt.timedelta(minutes=hours.break_minutes)
+    earliest = at + dt.timedelta(minutes=LEAD)
+    if start < earliest:
+        return False
+
+    windows = _windows(hours, at, days)
+    if not any(
+        window_start <= start
+        and end <= (min(window_end, deadline_utc) if deadline_utc else window_end)
+        for window_start, window_end in windows
+    ):
+        return False
+
+    counts: dict[dt.date, int] = {}
+    minutes: dict[dt.date, float] = {}
+    taken = [(a.astimezone(dt.UTC), b.astimezone(dt.UTC)) for a, b in busy]
+    for item in scheduled or []:
+        if item.id == skip_item_id or item.status != "open" or item.kind != "task":
+            continue
+        item_start, item_end = aware(item.start_at), aware(item.end_at)
+        if item_start is None or item_end is None:
+            continue
+        taken.append((item_start - gap, item_end + gap))
+        day = item_start.astimezone(zone).date()
+        counts[day] = counts.get(day, 0) + 1
+        for work_day, work_minutes in _day_minutes(item_start, item_end, zone).items():
+            minutes[work_day] = minutes.get(work_day, 0) + work_minutes
+
+    day = start.astimezone(zone).date()
+    usage = _day_minutes(start, end, zone)
+    if counts.get(day, 0) >= hours.max_per_day or (
+        hours.max_minutes_per_day is not None
+        and any(
+            minutes.get(work_day, 0) + work_minutes > hours.max_minutes_per_day
+            for work_day, work_minutes in usage.items()
+        )
+    ):
+        return False
+
+    return not any(busy_start < end and start < busy_end for busy_start, busy_end in taken)
+
+
 def _day_minutes(start: dt.datetime, end: dt.datetime, zone: ZoneInfo) -> dict[dt.date, float]:
     """Charge elapsed work to every local date it actually occupies."""
     usage: dict[dt.date, float] = {}

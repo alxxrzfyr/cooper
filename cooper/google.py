@@ -16,8 +16,11 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
+
+from cooper.config import Settings
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -616,7 +619,8 @@ def _moment(value: dict | None) -> dt.datetime | None:
         return dt.datetime.fromisoformat(value["dateTime"]).astimezone(dt.UTC)
     if "date" in value:
         day = dt.date.fromisoformat(value["date"])
-        return dt.datetime.combine(day, dt.time.min, tzinfo=dt.UTC)
+        zone = ZoneInfo(Settings().timezone)
+        return dt.datetime.combine(day, dt.time(), zone).astimezone(dt.UTC)
     return None
 
 

@@ -283,6 +283,49 @@ def test_reschedule_commits_once_and_receipts_the_fresh_snapshot(client: TestCli
     assert restored["end_at"] is None
 
 
+def test_move_rejects_a_conflicting_slot_without_undo_or_mutation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    created = client.post(
+        "/api/items", headers=HEADERS, json={"title": "Deep work", "minutes": 60}
+    ).json()
+    item_id = created["item"]["id"]
+    client.post("/api/schedule", headers=HEADERS)
+    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+    target_start = dt.datetime.combine(target_day, dt.time(15), tzinfo=ZoneInfo("Asia/Singapore"))
+    target_end = target_start + dt.timedelta(hours=1)
+
+    class BusyCalendar:
+        connected = True
+
+        def busy(self, **kwargs: object) -> list[Busy]:
+            return [Busy(target_start, target_end, "Existing appointment", False)]
+
+    monkeypatch.setattr(module, "connected_calendar", lambda owner: BusyCalendar())
+
+    with module.store.session() as session:
+        before_change_id = (
+            change.id if (change := module.store.last_change(session, "local")) else None
+        )
+        before_start = module.store.get_item(session, "local", item_id).start_at
+
+    response = client.post(
+        f"/api/items/{item_id}/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T15:00", "minutes": 60},
+    )
+
+    assert response.status_code == 422
+    with module.store.session() as session:
+        after_change_id = (
+            change.id if (change := module.store.last_change(session, "local")) else None
+        )
+        assert after_change_id == before_change_id
+        assert module.store.get_item(session, "local", item_id).start_at == before_start
+
+
 def test_direct_reschedule_uses_the_same_verified_receipt(client: TestClient) -> None:
     created = client.post(
         "/api/items", headers=HEADERS, json={"title": "Review launch copy"}
@@ -1042,6 +1085,37 @@ class TestTheTwoModes:
 
         assert reply["kind"] == "answered"
         assert "can’t confirm" in reply["message"].lower()
+        assert reply["warnings"]
+        assert not any("Largest free" in fact for fact in reply.get("facts", []))
+
+    def test_overload_answer_withholds_a_definite_conclusion_when_planning_is_incomplete(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cooper.app as module
+
+        def unavailable(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+            health.append(
+                {
+                    "source": "google",
+                    "status": "unavailable",
+                    "message": "Google calendar could not be refreshed.",
+                }
+            )
+            return []
+
+        monkeypatch.setattr(module, "google_events", unavailable)
+
+        response = client.post(
+            "/api/say",
+            json={"text": "Am I overloaded tomorrow?", "mode": "ai", "intent": "overload_check"},
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        reply = response.json()
+
+        assert reply["kind"] == "answered"
+        assert "can’t confirm" in reply["message"].lower()
+        assert "not overloaded" not in reply["message"].lower()
         assert reply["warnings"]
 
     def test_unknown_typed_intent_is_rejected(self, client: TestClient) -> None:

@@ -50,7 +50,7 @@ from cooper.config import KEY_MIN, Settings
 from cooper.db import Change, Item, Setting, Store, aware, new_id, now
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.icloud import ICloudCalDAVProvider
-from cooper.planner import Hours, Slot, build_planning_snapshot, place, rank
+from cooper.planner import Hours, Slot, accepts_interval, build_planning_snapshot, place, rank
 from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
@@ -1124,7 +1124,8 @@ def answer_planning_intent(
                 f"Not as one block today. You need {requested} minutes, and your largest free "
                 f"block is {free} minutes."
             )
-        facts.append(f"Largest free block · {free} minutes")
+        if planning["complete"]:
+            facts.append(f"Largest free block · {free} minutes")
     elif intent == "deadline_summary":
         zone = ZoneInfo(view["timezone"])
         today = dt.date.fromisoformat(view["today"])
@@ -1154,15 +1155,21 @@ def answer_planning_intent(
         day_commitments = _commitments_on_day(commitments, target.isoformat(), view["timezone"])
         conflicts = _conflict_count(day_commitments)
         occupied = _occupied_minutes(day_commitments, target, view["timezone"])
-        overloaded = conflicts > 0 or occupied >= 7 * 60
         label = "tomorrow" if target.isoformat() != view["today"] else "today"
-        message = (
-            f"{label.title()} looks overloaded: {len(day_commitments)} commitments occupy "
-            f"{occupied} minutes, with {conflicts} conflict{'s' if conflicts != 1 else ''}."
-            if overloaded
-            else f"{label.title()} is not overloaded: {len(day_commitments)} commitments "
-            f"occupy {occupied} minutes."
-        )
+        if not planning["complete"]:
+            message = (
+                f"I can’t confirm whether {label} is overloaded while a connected calendar "
+                "is unavailable."
+            )
+        else:
+            overloaded = conflicts > 0 or occupied >= 7 * 60
+            message = (
+                f"{label.title()} looks overloaded: {len(day_commitments)} commitments occupy "
+                f"{occupied} minutes, with {conflicts} conflict{'s' if conflicts != 1 else ''}."
+                if overloaded
+                else f"{label.title()} is not overloaded: {len(day_commitments)} commitments "
+                f"occupy {occupied} minutes."
+            )
         facts.extend([f"Scheduled · {len(day_commitments)}", f"Occupied · {occupied} minutes"])
 
     return {"message": message, "facts": facts, "warnings": warnings}
@@ -1846,6 +1853,41 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
                 raise HTTPException(
                     status_code=422, detail="A move needs an exact time and duration."
                 )
+            if item.kind == "task":
+                availability = _external_availability(owner_id)
+                if not availability["complete"]:
+                    return {
+                        "kind": "question",
+                        "message": _waiting_reason(before, availability),
+                    }
+                _ensure_hours(owner_id)
+                hours = _locked_hours(session, owner_id)
+                others = store.open_items(session, owner_id)
+                busy = [
+                    *availability["busy"],
+                    *(
+                        (entry.start_at, entry.end_at)
+                        for entry in others
+                        if entry.id != item.id and entry.start_at and entry.end_at
+                    ),
+                ]
+                if not accepts_interval(
+                    start=action.start,
+                    end=action.end,
+                    busy=busy,
+                    hours=hours,
+                    at=now(),
+                    deadline=aware(item.due),
+                    scheduled=others,
+                    skip_item_id=item.id,
+                ):
+                    return {
+                        "kind": "question",
+                        "message": _waiting_reason(
+                            {**before, "minutes": action.minutes},
+                            availability,
+                        ),
+                    }
             item.start_at = action.start
             item.end_at = action.end
             item.minutes = action.minutes
@@ -1858,8 +1900,11 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
 
         store.record(session, owner_id, label=label, item=item, before=before)
         payload = item.to_dict()
+        extra: dict[str, Any] = {}
+        if action.verb == "move" and item.kind == "event":
+            extra["_warnings"] = _fixed_event_warnings(owner_id, payload)
 
-    return {"kind": kind, "message": label + ".", "item": payload}
+    return {"kind": kind, "message": label + ".", "item": payload, **extra}
 
 
 def reschedule(owner_id: str, action: Action, *, item_id: str | None = None) -> dict[str, Any]:
@@ -2294,6 +2339,11 @@ def move_item(item_id: str, body: MoveIn, request: Request) -> dict[str, Any]:
     if action.is_question:
         raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
     result = reschedule(owner_id, action, item_id=item_id)
+    if result.get("kind") == "question":
+        message = str(result["message"])
+        if "could not find" in message.casefold():
+            raise HTTPException(status_code=404, detail="No such open local item.")
+        raise HTTPException(status_code=422, detail=message)
     if result.get("kind") != "rescheduled":
         raise HTTPException(status_code=404, detail="No such open local item.")
     view = today_view(owner_id)
