@@ -56,6 +56,7 @@ function tone(kind: ReplyKind | undefined): string {
   switch (kind) {
     case "added":
     case "completed":
+    case "rescheduled":
     case "scheduled":
       return "good";
     case "dropped":

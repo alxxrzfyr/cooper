@@ -217,10 +217,22 @@ contents to a model. Creation and scheduling replies are rebuilt from committed 
 any overlap, waiting, or unavailable-source warning; a successful-looking reply is never generated
 from intent alone.
 
-This is the implemented Release 1 foundation, not proof of the complete product loop. It still needs
-seven days of real mixed-source use before the Home command-center redesign or local rescheduling
-begins. Legacy top-level schedule fields remain temporarily because the backend and frontend can be
-deployed independently; they are compatibility fields, not a second source of planning truth.
+Home now presents that snapshot as a command center: Now, Next, Today, At Risk, and Upcoming all
+refer to one underlying task or commitment instead of duplicating cards. A recommended task appears
+in Now only when it fits the safe free interval immediately ahead. If a connected source cannot be
+checked, Home says planning is incomplete and does not claim that time is free. External commitments
+remain visible and read-only.
+
+Local COOPER items can be moved to an exact future time with a required duration from either Ask or
+Home. Both surfaces use the same `app.py` writer, record undo, and build their success reply from the
+refreshed committed snapshot. Ambiguous local matches or local/provider title collisions ask instead
+of guessing; unknown ids fail, and provider-owned targets are refused rather than written back.
+
+The owner explicitly advanced the seven-day Release 1 timing gate before starting this Release 2
+work. That was a sequencing decision, not retrospective evidence that seven days of mixed-source use
+occurred. The existing Google Calendar and iCloud acceptance record remains the separate live-provider
+evidence. Legacy top-level schedule fields also remain temporarily because the backend and frontend
+can be deployed independently; Release 3 compatibility-field removal has not started.
 
 Requirement 5 also settled an argument the docs had lost with the code: an errand was being given
 an invented half-hour block, against what all three documents promised. The dashboard's "waiting

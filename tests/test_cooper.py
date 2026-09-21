@@ -26,7 +26,15 @@ from cooper import (  # noqa: E402
 )
 from cooper.brain import classify_ask_intent, parse_with_rules  # noqa: E402
 from cooper.db import Item, Store, new_id  # noqa: E402
-from cooper.planner import Hours, build_planning_snapshot, place, rank, task_state  # noqa: E402
+from cooper.google import _moment as google_moment  # noqa: E402
+from cooper.planner import (  # noqa: E402
+    Hours,
+    accepts_interval,
+    build_planning_snapshot,
+    place,
+    rank,
+    task_state,
+)
 
 TZ = "Asia/Singapore"
 ZONE = ZoneInfo(TZ)
@@ -144,6 +152,71 @@ class TestReadingSentences:
     def test_scheduling_is_recognised(self) -> None:
         assert read("plan my day").verb == "schedule"
         assert read("schedule").verb == "schedule"
+
+    def test_an_exact_local_move_has_a_target_start_and_end(self) -> None:
+        action = read("move the quarterly report to tomorrow at 3pm for 45m")
+
+        tomorrow = dt.datetime.now(ZONE).date() + dt.timedelta(days=1)
+        assert action.verb == "move"
+        assert action.which == "the quarterly report"
+        assert action.start == dt.datetime.combine(tomorrow, dt.time(15), tzinfo=ZONE)
+        assert action.end == action.start + dt.timedelta(minutes=45)
+        assert action.minutes == 45
+
+    def test_a_move_parses_the_time_clause_from_the_right(self) -> None:
+        action = read("move notes to self to tomorrow at 3pm for 30m")
+
+        assert action.verb == "move"
+        assert action.which == "notes to self"
+
+    def test_a_move_rejects_fractional_minutes_but_accepts_fractional_hours(self) -> None:
+        fractional_minutes = read("move the report to tomorrow at 3pm for 1.5m")
+        fractional_hours = read("move the report to tomorrow at 3pm for 1.5h")
+
+        assert fractional_minutes.verb == "ask"
+        assert "whole" in (fractional_minutes.question or "").lower()
+        assert fractional_hours.verb == "move"
+        assert fractional_hours.minutes == 90
+
+    def test_rescheduling_without_a_duration_asks(self) -> None:
+        action = read("reschedule the quarterly report to tomorrow at 3pm")
+
+        assert action.verb == "ask"
+        assert "long" in (action.question or "").lower()
+
+    def test_rescheduling_without_a_valid_exact_time_asks(self) -> None:
+        action = read("move the quarterly report to tomorrow at 25:00 for 45m")
+
+        assert action.verb == "ask"
+        assert "time" in (action.question or "").lower()
+
+    def test_a_move_to_the_past_is_refused_by_validation(self) -> None:
+        action = brain.validate(
+            brain.Action(
+                verb="move",
+                which="the quarterly report",
+                start=dt.datetime(2000, 1, 1, 15, tzinfo=ZONE),
+                minutes=45,
+            )
+        )
+
+        assert action.verb == "ask"
+        assert "passed" in (action.question or "").lower()
+
+    def test_move_validation_derives_minutes_from_exact_endpoints(self) -> None:
+        start = dt.datetime.now(ZONE) + dt.timedelta(days=1)
+
+        action = brain.validate(
+            brain.Action(
+                verb="move",
+                which="the quarterly report",
+                start=start,
+                end=start + dt.timedelta(minutes=45),
+            )
+        )
+
+        assert action.verb == "move"
+        assert action.minutes == 45
 
     def test_undo_is_recognised(self) -> None:
         assert read("undo").verb == "undo"
@@ -270,10 +343,46 @@ class TestCommitmentSources:
         )
 
         assert local is not None
+        assert len(sources.deduplicate_commitments([google, local])) == 2
+
+    def test_legacy_google_copy_collapses_when_title_and_timing_match(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                title="Team review",
+                start_at=start,
+                end_at=start + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(self.provider_event())
+
+        assert local is not None
         [merged] = sources.deduplicate_commitments([google, local])
         assert merged.id == "cooper:local-1"
         assert merged.editable is True
-        assert merged.aliases == ("cooper:local-1", "google:remote-1")
+        assert set(merged.aliases) == {"cooper:local-1", "google:remote-1"}
+
+    def test_moved_local_record_stays_visible_against_unchanged_legacy_google(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                title="Team review",
+                start_at=start + dt.timedelta(hours=2),
+                end_at=start + dt.timedelta(hours=3),
+            )
+        )
+        google = sources.normalize_provider_commitment(self.provider_event())
+
+        assert local is not None
+        assert len(sources.deduplicate_commitments([google, local])) == 2
+        assert sources.commitment_intervals(sources.deduplicate_commitments([google, local])) == [
+            (start, start + dt.timedelta(hours=1)),
+            (start + dt.timedelta(hours=2), start + dt.timedelta(hours=3)),
+        ]
 
     def test_gmail_source_ref_is_not_a_google_event_identity(self) -> None:
         gmail = sources.normalize_local_commitment(
@@ -329,21 +438,28 @@ class TestCommitmentSources:
         assert len(sources.deduplicate_commitments([google, icloud])) == 2
 
     def test_deduplicated_intervals_do_not_double_charge_a_linked_event(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
         local = sources.normalize_local_commitment(
             task(
                 id="local-1",
                 google_event_id="remote-1",
-                start_at=NOW + dt.timedelta(hours=1),
-                end_at=NOW + dt.timedelta(hours=2),
+                title="Team review",
+                start_at=start,
+                end_at=start + dt.timedelta(hours=1),
             )
         )
         google = sources.normalize_provider_commitment(self.provider_event())
 
         assert local is not None
         commitments = sources.deduplicate_commitments([local, google])
-        assert sources.commitment_intervals(commitments) == [
-            (NOW + dt.timedelta(hours=1), NOW + dt.timedelta(hours=2))
-        ]
+        assert sources.commitment_intervals(commitments) == [(start, start + dt.timedelta(hours=1))]
+
+    def test_google_date_only_events_use_the_local_timezone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("COOPER_TIMEZONE", "Asia/Manila")
+        moment = google_moment({"date": "2026-09-11"})
+        assert moment == dt.datetime(2026, 9, 11, tzinfo=ZoneInfo("Asia/Manila")).astimezone(dt.UTC)
 
     def test_gmail_commitments_are_collected_once_not_as_local_blocks(self, store: Store) -> None:
         """If Gmail rows re-enter collect_local, each imported event blocks the planner twice."""
@@ -581,14 +697,15 @@ class TestPlanningSnapshot:
         )
 
     @staticmethod
-    def hours() -> Hours:
-        return Hours(
-            timezone="UTC",
-            weekdays=tuple(range(7)),
-            start_hour=9,
-            end_hour=18,
-            max_per_day=8,
-        )
+    def hours(**overrides: object) -> Hours:
+        defaults: dict[str, object] = {
+            "timezone": "UTC",
+            "weekdays": tuple(range(7)),
+            "start_hour": 9,
+            "end_hour": 18,
+            "max_per_day": 8,
+        }
+        return Hours(**(defaults | overrides))  # type: ignore[arg-type]
 
     def test_metrics_count_every_mixed_source_commitment_once(self) -> None:
         start = NOW + dt.timedelta(hours=1)
@@ -687,6 +804,104 @@ class TestPlanningSnapshot:
         assert snapshot["focus"] == {"now_id": "google:active", "next_id": "google:next"}
         assert snapshot["metrics"]["conflict_count"] == 1
         assert {risk["kind"] for risk in snapshot["risks"]} >= {"overdue", "source_unavailable"}
+
+    def test_idle_focus_recommends_a_fitting_task_and_keeps_the_next_commitment(self) -> None:
+        recommended = task(id="recommended", title="Draft proposal", minutes=45, importance=5)
+        later = self.commitment(
+            "google:later",
+            start=NOW + dt.timedelta(hours=2),
+            end=NOW + dt.timedelta(hours=3),
+        )
+
+        snapshot = build_planning_snapshot(
+            items=[recommended],
+            commitments=[later],
+            source_health=[],
+            hours=self.hours(start_hour=0),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["current_free_block_minutes"] >= recommended.minutes
+        assert snapshot["metrics"]["largest_free_block_minutes"] >= recommended.minutes
+        assert snapshot["focus"] == {
+            "now_id": recommended.id,
+            "next_id": later.id,
+        }
+
+    def test_idle_focus_only_recommends_work_that_fits_before_the_next_commitment(self) -> None:
+        too_long = task(id="too-long", title="Write report", minutes=11, importance=5)
+        fits_now = task(id="fits-now", title="Send reply", minutes=10, importance=4)
+        imminent = self.commitment(
+            "google:imminent",
+            start=NOW + dt.timedelta(minutes=10),
+            end=NOW + dt.timedelta(hours=1),
+        )
+
+        snapshot = build_planning_snapshot(
+            items=[too_long, fits_now],
+            commitments=[imminent],
+            source_health=[],
+            hours=self.hours(start_hour=0),
+            at=NOW,
+        )
+
+        assert snapshot["metrics"]["current_free_block_minutes"] == 10
+        assert snapshot["metrics"]["largest_free_block_minutes"] >= too_long.minutes
+        assert snapshot["focus"] == {
+            "now_id": fits_now.id,
+            "next_id": imminent.id,
+        }
+
+
+class TestAcceptsInterval:
+    def hours(self, **overrides: object) -> Hours:
+        defaults: dict[str, object] = {
+            "start_hour": 9,
+            "end_hour": 18,
+            "weekdays": (0, 1, 2, 3, 4),
+            "timezone": TZ,
+            "max_per_day": 4,
+        }
+        return Hours(**(defaults | overrides))  # type: ignore[arg-type]
+
+    def test_accepts_a_valid_slot_and_rejects_busy_time(self) -> None:
+        hours = self.hours()
+        start = NOW + dt.timedelta(hours=2)
+        end = start + dt.timedelta(minutes=45)
+
+        assert accepts_interval(
+            start=start,
+            end=end,
+            busy=[],
+            hours=hours,
+            at=NOW,
+            scheduled=[],
+        )
+        assert not accepts_interval(
+            start=start,
+            end=end,
+            busy=[(start - dt.timedelta(minutes=5), end)],
+            hours=hours,
+            at=NOW,
+            scheduled=[],
+        )
+
+    def test_skips_the_moved_item_when_checking_daily_limits(self) -> None:
+        hours = self.hours(max_per_day=1)
+        start = NOW + dt.timedelta(hours=2)
+        end = start + dt.timedelta(minutes=45)
+        moving = task(id="moving", start_at=start, end_at=end, minutes=45)
+        later = start + dt.timedelta(hours=3)
+
+        assert accepts_interval(
+            start=later,
+            end=later + dt.timedelta(minutes=45),
+            busy=[],
+            hours=hours,
+            at=NOW,
+            scheduled=[moving],
+            skip_item_id="moving",
+        )
 
 
 class TestPlacing:

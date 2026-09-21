@@ -190,6 +190,7 @@ function noticeTone(kind: ReplyKind): "good" | "bad" | "answer" | "attention" | 
     case "added":
     case "completed":
     case "pinned":
+    case "rescheduled":
     case "scheduled":
       return "good";
     case "dropped":
@@ -1050,6 +1051,9 @@ export default function App() {
                 onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
                 onOpen={setDetail}
                 onSchedule={() => void act(() => api.schedule())}
+                onMove={(itemId, start, minutes) =>
+                  act(() => api.reschedule(itemId, start, minutes))
+                }
                 onGoToChat={() => {
                   if (canUseAi) {
                     setTab("chat");
@@ -1505,16 +1509,20 @@ export default function App() {
         ("kind" in detail ? (
           <TaskFrame
             item={detail}
-            today={view?.today ?? ""}
+            today={view?.planning.today ?? ""}
             busy={busy}
             onClose={() => setDetail(null)}
             onComplete={() => void act(() => api.act(detail.id, "complete"))}
             onPin={() => void act(() => api.act(detail.id, "pin"))}
             onDrop={() => void act(() => api.act(detail.id, "drop"))}
-            onSchedule={() => {
-              void act(() => api.act(detail.id, "schedule"));
-              setDetail(null);
-            }}
+            onSchedule={
+              view?.planning.complete
+                ? () => {
+                    void act(() => api.act(detail.id, "schedule"));
+                    setDetail(null);
+                  }
+                : undefined
+            }
           />
         ) : (
           <CalendarEventFrame

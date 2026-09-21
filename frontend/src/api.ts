@@ -108,6 +108,8 @@ export const api = {
   undo: () => call<Reply>("/api/undo", post()),
   act: (id: string, verb: "complete" | "drop" | "pin" | "schedule") =>
     call<Reply>(`/api/items/${id}/${verb}`, post()),
+  reschedule: (id: string, start: string, minutes: number) =>
+    call<Reply>(`/api/items/${id}/move`, post({ start, minutes })),
   edit: (id: string, changes: Partial<Pick<Item, "title" | "minutes" | "importance">>) =>
     call<{ item: Item; view: View }>(`/api/items/${id}`, {
       method: "PATCH",

@@ -59,8 +59,6 @@ def normalize_local_commitment(item: Item) -> Commitment | None:
     source = "cooper" if item_source == "me" else item_source
     source_id = item.id if source == "cooper" else item.source_ref
     aliases = {f"cooper:{item.id}"}
-    if item.google_event_id:
-        aliases.add(f"google:{item.google_event_id}")
     if item_source != "me" and item.source_ref:
         aliases.add(f"{item_source}:{item.source_ref}")
     return Commitment(
@@ -157,7 +155,6 @@ def _signature(commitment: Commitment) -> tuple[object, ...]:
         commitment.start,
         commitment.end,
         commitment.all_day,
-        commitment.kind,
     )
 
 

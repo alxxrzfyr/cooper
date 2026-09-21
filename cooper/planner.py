@@ -159,9 +159,34 @@ def build_planning_snapshot(
         for entry in ranked
     ]
 
+    largest_free = _largest_free_block(
+        hours=hours,
+        at=at,
+        day_start=day_start,
+        day_end=day_end,
+        occupied=occupied,
+    )
+    current_free = _current_free_block(
+        hours=hours,
+        at=at,
+        day_start=day_start,
+        day_end=day_end,
+        occupied=occupied,
+    )
+
     active = next((entry for entry in unique if entry.start <= at < entry.end), None)
     upcoming = next((entry for entry in unique if entry.start > at), None)
-    next_id = upcoming.id if upcoming else (tasks[0]["id"] if tasks else None)
+    recommended = next(
+        (
+            task
+            for task in tasks
+            if complete
+            and task["start_at"] is None
+            and task["minutes"] is not None
+            and 0 < task["minutes"] <= current_free
+        ),
+        None,
+    )
 
     risks: list[dict[str, Any]] = []
     for entry in ranked:
@@ -193,13 +218,6 @@ def build_planning_snapshot(
                 )
 
     occupied_minutes = round(sum((end - start).total_seconds() / 60 for start, end in occupied))
-    largest_free = _largest_free_block(
-        hours=hours,
-        at=at,
-        day_start=day_start,
-        day_end=day_end,
-        occupied=occupied,
-    )
     return {
         "generated_at": at.isoformat(),
         "today": today.isoformat(),
@@ -210,7 +228,10 @@ def build_planning_snapshot(
             _commitment_dict(entry, conflict=entry.id in conflict_ids) for entry in unique
         ],
         "tasks": tasks,
-        "focus": {"now_id": active.id if active else None, "next_id": next_id},
+        "focus": {
+            "now_id": active.id if active else recommended["id"] if recommended else None,
+            "next_id": upcoming.id if upcoming else None,
+        },
         "risks": risks,
         "metrics": {
             "scheduled_count": len(today_commitments),
@@ -218,6 +239,7 @@ def build_planning_snapshot(
             "remaining_effort_minutes": sum(
                 item.minutes or 0 for item in items if item.kind == "task" and item.status == "open"
             ),
+            "current_free_block_minutes": current_free,
             "largest_free_block_minutes": largest_free,
             "conflict_count": conflicts,
         },
@@ -261,6 +283,29 @@ def _largest_free_block(
             cursor = max(cursor, busy_end)
         largest = max(largest, (limit - cursor).total_seconds() / 60)
     return max(0, round(largest))
+
+
+def _current_free_block(
+    *,
+    hours: Hours,
+    at: dt.datetime,
+    day_start: dt.datetime,
+    day_end: dt.datetime,
+    occupied: list[tuple[dt.datetime, dt.datetime]],
+) -> int:
+    for window_start, window_end in _windows(hours, day_start, 1):
+        limit = min(window_end, day_end)
+        if not window_start <= at < limit:
+            continue
+        for busy_start, busy_end in occupied:
+            if busy_end <= at:
+                continue
+            if busy_start <= at:
+                return 0
+            limit = min(limit, busy_start)
+            break
+        return max(0, int((limit - at).total_seconds() // 60))
+    return 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -389,6 +434,71 @@ def place(
                 continue
             break
     return slots
+
+
+def accepts_interval(
+    *,
+    start: dt.datetime,
+    end: dt.datetime,
+    busy: Sequence[tuple[dt.datetime, dt.datetime]],
+    hours: Hours,
+    at: dt.datetime,
+    deadline: dt.datetime | None = None,
+    scheduled: Sequence[Item] | None = None,
+    skip_item_id: str | None = None,
+    days: int = 7,
+) -> bool:
+    """Return whether one exact interval satisfies the same rules as `place()`."""
+    zone = ZoneInfo(hours.timezone)
+    start = start.astimezone(dt.UTC)
+    end = end.astimezone(dt.UTC)
+    at = at.astimezone(dt.UTC)
+    if end <= start:
+        return False
+    deadline_utc = deadline.astimezone(dt.UTC) if deadline else None
+    if deadline_utc is not None and end > deadline_utc:
+        return False
+
+    gap = dt.timedelta(minutes=hours.break_minutes)
+    earliest = at + dt.timedelta(minutes=LEAD)
+    if start < earliest:
+        return False
+
+    windows = _windows(hours, at, days)
+    if not any(
+        window_start <= start
+        and end <= (min(window_end, deadline_utc) if deadline_utc else window_end)
+        for window_start, window_end in windows
+    ):
+        return False
+
+    counts: dict[dt.date, int] = {}
+    minutes: dict[dt.date, float] = {}
+    taken = [(a.astimezone(dt.UTC), b.astimezone(dt.UTC)) for a, b in busy]
+    for item in scheduled or []:
+        if item.id == skip_item_id or item.status != "open" or item.kind != "task":
+            continue
+        item_start, item_end = aware(item.start_at), aware(item.end_at)
+        if item_start is None or item_end is None:
+            continue
+        taken.append((item_start - gap, item_end + gap))
+        day = item_start.astimezone(zone).date()
+        counts[day] = counts.get(day, 0) + 1
+        for work_day, work_minutes in _day_minutes(item_start, item_end, zone).items():
+            minutes[work_day] = minutes.get(work_day, 0) + work_minutes
+
+    day = start.astimezone(zone).date()
+    usage = _day_minutes(start, end, zone)
+    if counts.get(day, 0) >= hours.max_per_day or (
+        hours.max_minutes_per_day is not None
+        and any(
+            minutes.get(work_day, 0) + work_minutes > hours.max_minutes_per_day
+            for work_day, work_minutes in usage.items()
+        )
+    ):
+        return False
+
+    return not any(busy_start < end and start < busy_end for busy_start, busy_end in taken)
 
 
 def _day_minutes(start: dt.datetime, end: dt.datetime, zone: ZoneInfo) -> dict[dt.date, float]:

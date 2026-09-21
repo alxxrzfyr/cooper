@@ -6,6 +6,23 @@ Repo: alxxrzfyr/cooper
 Status: APPROVED
 Mode: Startup
 
+## Implementation update — 2026-09-21
+
+Release 1's shared snapshot, grounded Ask answers, unified counts, and verified create/schedule
+receipts are implemented. The owner explicitly advanced the seven-day timing gate and authorized
+Release 2; that decision is not evidence that the seven-day mixed-source acceptance period occurred.
+
+Release 2 is also implemented. Home now exposes Now, Next, Today, At Risk, and Upcoming from the
+snapshot without duplicating the underlying task or commitment. Focus uses only the immediate safe
+free block and makes no free-time claim when planning is incomplete. Local COOPER items can be moved
+to an exact future time with a required duration from Ask or Home; both surfaces use the same writer,
+undo record, refreshed snapshot, and verified receipt. External commitments stay visible and
+read-only, including when their titles collide with local move targets.
+
+This update records implemented behavior, not deployment or new connected-account evidence. The
+existing Google Calendar and iCloud acceptance record remains separate. Release 3 compatibility-field
+removal has not started.
+
 ## Problem statement
 
 COOPER has the pieces of an AI-native planner, but they do not yet behave like one product. Ask,
@@ -30,7 +47,7 @@ These statements identify a painful trust and coherence problem. They do not pro
 will adopt or pay for the solution. The first delivery should therefore optimize for proving the
 trusted planning loop, not for finishing every possible planning surface.
 
-## Status quo
+## Status quo at approval
 
 - Ask sees local task summaries and anonymous busy intervals but does not consistently use one
   authoritative view of the day.
@@ -109,15 +126,18 @@ Use the shared planning snapshot, but deliver it in founder order rather than pl
 This release should make the current product visibly more intelligent without redesigning every
 surface.
 
-### Release 2: Make Home the command center
+### Release 2: Make Home the command center — implemented
 
-After Release 1 is used with real schedules:
+The owner advanced the timing gate and authorized this implementation before the full seven-day
+acceptance period elapsed:
 
 1. Build Now and Next from snapshot focus.
 2. Build one mixed-source Today agenda.
 3. Add At Risk and Upcoming without duplicating items.
 4. Add local rescheduling with verified receipts.
-5. Remove the remaining legacy frontend schedule calculations.
+
+The remaining legacy response fields and browser reconstruction were deferred to Release 3 so the
+independently deployed frontend and backend keep their bounded compatibility window.
 
 ### Release 3: Remove compatibility fields
 
@@ -154,11 +174,14 @@ This can be validated with a small manual trust log. New analytics infrastructur
 - Existing authenticated `/api/today` and `/api/say` flows.
 - Existing browser-configured Gemini key and request-scoped Brain behavior.
 
-## The assignment
+## The original assignment
 
 Ship Release 1 behind the existing product surfaces, then use COOPER with a real mixed-source
 schedule for seven consecutive days. Record every incorrect count, generic answer, unavailable-time
 mistake, and unverified mutation. Do not begin the full Home redesign until this loop is trustworthy.
+
+The owner later overrode the final sequencing sentence and advanced Release 2. The acceptance
+criteria above remain useful product evidence; the implementation decision does not mark them met.
 
 ## What I noticed about how you think
 

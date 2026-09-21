@@ -36,8 +36,12 @@ through verified email/password or Google sign-in, but it is not a team or proje
 - Read iCloud calendars through CalDAV so those commitments also block scheduling.
 - Normalize local, Google, iCloud, and Gmail commitments into one deduplicated planning snapshot
   used by calendar cells, navigation counts, task state, workload facts, and common Ask questions.
+- Use that snapshot on Home for Now, Next, Today, At Risk, and Upcoming without duplicating the
+  underlying task or commitment; incomplete provider data never becomes a free-time claim.
 - Confirm creation and scheduling only after the committed item is visible in refreshed planning
   state, preserving overlap and unavailable-calendar warnings.
+- Move a local COOPER item to an exact future time with a required duration from Ask or Home, with
+  undo and a receipt built from refreshed committed state. External calendar items stay read-only.
 - Google Calendar and iCloud Calendar acceptance flows were manually verified on 2026-09-14;
   the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
 - Answer common focus, remaining-work, next-action, deadline, workload, and fit questions directly
@@ -108,7 +112,7 @@ flowchart LR
 
 The React frontend is organized around the four primary product areas:
 
-- `Home.tsx` presents the next action, today's schedule, attention items, and ranked work.
+- `Home.tsx` presents the snapshot-backed Now, Next, Today, At Risk, and Upcoming command center.
 - `Form.tsx` captures structured items without parsing or network access.
 - `Chat.tsx` handles conversational input and text-only AI answers.
 - `Calendar.tsx` renders day, week, and month views.
@@ -134,10 +138,11 @@ responsible for identity, and Supabase Auth and Supabase Storage are not used.
 - Firebase ID tokens identify hosted users, and every query is scoped by the verified owner.
 - Google refresh tokens are encrypted before storage.
 - iCloud app-specific passwords are encrypted server-side and never returned to the browser or model.
-- Manual mode never calls a model or the network.
+- Manual mode never calls a model; placement may read connected calendars to avoid conflicts.
 - A Gemini key entered in Settings stays in that browser and is sent only with AI requests.
 - Titles are sanitized before they reach a model.
-- Remote failures do not block local capture or scheduling. Local data remains the source of truth.
+- Remote failures do not block local capture. If a connected calendar cannot be checked, placement
+  waits rather than guessing that its time is free. Local data remains the write source of truth.
 
 ## Design principles
 

@@ -168,13 +168,14 @@ export interface PlanningSnapshot {
     scheduled_count: number;
     occupied_minutes: number;
     remaining_effort_minutes: number;
+    current_free_block_minutes: number;
     largest_free_block_minutes: number;
     conflict_count: number;
   };
 }
 
 export interface MutationReceipt {
-  operation: "create" | "schedule";
+  operation: "create" | "reschedule" | "schedule";
   items: Array<{
     id: string;
     title: string;
@@ -231,6 +232,7 @@ export type ReplyKind =
   | "completed"
   | "dropped"
   | "pinned"
+  | "rescheduled"
   | "scheduled"
   | "undone"
   | "answered"
