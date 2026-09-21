@@ -249,6 +249,11 @@ class ItemIn(BaseModel):
     notes: str | None = None
 
 
+class MoveIn(BaseModel):
+    start: dt.datetime
+    minutes: int = Field(ge=1, le=1440)
+
+
 class NewItem(BaseModel):
     """Manual mode, as a form rather than a sentence.
 
@@ -343,10 +348,16 @@ def _is_local_item(item: Item, owner_id: str) -> bool:
 def _require_local_item(item: Item, owner_id: str) -> None:
     """Reject attempts to mutate an item managed by an external source."""
     if not _is_local_item(item, owner_id):
-        raise HTTPException(status_code=409, detail="Only items created in Cooper can be changed.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "External calendar items are read-only in COOPER. "
+                "Change this event in its source calendar instead."
+            ),
+        )
 
 
-def find(session: Any, owner_id: str, words: str) -> Item | None:
+def find(session: Any, owner_id: str, words: str, *, include_external: bool = False) -> Item | None:
     """Match an item by words the user typed. Exact, then contained, then nothing.
 
     Returning None rather than a best guess is deliberate: acting on the wrong task is worse
@@ -355,8 +366,11 @@ def find(session: Any, owner_id: str, words: str) -> Item | None:
     needle = words.strip().lower()
     if not needle:
         return None
-    # External commitments remain visible but are changed only by their source sync.
-    items = [item for item in store.open_items(session, owner_id) if _is_local_item(item, owner_id)]
+    items = [
+        item
+        for item in store.open_items(session, owner_id)
+        if include_external or _is_local_item(item, owner_id)
+    ]
 
     for item in items:
         if item.id == words or item.title.lower() == needle:
@@ -1032,13 +1046,17 @@ def say(body: Say, request: Request) -> dict[str, Any]:
     result = run(owner_id, action)
     view = today_view(owner_id, using_model=request_brain.using_model)
     item_ids = result.pop("_item_ids", None)
-    if result.get("kind") in {"added", "scheduled"} and (
+    if result.get("kind") in {"added", "rescheduled", "scheduled"} and (
         item_ids or isinstance(result.get("item"), dict)
     ):
         result = _verified_write_response(
             result,
             view,
-            operation="schedule" if result["kind"] == "scheduled" else "create",
+            operation={
+                "added": "create",
+                "rescheduled": "reschedule",
+                "scheduled": "schedule",
+            }[result["kind"]],
             item_ids=item_ids or [result["item"]["id"]],
         )
     return {**result, "source": action.source, "view": view}
@@ -1154,7 +1172,7 @@ def _verified_write_response(
     result: dict[str, Any],
     view: dict[str, Any],
     *,
-    operation: Literal["create", "schedule"],
+    operation: Literal["create", "reschedule", "schedule"],
     item_ids: list[str],
 ) -> dict[str, Any]:
     receipt = _mutation_receipt(view, operation=operation, item_ids=item_ids)
@@ -1165,7 +1183,7 @@ def _verified_write_response(
 def _mutation_receipt(
     view: dict[str, Any],
     *,
-    operation: Literal["create", "schedule"],
+    operation: Literal["create", "reschedule", "schedule"],
     item_ids: list[str],
 ) -> dict[str, Any]:
     planning = view["planning"]
@@ -1229,19 +1247,20 @@ def _receipt_message(receipt: dict[str, Any]) -> str:
     items = receipt["items"]
     operation = receipt["operation"]
     if len(items) != 1:
-        verb = "Added" if operation == "create" else "Scheduled"
+        verb = {"create": "Added", "reschedule": "Moved", "schedule": "Scheduled"}[operation]
         noun = "tasks" if operation == "create" else "items"
         message = f"{verb} {len(items)} {noun} in COOPER."
     else:
         item = items[0]
-        verb = "Added" if operation == "create" else "Scheduled"
+        verb = {"create": "Added", "reschedule": "Moved", "schedule": "Scheduled"}[operation]
         message = f"{verb} “{item['title']}” in COOPER."
     if len(items) == 1 and item["start_at"] and item["end_at"]:
         zone = ZoneInfo(settings.timezone)
         start = dt.datetime.fromisoformat(item["start_at"]).astimezone(zone)
         end = dt.datetime.fromisoformat(item["end_at"]).astimezone(zone)
+        preposition = "to" if operation == "reschedule" else "for"
         message = (
-            f"{verb} “{item['title']}” in COOPER for "
+            f"{verb} “{item['title']}” in COOPER {preposition} "
             f"{start.strftime('%a %-I:%M %p')}–{end.strftime('%-I:%M %p')}."
         )
     warnings = " ".join(receipt["warnings"])
@@ -1475,6 +1494,9 @@ def run(owner_id: str, action: Action) -> dict[str, Any]:
 
     if action.verb == "batch":
         return add_batch(owner_id, action)
+
+    if action.verb == "move":
+        return reschedule(owner_id, action)
 
     return change_existing(owner_id, action)
 
@@ -1793,7 +1815,12 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
         item = (
             store.get_item(session, owner_id, item_id)
             if item_id is not None
-            else find(session, owner_id, action.which or "")
+            else find(
+                session,
+                owner_id,
+                action.which or "",
+                include_external=action.verb == "move",
+            )
         )
         if item is None or item.status != "open":
             return {
@@ -1814,6 +1841,16 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
             item.status = "dropped"
             label = f"Dropped “{item.title}”"
             kind = "dropped"
+        elif action.verb == "move":
+            if action.start is None or action.end is None or action.minutes is None:
+                raise HTTPException(
+                    status_code=422, detail="A move needs an exact time and duration."
+                )
+            item.start_at = action.start
+            item.end_at = action.end
+            item.minutes = action.minutes
+            label = f"Moved “{item.title}”"
+            kind = "rescheduled"
         else:
             item.pinned = 0 if item.pinned else 1
             label = f"{'Pinned' if item.pinned else 'Unpinned'} “{item.title}”"
@@ -1823,6 +1860,49 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
         payload = item.to_dict()
 
     return {"kind": kind, "message": label + ".", "item": payload}
+
+
+def reschedule(owner_id: str, action: Action, *, item_id: str | None = None) -> dict[str, Any]:
+    """Resolve one visible target, then use the single existing-item writer to move it."""
+    words = item_id or action.which or ""
+    with store.session() as session:
+        item = (
+            store.get_item(session, owner_id, item_id)
+            if item_id is not None
+            else find(session, owner_id, words, include_external=True)
+        )
+
+    if item is None:
+        _require_provider_item_read_only(owner_id, words)
+    return change_existing(owner_id, action, item_id=item.id if item is not None else item_id)
+
+
+def _require_provider_item_read_only(owner_id: str, words: str) -> None:
+    """Explain the provider boundary when a visible event has no local `Item` row."""
+    needle = words.strip().casefold()
+    if not needle:
+        return
+    commitments = today_view(owner_id)["planning"]["commitments"]
+    external = [entry for entry in commitments if not entry["editable"]]
+    exact = [
+        entry
+        for entry in external
+        if needle
+        in {
+            str(entry["id"]).casefold(),
+            str(entry.get("source_id") or "").casefold(),
+            str(entry["title"]).casefold(),
+        }
+    ]
+    contained = [entry for entry in external if needle in str(entry["title"]).casefold()]
+    if exact or contained:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "External calendar items are read-only in COOPER. "
+                "Change this event in its source calendar instead."
+            ),
+        )
 
 
 def schedule_now(owner_id: str) -> list[Slot]:
@@ -2133,6 +2213,28 @@ def edit(item_id: str, body: ItemIn, request: Request) -> dict[str, Any]:
         )
         payload = item.to_dict()
     return {"item": payload, "view": today_view(owner_id)}
+
+
+@app.post("/api/items/{item_id}/move")
+def move_item(item_id: str, body: MoveIn, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    action = validate(
+        Action(
+            verb="move",
+            which=item_id,
+            start=_local(body.start),
+            minutes=body.minutes,
+            source="form",
+        )
+    )
+    if action.is_question:
+        raise HTTPException(status_code=422, detail=action.question or "That does not add up.")
+    result = reschedule(owner_id, action, item_id=item_id)
+    if result.get("kind") != "rescheduled":
+        raise HTTPException(status_code=404, detail="No such open local item.")
+    view = today_view(owner_id)
+    response = _verified_write_response(result, view, operation="reschedule", item_ids=[item_id])
+    return {**response, "view": view}
 
 
 @app.post("/api/items/{item_id}/{verb}")

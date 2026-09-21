@@ -175,7 +175,7 @@ export interface PlanningSnapshot {
 }
 
 export interface MutationReceipt {
-  operation: "create" | "schedule";
+  operation: "create" | "reschedule" | "schedule";
   items: Array<{
     id: string;
     title: string;
@@ -232,6 +232,7 @@ export type ReplyKind =
   | "completed"
   | "dropped"
   | "pinned"
+  | "rescheduled"
   | "scheduled"
   | "undone"
   | "answered"

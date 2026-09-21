@@ -4752,6 +4752,11 @@ button.slot:active {
   scroll-behavior: smooth;
 }
 
+.app:not(.app--public) .home-command-center {
+  /* Keep expanded inline actions above the fixed composer at the bottom of the app. */
+  padding-bottom: 112px;
+}
+
 .home-focus__body,
 .home-incomplete,
 .home-risk {

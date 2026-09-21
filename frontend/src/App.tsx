@@ -190,6 +190,7 @@ function noticeTone(kind: ReplyKind): "good" | "bad" | "answer" | "attention" | 
     case "added":
     case "completed":
     case "pinned":
+    case "rescheduled":
     case "scheduled":
       return "good";
     case "dropped":
@@ -1050,6 +1051,9 @@ export default function App() {
                 onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
                 onOpen={setDetail}
                 onSchedule={() => void act(() => api.schedule())}
+                onMove={(itemId, start, minutes) =>
+                  act(() => api.reschedule(itemId, start, minutes))
+                }
                 onGoToChat={() => {
                   if (canUseAi) {
                     setTab("chat");

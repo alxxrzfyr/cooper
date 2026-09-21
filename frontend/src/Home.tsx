@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Mascot } from "./Mascot";
 import { Row } from "./Row";
 import type { CalendarEvent, Item, PlanningCommitment, Ranked, View } from "./types";
@@ -47,6 +49,20 @@ function sourceLabel(source: string): string {
   if (source === "cooper") return "Cooper";
   if (source === "icloud") return "iCloud";
   return source === "gmail" ? "Gmail" : "Google";
+}
+
+function localDateTime(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
 }
 
 function riskSummary(kind: string, message: string | undefined): string {
@@ -155,6 +171,7 @@ function AgendaItem({
   busy,
   onComplete,
   onOpen,
+  onMove,
 }: {
   commitment: PlanningCommitment;
   today: string;
@@ -162,6 +179,7 @@ function AgendaItem({
   busy: boolean;
   onComplete: (id: string) => void;
   onOpen: (item: Item | Ranked | CalendarEvent) => void;
+  onMove: (id: string, start: string, minutes: number) => Promise<boolean>;
 }) {
   const label = `${commitment.title} · ${
     commitment.all_day
@@ -169,6 +187,13 @@ function AgendaItem({
       : `${clock(new Date(commitment.start_at), timeZone)}–${clock(new Date(commitment.end_at), timeZone)}`
   }`;
   const localItem = commitment.editable ? commitment.item : undefined;
+  const initialMinutes = Math.max(
+    1,
+    Math.round((Date.parse(commitment.end_at) - Date.parse(commitment.start_at)) / 60_000),
+  );
+  const [moving, setMoving] = useState(false);
+  const [moveStart, setMoveStart] = useState(localDateTime(commitment.start_at, timeZone));
+  const [moveMinutes, setMoveMinutes] = useState(initialMinutes);
   if (localItem) {
     return (
       <div id={commitmentTarget(commitment)}>
@@ -179,6 +204,71 @@ function AgendaItem({
           onComplete={() => onComplete(localItem.id)}
           onOpen={() => onOpen(localItem)}
         />
+        {!moving ? (
+          <button
+            type="button"
+            className="btn btn--quiet"
+            aria-label={`Move ${localItem.title}`}
+            disabled={busy}
+            onClick={() => {
+              setMoveStart(localDateTime(commitment.start_at, timeZone));
+              setMoveMinutes(initialMinutes);
+              setMoving(true);
+            }}
+          >
+            Move
+          </button>
+        ) : (
+          <form
+            className="taskform"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onMove(localItem.id, moveStart, moveMinutes).then((saved) => {
+                if (saved) setMoving(false);
+              });
+            }}
+          >
+            <label className="field">
+              <span className="field__label">New time</span>
+              <input
+                className="field__input"
+                type="datetime-local"
+                aria-label={`New time for ${localItem.title}`}
+                value={moveStart}
+                required
+                disabled={busy}
+                onChange={(event) => setMoveStart(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Minutes</span>
+              <input
+                className="field__input"
+                type="number"
+                aria-label={`Duration for ${localItem.title}`}
+                value={moveMinutes}
+                min={1}
+                max={1440}
+                required
+                disabled={busy}
+                onChange={(event) => setMoveMinutes(Number(event.target.value))}
+              />
+            </label>
+            <div className="home-ask-setup__actions">
+              <button type="submit" className="btn btn--accent" disabled={busy}>
+                Save new time
+              </button>
+              <button
+                type="button"
+                className="btn btn--quiet"
+                disabled={busy}
+                onClick={() => setMoving(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     );
   }
@@ -221,6 +311,7 @@ export function Home({
   onComplete,
   onOpen,
   onSchedule,
+  onMove,
   onGoToChat,
 }: {
   view: View;
@@ -228,6 +319,7 @@ export function Home({
   onComplete: (id: string) => void;
   onOpen: (item: Item | Ranked | CalendarEvent) => void;
   onSchedule: () => void;
+  onMove: (id: string, start: string, minutes: number) => Promise<boolean>;
   onGoToChat: () => void;
 }) {
   const { planning } = view;
@@ -381,6 +473,7 @@ export function Home({
                 busy={busy}
                 onComplete={onComplete}
                 onOpen={onOpen}
+                onMove={onMove}
               />
             ))}
           </div>
@@ -427,6 +520,7 @@ export function Home({
                 busy={busy}
                 onComplete={onComplete}
                 onOpen={onOpen}
+                onMove={onMove}
               />
             ))}
             {visibleUpcomingTasks.map((item) => (

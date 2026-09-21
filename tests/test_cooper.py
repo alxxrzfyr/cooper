@@ -145,6 +145,56 @@ class TestReadingSentences:
         assert read("plan my day").verb == "schedule"
         assert read("schedule").verb == "schedule"
 
+    def test_an_exact_local_move_has_a_target_start_and_end(self) -> None:
+        action = read("move the quarterly report to tomorrow at 3pm for 45m")
+
+        tomorrow = dt.datetime.now(ZONE).date() + dt.timedelta(days=1)
+        assert action.verb == "move"
+        assert action.which == "the quarterly report"
+        assert action.start == dt.datetime.combine(tomorrow, dt.time(15), tzinfo=ZONE)
+        assert action.end == action.start + dt.timedelta(minutes=45)
+        assert action.minutes == 45
+
+    def test_rescheduling_without_a_duration_asks(self) -> None:
+        action = read("reschedule the quarterly report to tomorrow at 3pm")
+
+        assert action.verb == "ask"
+        assert "long" in (action.question or "").lower()
+
+    def test_rescheduling_without_a_valid_exact_time_asks(self) -> None:
+        action = read("move the quarterly report to tomorrow at 25:00 for 45m")
+
+        assert action.verb == "ask"
+        assert "time" in (action.question or "").lower()
+
+    def test_a_move_to_the_past_is_refused_by_validation(self) -> None:
+        action = brain.validate(
+            brain.Action(
+                verb="move",
+                which="the quarterly report",
+                start=dt.datetime(2000, 1, 1, 15, tzinfo=ZONE),
+                minutes=45,
+            )
+        )
+
+        assert action.verb == "ask"
+        assert "passed" in (action.question or "").lower()
+
+    def test_move_validation_derives_minutes_from_exact_endpoints(self) -> None:
+        start = dt.datetime.now(ZONE) + dt.timedelta(days=1)
+
+        action = brain.validate(
+            brain.Action(
+                verb="move",
+                which="the quarterly report",
+                start=start,
+                end=start + dt.timedelta(minutes=45),
+            )
+        )
+
+        assert action.verb == "move"
+        assert action.minutes == 45
+
     def test_undo_is_recognised(self) -> None:
         assert read("undo").verb == "undo"
 

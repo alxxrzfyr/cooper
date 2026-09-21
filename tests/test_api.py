@@ -236,6 +236,184 @@ def test_schedule_one_receipt_matches_the_refreshed_snapshot(client: TestClient)
     assert body["receipt"]["items"][0]["state"] in {"scheduled", "in_progress"}
 
 
+def test_reschedule_commits_once_and_receipts_the_fresh_snapshot(client: TestClient) -> None:
+    import cooper.app as module
+
+    created = client.post(
+        "/api/items", headers=HEADERS, json={"title": "Write release notes"}
+    ).json()
+    item_id = created["item"]["id"]
+    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={"text": "move write release notes to tomorrow at 3pm for 45m"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    expected_start = dt.datetime.combine(target_day, dt.time(15), tzinfo=ZoneInfo("Asia/Singapore"))
+    expected_end = expected_start + dt.timedelta(minutes=45)
+    receipt_item = body["receipt"]["items"][0]
+    commitment = next(
+        entry
+        for entry in body["view"]["planning"]["commitments"]
+        if entry["local_item_id"] == item_id
+    )
+    assert body["kind"] == "rescheduled"
+    assert body["receipt"]["operation"] == "reschedule"
+    assert dt.datetime.fromisoformat(receipt_item["start_at"]) == expected_start
+    assert dt.datetime.fromisoformat(receipt_item["end_at"]) == expected_end
+    assert receipt_item["start_at"] == commitment["start_at"]
+    assert receipt_item["end_at"] == commitment["end_at"]
+    assert body["receipt"]["snapshot_generated_at"] == body["view"]["planning"]["generated_at"]
+    assert "3:00 PM" in body["message"]
+
+    with module.store.session() as session:
+        change = module.store.last_change(session, "local")
+        assert change is not None
+        assert change.item_id == item_id
+        assert change.before["start_at"] is None
+        assert change.before["end_at"] is None
+
+    undone = client.post("/api/undo", headers=HEADERS).json()
+    restored = next(item for item in undone["view"]["shortlist"] if item["id"] == item_id)
+    assert restored["start_at"] is None
+    assert restored["end_at"] is None
+
+
+def test_direct_reschedule_uses_the_same_verified_receipt(client: TestClient) -> None:
+    created = client.post(
+        "/api/items", headers=HEADERS, json={"title": "Review launch copy"}
+    ).json()
+    item_id = created["item"]["id"]
+    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+
+    response = client.post(
+        f"/api/items/{item_id}/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T16:30", "minutes": 30},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["receipt"]["operation"] == "reschedule"
+    assert body["receipt"]["items"][0]["start_at"] == next(
+        entry["start_at"]
+        for entry in body["view"]["planning"]["commitments"]
+        if entry["local_item_id"] == item_id
+    )
+
+
+def test_direct_reschedule_does_not_claim_an_unknown_item_was_saved(client: TestClient) -> None:
+    target_day = dt.datetime.now(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/items/no-such-item/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T16:30", "minutes": 30},
+    )
+
+    assert response.status_code == 404
+    assert "saved" not in response.json()["detail"].lower()
+
+
+def test_reschedule_keeps_ambiguous_targets_as_a_409(client: TestClient) -> None:
+    client.post("/api/items", headers=HEADERS, json={"title": "Design review notes"})
+    client.post("/api/items", headers=HEADERS, json={"title": "Design review deck"})
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={"text": "move design review to tomorrow at 3pm for 30m"},
+    )
+
+    assert response.status_code == 409
+    assert "matches 2 items" in response.json()["detail"]
+
+
+def test_reschedule_refuses_an_external_item_with_the_read_only_boundary(
+    client: TestClient,
+) -> None:
+    import cooper.app as module
+
+    start = module.now() + dt.timedelta(days=1)
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="external-move-target",
+                owner_id="local",
+                source="gmail",
+                source_ref="message-1",
+                kind="event",
+                title="Partner briefing",
+                minutes=60,
+                importance=3,
+                category="work",
+                status="open",
+                start_at=start,
+                end_at=start + dt.timedelta(hours=1),
+                created_at=module.now(),
+            )
+        )
+
+    target_day = start.astimezone(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+    response = client.post(
+        "/api/items/external-move-target/move",
+        headers=HEADERS,
+        json={"start": f"{target_day.isoformat()}T15:00", "minutes": 30},
+    )
+
+    assert response.status_code == 409
+    assert "read-only" in response.json()["detail"].lower()
+    with module.store.session() as session:
+        row = session.get(module.Item, "external-move-target")
+        assert row is not None
+        assert row.start_at == start
+        assert row.end_at == start + dt.timedelta(hours=1)
+        assert module.store.last_change(session, "local") is None
+
+
+def test_reschedule_refuses_a_provider_only_commitment_with_the_read_only_boundary(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cooper.app as module
+
+    start = module.now() + dt.timedelta(days=1)
+
+    def google_events(_owner_id: str, *, health: list[dict[str, object]], **_kwargs: object):
+        health.append({"source": "google", "status": "ok"})
+        return [
+            {
+                "source": "google",
+                "event_id": "provider-only",
+                "title": "Provider briefing",
+                "start_at": start.isoformat(),
+                "end_at": (start + dt.timedelta(hours=1)).isoformat(),
+                "category": "work",
+                "mine": False,
+                "all_day": False,
+            }
+        ]
+
+    monkeypatch.setattr(module, "google_events", google_events)
+    target_day = start.astimezone(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+
+    response = client.post(
+        "/api/say",
+        headers=HEADERS,
+        json={
+            "text": (
+                f"move Provider briefing to {target_day.strftime('%A').lower()} at 3pm for 30m"
+            )
+        },
+    )
+
+    assert response.status_code == 409
+    assert "read-only" in response.json()["detail"].lower()
+
+
 def test_mcp_catalog_and_disconnected_read(client):
     def rpc(method, params=None):
         return client.post(

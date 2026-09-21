@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -246,6 +246,7 @@ interface Routes {
   todayView?: View;
   today?: View | { status: number; detail: string };
   say?: Reply | { status: number; detail: string };
+  move?: Reply | { status: number; detail: string };
   failView?: boolean;
 }
 
@@ -301,6 +302,12 @@ function stub(routes: Routes) {
       }
       if (url.includes("/api/schedule")) {
         return json({ placed: [{ item_id: "a1" }], view: currentView });
+      }
+      if (url.endsWith("/move")) {
+        const configured = routes.move ?? reply({ kind: "rescheduled", message: "Moved." });
+        return "status" in configured
+          ? json({ detail: configured.detail }, configured.status)
+          : json(configured);
       }
       if (url.includes("/api/google/sync")) {
         return json({
@@ -2168,6 +2175,110 @@ describe("the dashboard", () => {
     expect(await screen.findByRole("dialog", { name: "Partner call" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Move Partner call/ })).not.toBeInTheDocument();
+  });
+
+  test("Home reschedules local work and renders the committed snapshot time", async () => {
+    const original = block({ id: "move-me", title: "Write release notes" });
+    const moved = block({
+      id: "move-me",
+      title: "Write release notes",
+      start_at: atLocal(TODAY, 15),
+      minutes: 45,
+    });
+    moved.end_at = new Date(new Date(moved.start_at!).getTime() + 45 * 60_000).toISOString();
+    const initialView = view({ scheduled: [original] });
+    const committedView = view({ scheduled: [moved] });
+    const calls = stub({
+      view: initialView,
+      move: reply({
+        kind: "rescheduled",
+        message: "Moved “Write release notes” in COOPER to Mon 3:00 PM–3:45 PM.",
+        receipt: {
+          operation: "reschedule",
+          items: [
+            {
+              id: moved.id,
+              title: moved.title,
+              state: "scheduled",
+              start_at: moved.start_at,
+              end_at: moved.end_at,
+            },
+          ],
+          warnings: [],
+          snapshot_generated_at: committedView.planning.generated_at,
+        },
+        view: committedView,
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Move Write release notes" }));
+    const start = screen.getByLabelText("New time for Write release notes");
+    fireEvent.change(start, { target: { value: `${TODAY}T15:00` } });
+    const duration = screen.getByLabelText("Duration for Write release notes");
+    fireEvent.change(duration, { target: { value: "45" } });
+    await user.click(screen.getByRole("button", { name: "Save new time" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.url.endsWith("/api/items/move-me/move"))?.body).toEqual({
+        start: `${TODAY}T15:00`,
+        minutes: 45,
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Moved “Write release notes” in COOPER to Mon 3:00 PM–3:45 PM.",
+    );
+    const agenda = screen.getByRole("region", { name: "Today" });
+    expect(within(agenda).getByText("Mon 3:00 PM")).toBeInTheDocument();
+  });
+
+  test("Ask renders the verified reschedule receipt message", async () => {
+    const moved = block({
+      id: "asked-move",
+      title: "Write release notes",
+      start_at: atLocal(TODAY, 15),
+    });
+    const committedView = view({ scheduled: [moved], using_model: true });
+    const calls = stub({
+      view: view({ scheduled: [block({ id: moved.id, title: moved.title })], using_model: true }),
+      say: reply({
+        kind: "rescheduled",
+        message: "Moved “Write release notes” in COOPER to Mon 3:00 PM–4:00 PM.",
+        receipt: {
+          operation: "reschedule",
+          items: [
+            {
+              id: moved.id,
+              title: moved.title,
+              state: "scheduled",
+              start_at: moved.start_at,
+              end_at: moved.end_at,
+            },
+          ],
+          warnings: [],
+          snapshot_generated_at: committedView.planning.generated_at,
+        },
+        view: committedView,
+      }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.type(
+      screen.getByLabelText("Say something to Cooper"),
+      "move write release notes to tomorrow at 3pm for 60m{Enter}",
+    );
+
+    const receiptMessage = await screen.findByText(
+      "Moved “Write release notes” in COOPER to Mon 3:00 PM–4:00 PM.",
+    );
+    expect(receiptMessage).toBeInTheDocument();
+    expect(receiptMessage.closest(".bubble")).toHaveClass("bubble--good");
+    expect(calls.find((call) => call.url.includes("/api/say"))?.body.text).toBe(
+      "move write release notes to tomorrow at 3pm for 60m",
+    );
   });
 
   test("Home keeps available work visible when provider data is incomplete", async () => {
