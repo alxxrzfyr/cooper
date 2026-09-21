@@ -47,6 +47,7 @@ class Commitment:
     category: str
     editable: bool
     local_item_id: str | None = None
+    description: str | None = None
 
 
 def normalize_local_commitment(item: Item) -> Commitment | None:
@@ -74,6 +75,7 @@ def normalize_local_commitment(item: Item) -> Commitment | None:
         category=item.category or "personal",
         editable=item_source == "me",
         local_item_id=item.id,
+        description=item.notes,
     )
 
 
@@ -98,6 +100,7 @@ def normalize_provider_commitment(event: dict[str, Any]) -> Commitment:
         all_day=bool(event.get("all_day", False)),
         category=str(event.get("category") or "personal"),
         editable=False,
+        description=event.get("description"),
     )
 
 
@@ -155,6 +158,7 @@ def _signature(commitment: Commitment) -> tuple[object, ...]:
         commitment.start,
         commitment.end,
         commitment.all_day,
+        commitment.description or "",
     )
 
 

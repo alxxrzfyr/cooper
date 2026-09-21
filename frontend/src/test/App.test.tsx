@@ -2396,6 +2396,42 @@ describe("the dashboard", () => {
     expect(document.querySelector("#task-task-6")).toBeTruthy();
   });
 
+  test("Home renders a future focused commitment only in Upcoming", async () => {
+    const future = block({
+      id: "future",
+      title: "Tomorrow planning",
+      start_at: atLocal("2026-09-01", 9),
+    });
+    stub({
+      view: snapshotView({
+        today: "2026-08-31",
+        commitments: [
+          {
+            id: "cooper:future",
+            source: "cooper",
+            source_id: future.id,
+            aliases: ["cooper:future"],
+            title: future.title,
+            kind: "task",
+            start_at: future.start_at!,
+            end_at: future.end_at!,
+            all_day: false,
+            category: "work",
+            editable: true,
+            local_item_id: future.id,
+            conflict: false,
+            item: { ...future, source: "me" as const },
+          },
+        ],
+        focus: { now_id: "cooper:future", next_id: null },
+      }),
+    });
+    render(<App />);
+
+    await screen.findByRole("link", { name: "Now: Tomorrow planning" });
+    expect(document.querySelectorAll("#agenda-cooper\\:future")).toHaveLength(1);
+  });
+
   test("Google all-day events stay on the configured local day", async () => {
     stub({
       view: snapshotView({

@@ -384,7 +384,7 @@ export function Home({
   const catchUpCommitments = planning.commitments.filter(
     (commitment) =>
       (focusIds.has(commitment.id) || riskCommitmentIds.has(commitment.id)) &&
-      !isOnDay(commitment, today, zone),
+      commitmentDay(commitment, commitment.start_at, zone) < today,
   );
 
   return (

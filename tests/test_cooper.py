@@ -364,6 +364,25 @@ class TestCommitmentSources:
         assert merged.editable is True
         assert set(merged.aliases) == {"cooper:local-1", "google:remote-1"}
 
+    def test_legacy_google_copy_with_changed_description_stays_visible(self) -> None:
+        start = NOW + dt.timedelta(hours=1)
+        local = sources.normalize_local_commitment(
+            task(
+                id="local-1",
+                google_event_id="remote-1",
+                title="Team review",
+                notes="Updated local notes",
+                start_at=start,
+                end_at=start + dt.timedelta(hours=1),
+            )
+        )
+        google = sources.normalize_provider_commitment(
+            self.provider_event(description="Original provider notes")
+        )
+
+        assert local is not None
+        assert len(sources.deduplicate_commitments([google, local])) == 2
+
     def test_moved_local_record_stays_visible_against_unchanged_legacy_google(self) -> None:
         start = NOW + dt.timedelta(hours=1)
         local = sources.normalize_local_commitment(
