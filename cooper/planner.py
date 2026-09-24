@@ -176,16 +176,30 @@ def build_planning_snapshot(
 
     active = next((entry for entry in unique if entry.start <= at < entry.end), None)
     upcoming = next((entry for entry in unique if entry.start > at), None)
+    projected = (
+        project_open_tasks(
+            items=items,
+            remote_busy=[(entry.start, entry.end) for entry in unique if entry.source != "cooper"],
+            hours=hours,
+            at=at,
+        )
+        if complete
+        else []
+    )
     recommended = next(
-        (
-            task
-            for task in tasks
-            if complete
-            and task["start_at"] is None
-            and task["minutes"] is not None
-            and 0 < task["minutes"] <= current_free
-        ),
-        None,
+        (slot for slot in projected if slot.start == at + dt.timedelta(minutes=LEAD)), None
+    )
+    candidate_ids = {slot.item_id for slot in projected}
+    for task in tasks:
+        if task["id"] in candidate_ids:
+            task["waiting_reason"] = "Not scheduled yet; an unsaved candidate slot is available."
+    capacity = assess_today_capacity(
+        items=items,
+        hours=hours,
+        at=at,
+        complete=complete,
+        projected_slots=projected,
+        occupied=occupied,
     )
 
     risks: list[dict[str, Any]] = []
@@ -229,10 +243,12 @@ def build_planning_snapshot(
         ],
         "tasks": tasks,
         "focus": {
-            "now_id": active.id if active else recommended["id"] if recommended else None,
+            "now_id": active.id if active else recommended.item_id if recommended else None,
             "next_id": upcoming.id if upcoming else None,
         },
         "risks": risks,
+        "recommended_start_at": recommended.start.isoformat() if recommended else None,
+        "capacity": capacity,
         "metrics": {
             "scheduled_count": len(today_commitments),
             "occupied_minutes": occupied_minutes,
@@ -243,6 +259,118 @@ def build_planning_snapshot(
             "largest_free_block_minutes": largest_free,
             "conflict_count": conflicts,
         },
+    }
+
+
+def project_open_tasks(
+    *,
+    items: Sequence[Item],
+    remote_busy: Sequence[tuple[dt.datetime, dt.datetime]],
+    hours: Hours,
+    at: dt.datetime,
+    days: int = 7,
+    item_ids: Sequence[str] | None = None,
+) -> list[Slot]:
+    """Share one ranked cohort and placement algorithm across assessment and scheduling."""
+    local = [item for item in items if (item.source or "me") == "me"]
+    selected = set(item_ids or [])
+    busy = [
+        *remote_busy,
+        *(
+            (aware(item.start_at), aware(item.end_at))
+            for item in items
+            if item.start_at and item.end_at
+        ),
+    ]
+    return place(
+        rank([item for item in local if not selected or item.id in selected], at=at),
+        busy=busy,
+        hours=hours,
+        at=at,
+        days=days,
+        scheduled=local,
+    )
+
+
+def assess_today_capacity(
+    *,
+    items: Sequence[Item],
+    hours: Hours,
+    at: dt.datetime,
+    complete: bool,
+    projected_slots: Sequence[Slot],
+    occupied: Sequence[tuple[dt.datetime, dt.datetime]],
+) -> dict[str, Any]:
+    zone = ZoneInfo(hours.timezone)
+    today = at.astimezone(zone).date()
+    end = dt.datetime.combine(today + dt.timedelta(days=1), dt.time(), tzinfo=zone).astimezone(
+        dt.UTC
+    )
+    local = [
+        item
+        for item in items
+        if (item.source or "me") == "me" and item.kind == "task" and item.status == "open"
+    ]
+    pending = [item for item in local if not item.scheduled]
+    due_today = [
+        item for item in pending if aware(item.due) is not None and at <= aware(item.due) < end
+    ]
+    overdue = [item for item in pending if aware(item.due) is not None and aware(item.due) < at]
+    unknown = [item for item in due_today if not item.minutes or item.minutes <= 0]
+    known = [item for item in due_today if item not in unknown]
+    due_ids = {item.id for item in due_today}
+    candidates = [slot for slot in projected_slots if slot.item_id in due_ids and slot.end <= end]
+    placed = {slot.item_id for slot in candidates}
+    unplaced = [{"item_id": item.id, "reason": "overdue"} for item in overdue]
+    if complete:
+        unplaced.extend(
+            {"item_id": item.id, "reason": "no_feasible_slot"}
+            for item in known
+            if item.id not in placed
+        )
+    padded = list(occupied)
+    gap = dt.timedelta(minutes=hours.break_minutes)
+    for item in local:
+        if item.start_at and item.end_at:
+            padded.append((aware(item.start_at) - gap, aware(item.end_at) + gap))
+    open_minutes = 0
+    if complete:
+        for start, stop in _windows(hours, at, 1):
+            cursor, stop = max(start, at + dt.timedelta(minutes=LEAD)), min(stop, end)
+            for busy_start, busy_end in merge_intervals(padded):
+                if busy_end <= cursor or busy_start >= stop:
+                    continue
+                open_minutes += max(0, (min(busy_start, stop) - cursor).total_seconds() / 60)
+                cursor = max(cursor, busy_end)
+            open_minutes += max(0, (stop - cursor).total_seconds() / 60)
+    return {
+        "day": today.isoformat(),
+        "generated_at": at.isoformat(),
+        "status": "source_unavailable"
+        if not complete
+        else "needs_estimates"
+        if unknown
+        else "checked",
+        "demand_scope": "due_today_unscheduled",
+        "scheduling_scope": "all_open_local_tasks_7_days",
+        "due_today_ids": [item.id for item in due_today],
+        "overdue_ids": [item.id for item in overdue],
+        "other_backlog_count": len(pending) - len(due_today) - len(overdue),
+        "missed_block_ids": [item.id for item in local if item.end_at and aware(item.end_at) <= at],
+        "unknown_estimate_ids": [item.id for item in unknown],
+        "unknown_estimate_count": len(unknown),
+        "assessment_partial": bool(unknown),
+        "known_estimated_due_today_minutes": sum(item.minutes for item in known),
+        "candidate_slots": [
+            {
+                "item_id": slot.item_id,
+                "start_at": slot.start.isoformat(),
+                "end_at": slot.end.isoformat(),
+            }
+            for slot in candidates
+        ],
+        "unplaced": unplaced,
+        **({"open_window_minutes": round(open_minutes)} if complete else {}),
     }
 
 
@@ -373,6 +501,7 @@ def place(
     at: dt.datetime,
     days: int = 7,
     scheduled: list[Item] | None = None,
+    until: dt.datetime | None = None,
 ) -> list[Slot]:
     """Place exact continuous sessions within availability and before deadlines."""
     zone = ZoneInfo(hours.timezone)
@@ -404,6 +533,8 @@ def place(
         for window_start, window_end in windows:
             cursor = max(window_start, earliest)
             limit = min(window_end, deadline) if deadline else window_end
+            if until is not None:
+                limit = min(limit, until.astimezone(dt.UTC))
             while cursor + duration <= limit:
                 day = cursor.astimezone(zone).date()
                 end = cursor + duration
