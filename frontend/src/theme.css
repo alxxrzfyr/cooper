@@ -51,9 +51,8 @@
   --corner-continuous: squircle;
   --corner-round: round;
 
-  --font:
-    ui-rounded, "SF Pro Rounded", "Nunito", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font: ui-rounded;
+  --mono: ui-monospace;
 
   --bar-h: 52px;
   --tab-h: 64px;
@@ -3966,7 +3965,7 @@ button.slot:active {
   .app:not(.app--public) .rail__tagline {
     min-height: 0;
     overflow: hidden;
-    font-family: "Excalifont", "Comic Sans MS", cursive;
+    font-family: "Excalifont";
     font-size: 13px;
     transform: rotate(-1deg);
   }

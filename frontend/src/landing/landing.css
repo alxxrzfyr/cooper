@@ -1182,7 +1182,7 @@ html.lenis body {
 .landing__hand-note,
 .landing__scribble {
   color: var(--landing-pencil);
-  font-family: "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-weight: 700;
   line-height: 1.25;
 }
@@ -3140,7 +3140,7 @@ html.lenis body {
 
 .landing__beta-status {
   color: #fff8e8;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: ui-rounded;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.045em;
@@ -3152,7 +3152,7 @@ html.lenis body {
 .landing__hand-note,
 .landing__scribble,
 .auth-page__note span {
-  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-weight: 400;
 }
 
@@ -3358,7 +3358,7 @@ html.lenis body {
 .landing__intro-avatar span {
   width: 142px;
   color: var(--landing-pencil);
-  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-size: 15px;
   line-height: 1.12;
   transform: rotate(1.5deg);
@@ -3444,7 +3444,7 @@ html.lenis body {
   bottom: 76px;
   width: 138px;
   color: var(--landing-pencil);
-  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-size: 14px;
   line-height: 1.14;
   transform: rotate(3deg);
@@ -4009,7 +4009,7 @@ html.lenis body {
   right: -6%;
   width: 210px;
   color: var(--landing-pencil);
-  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-size: 19px;
   line-height: 1.13;
   transform: rotate(3deg);
@@ -4079,13 +4079,7 @@ html.lenis body {
 }
 
 .landing__beta-status {
-  font-family:
-    Inter,
-    "SF Pro Text",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Helvetica Neue",
-    sans-serif;
+  font-family: ui-rounded;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0;

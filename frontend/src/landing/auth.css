@@ -124,7 +124,7 @@
 .auth-page__note span {
   max-width: 170px;
   color: var(--text);
-  font-family: "Excalifont", "Comic Sans MS", cursive;
+  font-family: "Excalifont";
   font-size: 17px;
   font-weight: 400;
   line-height: 1.2;
