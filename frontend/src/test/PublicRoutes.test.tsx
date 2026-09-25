@@ -99,6 +99,7 @@ describe("public route surface", () => {
 
     expect(screen.getByRole("heading", { name: "Terms of Use" })).toBeInTheDocument();
     expect(screen.getByText(/personal planning workspace in public beta/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
   });
 

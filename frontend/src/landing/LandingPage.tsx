@@ -303,7 +303,6 @@ export function LandingPage({
               <path d="m625 72 1.5 8 8 1.5-8 1.5-1.5 8-1.5-8-8-1.5 8-1.5Z" />
               <path className="landing__paper-squiggle" d="M14 340c16-13 30 13 46 0s30 13 46 0" />
             </svg>
-            <p className="landing__eyebrow">Meet your calm little timekeeper</p>
             <h1>
               Hi, I&rsquo;m <span>Cooper.</span>
             </h1>
@@ -360,7 +359,6 @@ export function LandingPage({
 
         <section className="landing__panel landing__panel--features" id={panelId("features")}>
           <div className="landing__copy landing__copy--narrow">
-            <p className="landing__eyebrow">What Cooper actually does</p>
             <h2>One thought in. A clear day out.</h2>
             <p className="landing__body">
               No boards to groom or system to maintain. Cooper turns ordinary words into a useful
@@ -450,7 +448,6 @@ export function LandingPage({
             <Mascot name="cooper_syncing" size="md" decorative />
           </div>
           <div className="landing__copy landing__copy--narrow">
-            <p className="landing__eyebrow">Where it fits into real life</p>
             <h2>For the week that changes by Tuesday.</h2>
             <div className="landing__use-list">
               <article>
@@ -481,7 +478,6 @@ export function LandingPage({
           id={panelId("start")}
         >
           <div className="landing__copy landing__copy--narrow">
-            <p className="landing__eyebrow">Ready when you are</p>
             <h2>
               Give <span className="public-brand-name">Cooper</span> one thing to remember.
             </h2>
@@ -519,8 +515,12 @@ export function LandingPage({
               <span className="public-brand-name">Cooper</span> © 2026
             </span>
             <nav aria-label="Legal">
-              <a href="/privacy">Privacy</a>
-              <a href="/terms">Terms</a>
+              <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                Privacy
+              </a>
+              <a href="/terms" target="_blank" rel="noopener noreferrer">
+                Terms
+              </a>
             </nav>
           </footer>
         </section>

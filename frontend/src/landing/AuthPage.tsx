@@ -104,8 +104,12 @@ export function AuthPage({
           time.
         </span>
         <nav aria-label="Legal">
-          <a href="/terms">Terms</a>
-          <a href="/privacy">Privacy</a>
+          <a href="/terms" target="_blank" rel="noopener noreferrer">
+            Terms
+          </a>
+          <a href="/privacy" target="_blank" rel="noopener noreferrer">
+            Privacy
+          </a>
         </nav>
       </footer>
     </div>
