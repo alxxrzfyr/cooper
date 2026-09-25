@@ -33,6 +33,28 @@ os.environ["COOPER_SYNC_SECRET"] = "sync-secret-that-is-long-enough"
 
 HEADERS = {"X-Cooper-Key": KEY}
 
+_WEEKDAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
+
+def next_open_day(today: dt.date, weekdays: tuple[int, ...] = (0, 1, 2, 3, 4)) -> dt.date:
+    """First configured working day strictly after `today` (Mon–Fri by default)."""
+    day = today + dt.timedelta(days=1)
+    while day.weekday() not in weekdays:
+        day += dt.timedelta(days=1)
+    return day
+
+
+def open_day_name(day: dt.date) -> str:
+    return _WEEKDAY_NAMES[day.weekday()]
+
 
 @contextmanager
 def configured_client(
@@ -243,12 +265,12 @@ def test_reschedule_commits_once_and_receipts_the_fresh_snapshot(client: TestCli
         "/api/items", headers=HEADERS, json={"title": "Write release notes"}
     ).json()
     item_id = created["item"]["id"]
-    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+    target_day = next_open_day(dt.date.fromisoformat(created["view"]["today"]))
 
     response = client.post(
         "/api/say",
         headers=HEADERS,
-        json={"text": "move write release notes to tomorrow at 3pm for 45m"},
+        json={"text": (f"move write release notes to {open_day_name(target_day)} at 3pm for 45m")},
     )
 
     assert response.status_code == 200
@@ -293,7 +315,7 @@ def test_move_rejects_a_conflicting_slot_without_undo_or_mutation(
     ).json()
     item_id = created["item"]["id"]
     client.post("/api/schedule", headers=HEADERS)
-    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+    target_day = next_open_day(dt.date.fromisoformat(created["view"]["today"]))
     target_start = dt.datetime.combine(target_day, dt.time(15), tzinfo=ZoneInfo("Asia/Singapore"))
     target_end = target_start + dt.timedelta(hours=1)
 
@@ -331,7 +353,7 @@ def test_direct_reschedule_uses_the_same_verified_receipt(client: TestClient) ->
         "/api/items", headers=HEADERS, json={"title": "Review launch copy"}
     ).json()
     item_id = created["item"]["id"]
-    target_day = dt.date.fromisoformat(created["view"]["today"]) + dt.timedelta(days=1)
+    target_day = next_open_day(dt.date.fromisoformat(created["view"]["today"]))
 
     response = client.post(
         f"/api/items/{item_id}/move",
@@ -347,6 +369,22 @@ def test_direct_reschedule_uses_the_same_verified_receipt(client: TestClient) ->
         for entry in body["view"]["planning"]["commitments"]
         if entry["local_item_id"] == item_id
     )
+
+
+def test_direct_reschedule_rejects_a_weekend_outside_working_hours(client: TestClient) -> None:
+    created = client.post("/api/items", headers=HEADERS, json={"title": "Weekend attempt"}).json()
+    item_id = created["item"]["id"]
+    today = dt.date.fromisoformat(created["view"]["today"])
+    saturday = today + dt.timedelta(days=(5 - today.weekday()) % 7 or 7)
+
+    response = client.post(
+        f"/api/items/{item_id}/move",
+        headers=HEADERS,
+        json={"start": f"{saturday.isoformat()}T15:00", "minutes": 30},
+    )
+
+    assert response.status_code == 422
+    assert "working hours" in response.json()["detail"].casefold()
 
 
 def test_direct_reschedule_does_not_claim_an_unknown_item_was_saved(client: TestClient) -> None:
@@ -385,12 +423,12 @@ def test_reschedule_preserves_a_title_containing_to_and_moves_only_that_item(
     notes_to_self = client.post(
         "/api/items", headers=HEADERS, json={"title": "Notes to self"}
     ).json()["item"]
-    target_day = dt.datetime.now(ZoneInfo("Asia/Singapore")).date() + dt.timedelta(days=1)
+    target_day = next_open_day(dt.datetime.now(ZoneInfo("Asia/Singapore")).date())
 
     response = client.post(
         "/api/say",
         headers=HEADERS,
-        json={"text": "move notes to self to tomorrow at 3pm for 30m"},
+        json={"text": f"move notes to self to {open_day_name(target_day)} at 3pm for 30m"},
     )
 
     assert response.status_code == 200

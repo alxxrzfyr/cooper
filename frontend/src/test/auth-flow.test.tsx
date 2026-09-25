@@ -196,8 +196,10 @@ describe("public auth flow", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Cooper’s day" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Checking your account." }),
+    ).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
 
     await emitFirebaseUser(null);

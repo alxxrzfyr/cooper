@@ -360,7 +360,12 @@ export default function App() {
   const [loadResolved, setLoadResolved] = useState(false);
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
+  /** Auth form actions only — never blocks the workspace or Cooper replies. */
+  const [authBusy, setAuthBusy] = useState(false);
+  /** Dashboard/settings mutations — independent of the conversation request. */
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  /** In-flight /api/say — owns the thinking UI and composer lock. */
+  const [chatPending, setChatPending] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
@@ -412,9 +417,13 @@ export default function App() {
   const publicRoute = readPublicRoute(pathname);
   const normalizedPathname = normalizePathname(pathname);
   const isWorkspacePath = normalizedPathname === "/app";
-  const publicSurface = !isWorkspacePath || (firebaseConfigured && authState.kind !== "signed-in");
-  const publicLandingSurface = publicSurface && publicRoute === "landing";
-  const workspaceVisible = canLoadProtectedData && !publicSurface;
+  const authPending = firebaseConfigured && authState.kind === "loading";
+  // /app while auth is unresolved uses the workspace skeleton. Public pages keep their own
+  // content and only disable auth controls — never a global account-check takeover.
+  const showPublicRoutes =
+    !isWorkspacePath || (firebaseConfigured && !authPending && authState.kind !== "signed-in");
+  const publicLandingSurface = showPublicRoutes && publicRoute === "landing";
+  const workspaceVisible = canLoadProtectedData && isWorkspacePath;
   const signedInEmail = signedInUser?.email ?? null;
 
   const navigate = useCallback((nextPath: string) => {
@@ -514,25 +523,25 @@ export default function App() {
 
   const startSignIn = useCallback(() => {
     setFailure(null);
-    setBusy(true);
+    setAuthBusy(true);
     void signInWithGoogle()
       .catch((error: unknown) => {
         setFailure(firebaseAuthMessage(error));
       })
-      .finally(() => setBusy(false));
+      .finally(() => setAuthBusy(false));
   }, []);
 
   const startEmailAuth = useCallback(
     async (email: string, password: string, intent: "login" | "signup") => {
       setFailure(null);
-      setBusy(true);
+      setAuthBusy(true);
       try {
         if (intent === "login") await signInWithEmail(email, password);
         else await registerWithEmail(email, password);
       } catch (error: unknown) {
         setFailure(firebaseAuthMessage(error));
       } finally {
-        setBusy(false);
+        setAuthBusy(false);
       }
     },
     [],
@@ -540,7 +549,7 @@ export default function App() {
 
   const checkVerification = useCallback(async () => {
     setFailure(null);
-    setBusy(true);
+    setAuthBusy(true);
     try {
       const user = await refreshCurrentUser();
       if (!user || user.emailVerified === false) {
@@ -557,13 +566,13 @@ export default function App() {
     } catch (error: unknown) {
       setFailure(firebaseAuthMessage(error));
     } finally {
-      setBusy(false);
+      setAuthBusy(false);
     }
   }, [navigate]);
 
   const resendVerification = useCallback(async () => {
     setFailure(null);
-    setBusy(true);
+    setAuthBusy(true);
     try {
       if (!auth?.currentUser) throw new Error("No account is signed in.");
       await resendVerificationEmail(auth.currentUser);
@@ -571,13 +580,13 @@ export default function App() {
     } catch (error: unknown) {
       setFailure(firebaseAuthMessage(error));
     } finally {
-      setBusy(false);
+      setAuthBusy(false);
     }
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {
     setFailure(null);
-    setBusy(true);
+    setAuthBusy(true);
     try {
       await resetPassword(email.trim());
     } catch (error: unknown) {
@@ -594,7 +603,7 @@ export default function App() {
       );
       throw error;
     } finally {
-      setBusy(false);
+      setAuthBusy(false);
     }
   }, []);
 
@@ -742,7 +751,7 @@ export default function App() {
   const say = useCallback(
     async (sentence: string, intent?: AskIntent) => {
       const said = sentence.trim();
-      if (!said || busy) return;
+      if (!said || chatPending) return;
       const requestEpoch = authEpoch.current;
       if (!canCompose) return;
       const openAsk = canUseAi || mode === "ai";
@@ -755,7 +764,7 @@ export default function App() {
       setText("");
       setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
       setAgentSteps(initialAgentSteps());
-      setBusy(true);
+      setChatPending(true);
 
       const advanceAgentStep = (completedId: string, runningId: string) => {
         setAgentSteps(
@@ -808,6 +817,9 @@ export default function App() {
           announce(kind, error.message);
         } else {
           const message = error instanceof Error ? error.message : "Something went wrong.";
+          if (openAsk) {
+            reply({ text: message, kind: "note" });
+          }
           setFailure(message);
           announce("note", message);
         }
@@ -815,17 +827,17 @@ export default function App() {
         agentPhaseTimers.current.forEach((timer) => window.clearTimeout(timer));
         agentPhaseTimers.current = [];
         setAgentSteps(null);
-        setBusy(false);
+        setChatPending(false);
       }
     },
-    [announce, busy, canCompose, canUseAi, geminiKey, handleApiAuthFailure, mode],
+    [announce, canCompose, canUseAi, chatPending, geminiKey, handleApiAuthFailure, mode],
   );
 
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
   const act = useCallback(
     async (work: () => Promise<Reply | { view: View }>): Promise<boolean> => {
       const requestEpoch = authEpoch.current;
-      setBusy(true);
+      setWorkspaceBusy(true);
       try {
         const result = await work();
         if (requestEpoch !== authEpoch.current) return false;
@@ -847,7 +859,7 @@ export default function App() {
         }
         return false;
       } finally {
-        setBusy(false);
+        setWorkspaceBusy(false);
       }
       return true;
     },
@@ -856,7 +868,7 @@ export default function App() {
 
   const connectGoogle = useCallback(async () => {
     const requestEpoch = authEpoch.current;
-    setBusy(true);
+    setWorkspaceBusy(true);
     try {
       const { url } = await api.connect();
       if (requestEpoch !== authEpoch.current) return;
@@ -874,7 +886,7 @@ export default function App() {
         announce("note", message);
       }
     } finally {
-      setBusy(false);
+      setWorkspaceBusy(false);
     }
   }, [announce, handleApiAuthFailure]);
 
@@ -940,15 +952,15 @@ export default function App() {
 
   return (
     <div
-      className={`app${publicSurface ? " app--public" : ""}${
+      className={`app${showPublicRoutes ? " app--public" : ""}${
         publicLandingSurface ? " app--landing" : ""
-      }${!publicSurface && sidebarCollapsed ? " app--rail-collapsed" : ""}`}
+      }${!showPublicRoutes && sidebarCollapsed ? " app--rail-collapsed" : ""}`}
     >
-      {!publicSurface && (
+      {workspaceVisible && (
         <Nav
           current={tab}
           todo={shortlist.length}
-          booked={view?.planning.metrics.scheduled_count ?? 0}
+          booked={view?.planning?.metrics.scheduled_count ?? scheduled.length}
           collapsed={sidebarCollapsed}
           onChange={(next) => {
             setTab(next);
@@ -968,13 +980,13 @@ export default function App() {
       )}
 
       <main className="main">
-        {publicSurface ? (
+        {showPublicRoutes ? (
           <PublicRoutes
             route={publicRoute}
-            busy={busy}
+            busy={authBusy}
             error={failure ?? (authState.kind === "config-error" ? authState.message : null)}
             authEnabled={firebaseConfigured}
-            authLoading={authState.kind === "loading"}
+            authLoading={authPending}
             onSignIn={startSignIn}
             onEmailAuth={startEmailAuth}
             authStatus={authState.kind === "verification-pending" ? "verification-pending" : "idle"}
@@ -989,7 +1001,7 @@ export default function App() {
               <AuthSetupErrorSurface message={authState.message} />
             )}
 
-            {firebaseConfigured && authState.kind === "loading" && <LoadingSurface tab="home" />}
+            {authPending && <LoadingSurface tab="home" />}
 
             {workspaceVisible && failure && (
               <div className="banner" role="alert">
@@ -1047,7 +1059,7 @@ export default function App() {
             {workspaceVisible && tab === "home" && view && (
               <Home
                 view={view}
-                busy={busy}
+                busy={workspaceBusy}
                 onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
                 onOpen={setDetail}
                 onSchedule={() => void act(() => api.schedule())}
@@ -1077,11 +1089,11 @@ export default function App() {
             {workspaceVisible && tab === "chat" && (
               <Chat
                 turns={turns}
-                thinking={busy}
+                thinking={chatPending}
                 agentSteps={agentSteps ?? undefined}
                 mode={mode}
                 canUseAi={canAsk}
-                manualForm={<Form busy={busy} onSubmit={addFromForm} />}
+                manualForm={<Form busy={workspaceBusy} onSubmit={addFromForm} />}
                 onMode={(next) => {
                   setMode(next);
                   saveMode(next);
@@ -1093,7 +1105,7 @@ export default function App() {
             {workspaceVisible && tab === "calendar" && view && (
               <Calendar
                 view={view}
-                busy={busy}
+                busy={workspaceBusy}
                 onComplete={(itemId) => void act(() => api.act(itemId, "complete"))}
                 onPin={(itemId) => void act(() => api.act(itemId, "pin"))}
                 onDrop={(itemId) => void act(() => api.act(itemId, "drop"))}
@@ -1166,7 +1178,7 @@ export default function App() {
                 <section className="group">
                   <AvailabilitySettings
                     hours={hours}
-                    busy={busy}
+                    busy={workspaceBusy}
                     onSave={(next) => act(() => api.setHours(next))}
                   />
                   {view.source_health
@@ -1206,7 +1218,7 @@ export default function App() {
                         <button
                           type="button"
                           className="btn btn--quiet"
-                          disabled={busy}
+                          disabled={workspaceBusy}
                           onClick={() => void connectGoogle()}
                         >
                           Connect Google
@@ -1233,7 +1245,7 @@ export default function App() {
                         <button
                           type="button"
                           className="btn btn--quiet"
-                          disabled={busy}
+                          disabled={workspaceBusy}
                           onClick={() => void act(() => api.disconnectICloud())}
                         >
                           Disconnect
@@ -1271,7 +1283,7 @@ export default function App() {
                       <button
                         type="submit"
                         className="btn btn--quiet"
-                        disabled={busy || !view.icloud.configured}
+                        disabled={workspaceBusy || !view.icloud.configured}
                       >
                         Connect iCloud
                       </button>
@@ -1303,10 +1315,10 @@ export default function App() {
                       <button
                         type="button"
                         className="btn btn--quiet"
-                        disabled={busy || !view.gmail.connected}
+                        disabled={workspaceBusy || !view.gmail.connected}
                         onClick={() => void act(() => api.syncGoogle())}
                       >
-                        {busy ? "Syncing…" : "Sync now"}
+                        {workspaceBusy ? "Syncing…" : "Sync now"}
                       </button>
                     </div>
                     <div className="field">
@@ -1509,14 +1521,14 @@ export default function App() {
         ("kind" in detail ? (
           <TaskFrame
             item={detail}
-            today={view?.planning.today ?? ""}
-            busy={busy}
+            today={view?.planning?.today ?? view?.today ?? ""}
+            busy={workspaceBusy}
             onClose={() => setDetail(null)}
             onComplete={() => void act(() => api.act(detail.id, "complete"))}
             onPin={() => void act(() => api.act(detail.id, "pin"))}
             onDrop={() => void act(() => api.act(detail.id, "drop"))}
             onSchedule={
-              view?.planning.complete
+              view?.planning?.complete
                 ? () => {
                     void act(() => api.act(detail.id, "schedule"));
                     setDetail(null);
@@ -1552,14 +1564,15 @@ export default function App() {
                 value={text}
                 autoComplete="off"
                 enterKeyHint="send"
+                disabled={chatPending}
                 onChange={(event) => setText(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && void say(text)}
+                onKeyDown={(event) => event.key === "Enter" && !chatPending && void say(text)}
               />
               <button
                 type="button"
                 className="composer__send"
                 aria-label="Send"
-                disabled={busy || !text.trim()}
+                disabled={chatPending || !text.trim()}
                 onClick={() => void say(text)}
               >
                 <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
