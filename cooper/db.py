@@ -15,16 +15,21 @@ import json
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Literal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     inspect,
     select,
@@ -168,6 +173,120 @@ class Change(Base):
     undone: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AiAllowance(Base):
+    """An operator-provisioned owner's allowance for one UTC calendar month."""
+
+    __tablename__ = "ai_allowance"
+    __table_args__ = (
+        CheckConstraint("tier IN ('free', 'pilot_plus')", name="ck_ai_allowance_tier"),
+        CheckConstraint(
+            "limit_units >= 0 AND reserved_units >= 0 AND consumed_units >= 0 "
+            "AND reserved_units + consumed_units <= limit_units",
+            name="ck_ai_allowance_counts",
+        ),
+    )
+    owner_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    tier: Mapped[str] = mapped_column(String(16), default="free")
+    limit_units: Mapped[int] = mapped_column(Integer)
+    reserved_units: Mapped[int] = mapped_column(Integer, default=0)
+    consumed_units: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(Utc, default=now, onupdate=now)
+
+
+class AiSpendEnvelope(Base):
+    """Service-owned, explicitly funded aggregate or provider spending envelope."""
+
+    __tablename__ = "ai_spend_envelope"
+    __table_args__ = (
+        CheckConstraint("scope IN ('aggregate', 'gemini', 'groq')", name="ck_ai_envelope_scope"),
+        CheckConstraint(
+            "limit_microusd >= 0 AND reserved_microusd >= 0 AND spent_microusd >= 0 "
+            "AND reserved_microusd + spent_microusd <= limit_microusd",
+            name="ck_ai_envelope_counts",
+        ),
+    )
+    owner_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(16), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    limit_microusd: Mapped[int] = mapped_column(BigInteger)
+    reserved_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    spent_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(Utc, default=now, onupdate=now)
+
+
+class AiRequest(Base):
+    """One owner-scoped logical request and its replayable final receipt."""
+
+    __tablename__ = "ai_request"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "logical_request_id", name="uq_ai_request_logical"),
+        UniqueConstraint("id", "owner_id", name="uq_ai_request_owner"),
+        ForeignKeyConstraint(
+            ["owner_id", "period"], ["ai_allowance.owner_id", "ai_allowance.period"]
+        ),
+        CheckConstraint(
+            "state IN ('admitted', 'running', 'applying', 'completed', 'failed', 'uncertain')",
+            name="ck_ai_request_state",
+        ),
+        CheckConstraint(
+            "allowance_state IN ('reserved', 'consumed', 'released')",
+            name="ck_ai_request_allowance",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    logical_request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), default="admitted")
+    allowance_state: Mapped[str] = mapped_column(String(16), default="reserved")
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(Utc, default=now, onupdate=now)
+
+
+class AiAttempt(Base):
+    """A single provider dispatch with conservative cost reservation."""
+
+    __tablename__ = "ai_attempt"
+    __table_args__ = (
+        UniqueConstraint("request_id", "attempt_no", name="uq_ai_attempt_number"),
+        ForeignKeyConstraint(["request_id", "owner_id"], ["ai_request.id", "ai_request.owner_id"]),
+        CheckConstraint("attempt_no BETWEEN 1 AND 4", name="ck_ai_attempt_number"),
+        CheckConstraint("provider IN ('gemini', 'groq')", name="ck_ai_attempt_provider"),
+        CheckConstraint(
+            "state IN ('reserved', 'dispatching', 'settled', 'uncertain', 'released')",
+            name="ck_ai_attempt_state",
+        ),
+        CheckConstraint(
+            "reserved_microusd >= 0 AND (actual_microusd IS NULL OR actual_microusd >= 0) "
+            "AND (input_tokens IS NULL OR input_tokens >= 0) "
+            "AND (output_tokens IS NULL OR output_tokens >= 0)",
+            name="ck_ai_attempt_usage",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(128))
+    price_revision: Mapped[str] = mapped_column(String(64))
+    input_rate_microusd: Mapped[int] = mapped_column(BigInteger)
+    output_rate_microusd: Mapped[int] = mapped_column(BigInteger)
+    state: Mapped[str] = mapped_column(String(16), default="reserved")
+    reserved_microusd: Mapped[int] = mapped_column(BigInteger)
+    actual_microusd: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(Utc, default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(Utc, default=now, onupdate=now)
+
+
 def _iso(value: dt.datetime | None) -> str | None:
     if value is None:
         return None
@@ -191,10 +310,22 @@ class Store:
         existing = set(inspect(self.engine).get_table_names())
         if not (existing - {"alembic_version"}):
             Base.metadata.create_all(self.engine)
+        tables = set(inspect(self.engine).get_table_names())
+        self.ai_schema_available = {
+            "ai_allowance",
+            "ai_spend_envelope",
+            "ai_request",
+            "ai_attempt",
+        } <= tables
         self._factory = sessionmaker(bind=self.engine, expire_on_commit=False)
+        self._joined: ContextVar[Session | None] = ContextVar("cooper_writer_session", default=None)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
+        joined = self._joined.get()
+        if joined is not None:
+            yield joined
+            return
         session = self._factory()
         try:
             yield session
@@ -204,6 +335,15 @@ class Store:
             raise
         finally:
             session.close()
+
+    @contextmanager
+    def join(self, session: Session) -> Iterator[None]:
+        """Join existing writer helpers to one request-local atomic transaction."""
+        token = self._joined.set(session)
+        try:
+            yield
+        finally:
+            self._joined.reset(token)
 
     def get_setting(self, owner_id: str, key: str, default: Any = None) -> Any:
         with self.session() as session:

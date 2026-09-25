@@ -6,7 +6,6 @@ the rest of the app on safe defaults.
 
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -16,7 +15,9 @@ KEY_MIN = 24
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="COOPER_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="COOPER_", extra="ignore", hide_input_in_errors=True
+    )
 
     # The shared key protects the local API from unrelated browser pages. Firebase mode does
     # not use it.
@@ -32,6 +33,18 @@ class Settings(BaseSettings):
     owner_id: str = "local"
 
     gemini_model: str = "gemini-flash-lite-latest"
+    included_ai_enabled: bool = False
+    gemini_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
+    groq_model: str = ""
+    ai_price_revision: str = ""
+    gemini_input_microusd_per_million: int = Field(default=0, ge=0)
+    gemini_output_microusd_per_million: int = Field(default=0, ge=0)
+    groq_input_microusd_per_million: int = Field(default=0, ge=0)
+    groq_output_microusd_per_million: int = Field(default=0, ge=0)
+    ai_input_token_bound: int = Field(default=8192, ge=1024, le=32768)
+    ai_output_token_bound: int = Field(default=384, ge=160, le=1024)
+    ai_deadline_seconds: int = Field(default=30, ge=1, le=60)
 
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
@@ -96,11 +109,26 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Settings:
-        if os.environ.get("COOPER_GEMINI_API_KEY", "").strip():
-            raise ValueError(
-                "COOPER_GEMINI_API_KEY is no longer supported. Add a Gemini key in the "
-                "browser Settings screen instead."
+        if self.included_ai_enabled:
+            complete = (
+                self.gemini_api_key
+                and self.gemini_api_key.get_secret_value().strip()
+                and self.groq_api_key
+                and self.groq_api_key.get_secret_value().strip()
+                and self.gemini_model.strip()
+                and self.groq_model.strip()
+                and self.ai_price_revision
+                and "latest" not in self.gemini_model.lower()
+                and "latest" not in self.groq_model.lower()
+                and self.gemini_input_microusd_per_million > 0
+                and self.gemini_output_microusd_per_million > 0
+                and self.groq_input_microusd_per_million > 0
+                and self.groq_output_microusd_per_million > 0
             )
+            if not complete:
+                raise ValueError(
+                    "Included AI requires server credentials, pinned models and reviewed prices"
+                )
         if self.auth_mode == "local" and len(self.key()) < KEY_MIN:
             raise ValueError(
                 f"COOPER_SHARED_KEY must be at least {KEY_MIN} characters when "

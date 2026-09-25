@@ -228,3 +228,76 @@ def _create_legacy_database(db_path: pathlib.Path) -> None:
                 "undone": 0,
             },
         )
+
+
+def test_accounting_reconciliation_claims_one_attempt_once(monkeypatch, tmp_path):
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from test_api import _enable_included_ai_fixture, configured_client
+
+    from cooper.db import AiAttempt, AiRequest, AiSpendEnvelope
+
+    with configured_client(monkeypatch, f"sqlite:///{tmp_path / 'reconcile-race.db'}") as (
+        module,
+        _,
+    ):
+        _enable_included_ai_fixture(module)
+        ids = [
+            module._admit_ai(
+                "local",
+                module.Say(text="help me plan", mode="ai", logical_request_id=str(uuid.uuid4())),
+                100,
+            )[0]
+            for _ in range(2)
+        ]
+        with module.store.session() as session:
+            request = session.get(AiRequest, ids[0])
+            request.state = "uncertain"
+            request.response = {"kind": "question", "message": "failed"}
+            attempt = session.scalar(select(AiAttempt).where(AiAttempt.request_id == ids[0]))
+            attempt.state = "uncertain"
+            attempt_id = attempt.id
+        barrier = Barrier(2)
+        cost = module._attempt_cost
+
+        def overlap(*args):
+            result = cost(*args)
+            barrier.wait(timeout=5)
+            return result
+
+        monkeypatch.setattr(module, "_attempt_cost", overlap)
+
+        def settle(_):
+            try:
+                module.reconcile_ai_attempt(attempt_id, input_tokens=100, output_tokens=20)
+                return "settled"
+            except ValueError:
+                return "already claimed"
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            results = list(workers.map(settle, range(2)))
+        assert sorted(results) == ["already claimed", "settled"]
+        with module.store.session() as session:
+            envelope = session.get(
+                AiSpendEnvelope, (module.AI_SERVICE_OWNER, module._ai_period(), "aggregate")
+            )
+            assert (envelope.reserved_microusd, envelope.spent_microusd) == (100, 18)
+
+
+def test_accounting_migration_adds_frozen_ledger_to_legacy_database(tmp_path):
+    path = tmp_path / "accounting-legacy.db"
+    _create_legacy_database(path)
+    _run_alembic(path)
+    engine = create_engine(f"sqlite:///{path}")
+    inspector = inspect(engine)
+    assert {"ai_allowance", "ai_spend_envelope", "ai_request", "ai_attempt"} <= set(
+        inspector.get_table_names()
+    )
+    assert {"input_rate_microusd", "output_rate_microusd", "price_revision"} <= _column_names(
+        inspector, "ai_attempt"
+    )
+    with engine.connect() as connection:
+        assert connection.execute(select(Item.title)).scalar_one() == "legacy"
+    engine.dispose()
