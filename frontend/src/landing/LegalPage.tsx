@@ -24,11 +24,9 @@ export function LegalPage({ title, updated, tone, children }: LegalPageProps) {
     <div className={`public-page legal-page legal-page--${tone}`}>
       <header className="public-page__header legal-page__header">
         <PublicBrand />
-        <a className="public-page__back" href="/" aria-label="Back to Cooper home">
+        <a className="public-page__back" href="/" aria-label="Back">
           <span aria-hidden="true">←</span>
-          <span>
-            Back to <span className="public-brand-name">Cooper</span>
-          </span>
+          <span>Back</span>
         </a>
       </header>
 
