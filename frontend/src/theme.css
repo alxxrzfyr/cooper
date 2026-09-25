@@ -51,7 +51,7 @@
   --corner-continuous: squircle;
   --corner-round: round;
 
-  --font: ui-rounded;
+  --font: system-ui;
   --mono: ui-monospace;
 
   --bar-h: 52px;
