@@ -1,11 +1,66 @@
-/* Nunito is the shipped UI face — same rounded look on every OS.
-   (Apple's SF Pro Rounded can't be redistributed as a webfont.) */
+/* Sunghyun Sans — open SF-Pro-Rounded-style face, shipped for every OS. */
 @font-face {
-  font-family: "Nunito";
-  src: url("/assets/fonts/Nunito-latin-wght-normal.woff2") format("woff2");
-  font-weight: 200 1000;
+  font-family: "Sunghyun Sans";
   font-style: normal;
+  font-weight: 100;
   font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Thin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-ExtraLight.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Light.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-ExtraBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Sunghyun Sans";
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url("/assets/fonts/SunghyunSans-Black.woff2") format("woff2");
 }
 
 :root {
@@ -61,8 +116,8 @@
   --corner-continuous: squircle;
   --corner-round: round;
 
-  --font: "Nunito";
-  --mono: ui-monospace;
+  --font: "Sunghyun Sans";
+  --mono: "Sunghyun Sans";
 
   --bar-h: 52px;
   --tab-h: 64px;
@@ -124,6 +179,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
+  font-weight: 500;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
