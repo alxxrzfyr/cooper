@@ -1,3 +1,13 @@
+/* Nunito is the shipped UI face — same rounded look on every OS.
+   (Apple's SF Pro Rounded can't be redistributed as a webfont.) */
+@font-face {
+  font-family: "Nunito";
+  src: url("/assets/fonts/Nunito-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
 
@@ -51,7 +61,7 @@
   --corner-continuous: squircle;
   --corner-round: round;
 
-  --font: system-ui;
+  --font: "Nunito";
   --mono: ui-monospace;
 
   --bar-h: 52px;
