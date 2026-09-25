@@ -1883,9 +1883,13 @@ def change_existing(owner_id: str, action: Action, *, item_id: str | None = None
                 ):
                     return {
                         "kind": "question",
-                        "message": _waiting_reason(
-                            {**before, "minutes": action.minutes},
-                            availability,
+                        "message": (
+                            "That time is outside your working hours or already taken."
+                            if availability["complete"]
+                            else _waiting_reason(
+                                {**before, "minutes": action.minutes},
+                                availability,
+                            )
                         ),
                     }
             item.start_at = action.start
