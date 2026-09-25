@@ -1,7 +1,5 @@
 import "./landing.css";
 
-import { useEffect, useState } from "react";
-
 import { Mascot } from "../Mascot";
 import { AuthPage } from "./AuthPage";
 import { LandingPage } from "./LandingPage";
@@ -11,7 +9,7 @@ import type { AuthIntent } from "./AuthCard";
 
 export type PublicRoute = "landing" | "login" | "signup" | "terms" | "privacy" | "not-found";
 
-/** Resolve public routes and the protected workspace's temporary auth-loading surface. */
+/** Resolve public marketing and auth routes. Workspace gating lives in App. */
 export function readPublicRoute(pathname: string): PublicRoute {
   const path = pathname.replace(/\/+$/, "") || "/";
   switch (path) {
@@ -51,67 +49,6 @@ function authIntent(route: PublicRoute): AuthIntent {
   return route === "login" ? "login" : "signup";
 }
 
-const AUTH_CHECK_TIMEOUT_MS = 8_000;
-
-function PublicLoading({
-  stalled,
-  onContinue,
-  continueLabel,
-}: {
-  stalled: boolean;
-  onContinue: () => void;
-  continueLabel: string;
-}) {
-  return (
-    <div className="public-page public-loading">
-      <header className="public-page__header">
-        <a className="public-page__brand" href="/" aria-label="Cooper home">
-          <Mascot name="cooper_avatar" size="xs" decorative loading="eager" />
-          <span className="landing__wordmark">Cooper</span>
-        </a>
-      </header>
-      <section
-        className="public-loading__main"
-        aria-labelledby="public-loading-title"
-        aria-busy="true"
-      >
-        <Mascot name="cooper_idle" size="lg" decorative loading="eager" />
-        <p className="landing__eyebrow">Welcome to Cooper</p>
-        <h1 id="public-loading-title">
-          {stalled ? "Still checking your account." : "Checking your account."}
-        </h1>
-        <p>
-          {stalled
-            ? "This is taking longer than usual. You can continue while we finish checking securely."
-            : "One moment while we confirm your Cooper account."}
-        </p>
-        <button type="button" className="landing__secondary" onClick={onContinue}>
-          {continueLabel}
-        </button>
-        <div
-          className={`public-loading__status${stalled ? " public-loading__status--stalled" : ""}`}
-          role="status"
-          aria-label="Checking Firebase account"
-          aria-live="polite"
-        >
-          <span className="public-loading__spinner" aria-hidden="true" />
-          <span className="public-loading__status-copy">
-            <strong>{stalled ? "Account check is delayed" : "Checking secure sign-in"}</strong>
-            <span>
-              {stalled
-                ? "You can keep going and sign in again if needed."
-                : "Waiting for Firebase to return your account."}
-            </span>
-          </span>
-          <span className="public-loading__track" aria-hidden="true">
-            <span />
-          </span>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function NotFoundPage() {
   return (
     <div className="public-page public-not-found">
@@ -148,36 +85,10 @@ export function PublicRoutes({
   onResetPassword,
   onUseAnotherAccount,
 }: PublicRoutesProps) {
-  const [loadingFallback, setLoadingFallback] = useState<"overview" | "auth" | null>(null);
-  const [authCheckStalled, setAuthCheckStalled] = useState(false);
-
-  useEffect(() => {
-    if (!authLoading) {
-      setAuthCheckStalled(false);
-      setLoadingFallback(null);
-      return;
-    }
-    const timer = window.setTimeout(() => setAuthCheckStalled(true), AUTH_CHECK_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [authLoading]);
-
-  useEffect(() => {
-    setLoadingFallback(null);
-  }, [route]);
-
   if (route === "terms") return <TermsPage />;
   if (route === "privacy") return <PrivacyPage />;
   if (route === "not-found") return <NotFoundPage />;
   if (route === "landing") {
-    if (authLoading && loadingFallback === null) {
-      return (
-        <PublicLoading
-          stalled={authCheckStalled}
-          onContinue={() => setLoadingFallback("overview")}
-          continueLabel="View the overview"
-        />
-      );
-    }
     return (
       <LandingPage
         busy={busy}
@@ -190,23 +101,13 @@ export function PublicRoutes({
     );
   }
 
-  if (authLoading && loadingFallback === null) {
-    return (
-      <PublicLoading
-        stalled={authCheckStalled}
-        onContinue={() => setLoadingFallback("auth")}
-        continueLabel={route === "login" ? "Continue to sign in" : "Continue to create an account"}
-      />
-    );
-  }
-
   return (
     <AuthPage
       intent={authIntent(route)}
       busy={busy}
       error={error}
       authEnabled={authEnabled}
-      authLoading={authLoading && loadingFallback !== "auth"}
+      authLoading={authLoading}
       onSignIn={onSignIn}
       onEmailAuth={onEmailAuth}
       authStatus={authStatus === "verification-pending" ? "verification-pending" : "idle"}

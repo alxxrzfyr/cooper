@@ -556,14 +556,39 @@ describe("first impression", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Checking your account." })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Checking Firebase account" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Cooper’s day" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Checking your account." }),
+    ).not.toBeInTheDocument();
     expect(calls).toHaveLength(0);
 
     await emitFirebaseUser(null);
 
     expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(calls).toHaveLength(0);
+  });
+
+  test("Firebase auth loading does not replace the public landing", async () => {
+    window.history.replaceState({}, "", "/");
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    const calls = stub({});
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Checking your account." }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Checking your account…" })).toBeDisabled();
+    expect(calls).toHaveLength(0);
+
+    await emitFirebaseUser(null);
+
+    expect(await screen.findByRole("button", { name: /Google/ })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Checking your account…" }),
+    ).not.toBeInTheDocument();
   });
 
   test("signed-out Firebase users can start Google sign-in", async () => {
@@ -782,6 +807,56 @@ describe("manual and ai", () => {
     await screen.findByText("Start with the report.");
 
     expect(bubbleTones()).toContain("bubble--answer");
+  });
+
+  test("Ask still replies while another workspace mutation is in flight", async () => {
+    let resolveComplete!: (response: Response) => void;
+    const pendingComplete = new Promise<Response>((resolve) => {
+      resolveComplete = resolve;
+    });
+    const calls: string[] = [];
+    const currentView = view({ using_model: true });
+    const json = (payload: unknown, status = 200) =>
+      new Response(JSON.stringify(payload), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.includes("/api/today")) return json(currentView);
+        if (url.includes("/complete")) return pendingComplete;
+        if (url.includes("/api/say")) {
+          return json(
+            reply({
+              kind: "answered",
+              message: "Start with the report.",
+              view: currentView,
+            }),
+          );
+        }
+        return json({});
+      }),
+    );
+
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByText("Now");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+
+    await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Ask" }));
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is urgent{Enter}");
+
+    expect(calls.some((url) => url.includes("/api/say"))).toBe(true);
+    const log = await screen.findByRole("log", { name: "Conversation" });
+    expect(within(log).getByText("what is urgent")).toBeInTheDocument();
+    expect(within(log).getByText("Start with the report.")).toBeInTheDocument();
+
+    resolveComplete(json(reply({ kind: "completed", message: "Completed.", view: currentView })));
   });
 
   test("creating is green and dropping is red", async () => {
