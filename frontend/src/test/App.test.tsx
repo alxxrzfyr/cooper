@@ -187,6 +187,13 @@ function view(overrides: Partial<View> = {}): View {
     events: [],
     undo: null,
     using_model: false,
+    ai: {
+      status: overrides.using_model ? ("ready" as const) : ("unavailable" as const),
+      tier: "free" as const,
+      remaining_units: 10,
+      limit_units: 10,
+      reset_at: null,
+    },
     calendar: { configured: false, connected: false, email: null },
     icloud: { configured: false, connected: false, email: null, error: null },
     gmail: {
@@ -298,7 +305,7 @@ function stub(routes: Routes) {
         const configured = routes.say ?? reply();
         return "status" in configured
           ? json({ detail: configured.detail }, configured.status)
-          : json(withView(configured));
+          : json(withView(configured), configured.kind === "pending" ? 202 : 200);
       }
       if (url.includes("/api/schedule")) {
         return json({ placed: [{ item_id: "a1" }], view: currentView });
@@ -386,7 +393,7 @@ describe("first impression", () => {
       "aria-expanded",
       "false",
     );
-    expect(document.querySelector(".app")).toHaveClass("app--rail-collapsed");
+    expect(document.querySelector(".rail")).toHaveAttribute("data-collapsed", "true");
     expect(localStorage.getItem("cooper.sidebar.collapsed.v1")).toBe("1");
     expect(screen.getAllByRole("button", { name: "Calendar" }).length).toBeGreaterThan(0);
 
@@ -394,7 +401,7 @@ describe("first impression", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
-    expect(document.querySelector(".app")).toHaveClass("app--rail-collapsed");
+    expect(document.querySelector(".rail")).toHaveAttribute("data-collapsed", "true");
   });
 
   test("does not interrupt a local user who already has an item", async () => {
@@ -416,10 +423,10 @@ describe("first impression", () => {
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
-    expect(screen.getByLabelText("Gemini API key")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Gemini API key")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Skip tutorial" }));
-    expect(screen.queryByRole("region", { name: "Set up Ask" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Try Ask" })).not.toBeInTheDocument();
     expect(localStorage.getItem("cooper.onboarding.done.v1:local")).toBe("1");
 
     await user.click(screen.getByRole("button", { name: "Show getting-started guide" }));
@@ -666,38 +673,24 @@ describe("first impression", () => {
     await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
 
     expect(await screen.findByText("Offline rules")).toBeInTheDocument();
-    expect(screen.getByText(/Add a Gemini API key to talk to Cooper/)).toBeInTheDocument();
+    expect(screen.getByText(/Model help is unavailable/)).toBeInTheDocument();
   });
 
-  test("saves a Gemini key in this browser and reports AI as available", async () => {
-    const calls = stub({ view: view({ using_model: false }) });
-    render(<App />);
-    const user = userEvent.setup();
-
-    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
-
-    const key = await screen.findByLabelText("Gemini API key");
-    await user.type(key, "AIza-browser-key");
-
-    expect(localStorage.getItem("cooper.gemini_key.v1")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(localStorage.getItem("cooper.gemini_key.v1")).toBe("AIza-browser-key");
-    expect(screen.getByRole("status")).toHaveTextContent("Ask is ready to use");
-    await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
-    expect(await screen.findByRole("button", { name: "Ask" })).not.toBeDisabled();
-    expect(calls.every((call) => !call.body?.gemini_api_key)).toBe(true);
-  }, 10_000);
-
-  test("does not save an empty Gemini key", async () => {
+  test("purges only legacy key entries without reading their values", async () => {
     stub({});
-    const user = await userEvent.setup();
+    localStorage.setItem("cooper.gemini_key.v1", "legacy-secret");
+    localStorage.setItem("cooper.gemini_key.v1:owner", "owner-secret");
+    localStorage.setItem("cooper.gemini_key.v10", "keep");
+    localStorage.setItem("cooper.mode.v1", "ai");
+    const read = vi.spyOn(Storage.prototype, "getItem");
     render(<App />);
-
-    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
-    await user.click(await screen.findByRole("button", { name: "Save" }));
-
+    await screen.findByText("Now");
+    expect(read.mock.calls.some(([key]) => key.startsWith("cooper.gemini_key.v1"))).toBe(false);
     expect(localStorage.getItem("cooper.gemini_key.v1")).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a Gemini API key");
+    expect(localStorage.getItem("cooper.gemini_key.v1:owner")).toBeNull();
+    expect(localStorage.getItem("cooper.gemini_key.v10")).toBe("keep");
+    expect(localStorage.getItem("cooper.mode.v1")).toBe("ai");
+    read.mockRestore();
   });
 });
 
@@ -744,20 +737,316 @@ describe("manual and ai", () => {
     expect(calls.find((call) => call.url.includes("/api/say"))?.body.mode).toBe("ai");
   });
 
-  test("sends the browser key only with an AI sentence", async () => {
+  test("sends a logical request ID and no browser key with Ask", async () => {
     const calls = stub({ view: view({ using_model: false }) });
-    localStorage.setItem("cooper.gemini_key.v1", "AIza-browser-key");
     render(<App />);
     const user = await openAi();
-
     await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
-
     expect(calls.find((call) => call.url.includes("/api/say"))?.body).toEqual({
       text: "what is next",
       mode: "ai",
-      gemini_api_key: "AIza-browser-key",
+      logical_request_id: expect.any(String),
     });
   });
+
+  test("pending status retries preserve an unsent draft and block overwriting the unresolved request", async () => {
+    const calls = stub({ say: reply({ kind: "pending", message: "Still running." }) });
+    render(<App />);
+    const user = await openAi();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+    await screen.findByRole("button", { name: "Retry status" });
+    await user.type(screen.getByLabelText("Say something to Cooper"), "an unrelated draft");
+    await user.click(screen.getByRole("button", { name: "Retry status" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/say"))).toHaveLength(2),
+    );
+    expect(screen.getByLabelText("Say something to Cooper")).toHaveValue("an unrelated draft");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByLabelText("Say something to Cooper")).toHaveValue("an unrelated draft");
+    const submissions = calls.filter((call) => call.url.includes("/api/say"));
+    expect(submissions).toHaveLength(2);
+    expect(submissions[0].body.logical_request_id).toBe(submissions[1].body.logical_request_id);
+  });
+
+  test("pending requests survive remount with their original text, intent, and ID", async () => {
+    const calls = stub({ say: reply({ kind: "pending", message: "Still running." }) });
+    const mounted = render(<App />);
+    const user = await openAi();
+    await user.type(
+      screen.getByLabelText("Say something to Cooper"),
+      "what should I work on next{Enter}",
+    );
+    await screen.findByRole("button", { name: "Retry status" });
+    const original = calls.find((call) => call.url.includes("/api/say"))?.body;
+    mounted.unmount();
+    localStorage.removeItem("cooper.chat.v1");
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Retry status" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/say"))).toHaveLength(2),
+    );
+    expect(calls.filter((call) => call.url.includes("/api/say"))[1].body).toEqual(original);
+  });
+
+  test("deterministic intent questions leave an older pending model request recoverable", async () => {
+    const calls = stub({ say: reply({ kind: "pending", message: "Still running." }) });
+    const fetchRequest = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (...args: Parameters<typeof fetch>) => {
+        const body = requestBody(args[1]?.body);
+        if (String(args[0]).includes("/api/say") && body.intent) {
+          calls.push({ url: String(args[0]), method: "POST", headers: new Headers(), body });
+          return new Response(
+            JSON.stringify(reply({ kind: "answered", message: "Your next task is the report." })),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return fetchRequest(...args);
+      }),
+    );
+    render(<App />);
+    const user = await openAi();
+    await user.type(
+      screen.getByLabelText("Say something to Cooper"),
+      "help me plan something complicated{Enter}",
+    );
+    await screen.findByRole("button", { name: "Retry status" });
+    const record = sessionStorage.getItem("cooper.ai.pending.v1:local");
+    await user.click(screen.getAllByRole("button", { name: /Settings/ })[0]);
+    await user.click(screen.getByRole("button", { name: "Clear conversation" }));
+    await openAi(user);
+    await user.click(screen.getByRole("button", { name: "What should I work on next?" }));
+    await screen.findByText("Your next task is the report.");
+    expect(screen.getByRole("button", { name: "Retry status" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("cooper.ai.pending.v1:local")).toBe(record);
+    const last = calls.filter((call) => call.url.includes("/api/say")).at(-1);
+    expect(last?.body.intent).toBe("work_next");
+    expect(last?.body.logical_request_id).toBeUndefined();
+  });
+
+  test("owner transitions reset chat and old completion cannot unlock the new owner's request", async () => {
+    firebaseMock.authMode = "firebase";
+    firebaseMock.configured = true;
+    let resolveA!: (response: Response) => void;
+    let resolveB!: (response: Response) => void;
+    const pendingA = new Promise<Response>((resolve) => {
+      resolveA = resolve;
+    });
+    const pendingB = new Promise<Response>((resolve) => {
+      resolveB = resolve;
+    });
+    const sent: Record<string, unknown>[] = [];
+    const json = (payload: unknown) =>
+      new Response(JSON.stringify(payload), { headers: { "Content-Type": "application/json" } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes("/api/say")) {
+          const body = requestBody(init?.body);
+          sent.push(body);
+          return body.text === "private request A" ? pendingA : pendingB;
+        }
+        return json(view());
+      }),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+    await emitFirebaseUser(firebaseUser("token-a", "a@example.com", "uid-a"));
+    await openAi(user);
+    await user.type(screen.getByLabelText("Say something to Cooper"), "private request A{Enter}");
+    await user.click(screen.getAllByRole("button", { name: /Settings/ })[0]);
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(screen.queryByRole("button", { name: "Retry status" })).not.toBeInTheDocument();
+    await emitFirebaseUser(firebaseUser("token-b", "b@example.com", "uid-b"));
+    await openAi(user);
+    expect(screen.getByLabelText("Say something to Cooper")).not.toBeDisabled();
+    expect(screen.queryByText("private request A")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry status" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "private request B{Enter}");
+    expect(screen.getByLabelText("Say something to Cooper")).toBeDisabled();
+    await act(async () => {
+      resolveA(json(reply({ kind: "answered", message: "Old A answer" })));
+    });
+    expect(screen.getByLabelText("Say something to Cooper")).toBeDisabled();
+    expect(screen.queryByText("Old A answer")).not.toBeInTheDocument();
+    await act(async () => {
+      resolveB(json(reply({ kind: "pending", message: "Still running B" })));
+    });
+    expect(screen.getByLabelText("Say something to Cooper")).not.toBeDisabled();
+    expect(screen.getByText("Still running B")).toBeInTheDocument();
+    expect(sessionStorage.getItem("cooper.ai.pending.v1:firebase:uid-a")).toContain(
+      "private request A",
+    );
+    expect(sessionStorage.getItem("cooper.ai.pending.v1:firebase:uid-b")).toContain(
+      "private request B",
+    );
+    await emitFirebaseUser(firebaseUser("token-a", "a@example.com", "uid-a"));
+    expect(screen.queryByText("Still running B")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Retry status" }));
+    await waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent[2]).toEqual(sent[0]);
+  });
+
+  test("blocked session storage keeps in-memory status retry usable", async () => {
+    const calls = stub({ say: reply({ kind: "pending", message: "Still running." }) });
+    const originalWrite = Storage.prototype.setItem;
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (this === sessionStorage) throw new DOMException("Blocked", "SecurityError");
+      // Other preferences and chat retain their existing behavior.
+      originalWrite.call(this, key, value);
+    });
+    render(<App />);
+    const user = await openAi();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+    await screen.findByText(/reload recovery is unavailable/);
+    await user.click(screen.getByRole("button", { name: "Retry status" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/say"))).toHaveLength(2),
+    );
+    const submissions = calls.filter((call) => call.url.includes("/api/say"));
+    expect(submissions[0].body.logical_request_id).toBe(submissions[1].body.logical_request_id);
+    write.mockRestore();
+  });
+
+  test.each([422, 429, 503])(
+    "first HTTP %s keeps the ID for reload recovery until a definitive reply",
+    async (status) => {
+      const calls = stub({ say: reply({ kind: "answered", message: "Confirmed answer." }) });
+      const fetchRequest = globalThis.fetch;
+      let rejectFirst = true;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (...args: Parameters<typeof fetch>) => {
+          const response = await fetchRequest(...args);
+          if (String(args[0]).includes("/api/say") && rejectFirst) {
+            rejectFirst = false;
+            return new Response(
+              JSON.stringify({ detail: "The server could not confirm this request." }),
+              { status, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          return response;
+        }),
+      );
+      const mounted = render(<App />);
+      const user = await openAi();
+      await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+      await screen.findByRole("button", { name: "Retry status" });
+      expect(sessionStorage.getItem("cooper.ai.pending.v1:local")).toContain("what is next");
+      const original = calls.find((call) => call.url.includes("/api/say"))?.body;
+      mounted.unmount();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "Retry status" }));
+      await screen.findByText("Confirmed answer.");
+      const sent = calls.filter((call) => call.url.includes("/api/say"));
+      expect(sent[1].body).toEqual(original);
+      expect(sessionStorage.getItem("cooper.ai.pending.v1:local")).toBeNull();
+    },
+  );
+
+  test("a status-check rate limit cannot discard an unresolved request", async () => {
+    const calls = stub({ say: reply({ kind: "pending", message: "Still running." }) });
+    const fetchRequest = globalThis.fetch;
+    let submissions = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (...args: Parameters<typeof fetch>) => {
+        const response = await fetchRequest(...args);
+        if (String(args[0]).includes("/api/say") && ++submissions === 2) {
+          return new Response(JSON.stringify({ detail: "Try status again shortly." }), {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return response;
+      }),
+    );
+    render(<App />);
+    const user = await openAi();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+    await screen.findByRole("button", { name: "Retry status" });
+    const stored = sessionStorage.getItem("cooper.ai.pending.v1:local");
+    await user.click(screen.getByRole("button", { name: "Retry status" }));
+    await screen.findByText("Try status again shortly.");
+    expect(screen.getByRole("button", { name: "Retry status" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("cooper.ai.pending.v1:local")).toBe(stored);
+    await user.click(screen.getByRole("button", { name: "Retry status" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/say"))).toHaveLength(3),
+    );
+    const sent = calls.filter((call) => call.url.includes("/api/say"));
+    expect(sent[2].body).toEqual(sent[0].body);
+  });
+
+  test("retries a lost response using the original request ID", async () => {
+    const calls = stub({ say: reply({ kind: "answered", message: "Here is your plan." }) });
+    const fetchRequest = globalThis.fetch;
+    let loseResponse = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (...args: Parameters<typeof fetch>) => {
+        if (String(args[0]).includes("/api/say")) {
+          const stored = JSON.parse(sessionStorage.getItem("cooper.ai.pending.v1:local") ?? "null");
+          const body = requestBody(args[1]?.body);
+          expect(stored?.text).toBe(body.text);
+          expect(stored?.logicalRequestId).toBe(body.logical_request_id);
+        }
+        const response = await fetchRequest(...args);
+        if (String(args[0]).includes("/api/say") && loseResponse) {
+          loseResponse = false;
+          throw new TypeError("Connection lost");
+        }
+        return response;
+      }),
+    );
+    render(<App />);
+    const user = await openAi();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "what is next{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Retry status" }));
+    await screen.findByText("Here is your plan.");
+    const submissions = calls.filter((call) => call.url.includes("/api/say"));
+    expect(submissions).toHaveLength(2);
+    expect(submissions[0].body.logical_request_id).toBe(submissions[1].body.logical_request_id);
+    expect(screen.queryByRole("button", { name: "Retry status" })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("cooper.ai.pending.v1:local")).toBeNull();
+    await user.type(screen.getByLabelText("Say something to Cooper"), "another request{Enter}");
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/say"))).toHaveLength(3),
+    );
+    const fresh = calls.filter((call) => call.url.includes("/api/say"))[2];
+    expect(fresh.body.logical_request_id).not.toBe(submissions[0].body.logical_request_id);
+  });
+
+  test.each(["unavailable", "exhausted"] as const)(
+    "Ask stays available when AI is %s",
+    async (status) => {
+      stub({
+        view: view({
+          using_model: true,
+          ai: {
+            status,
+            tier: "free",
+            remaining_units: 0,
+            limit_units: 5,
+            reset_at: "2026-10-02T00:00:00Z",
+          },
+        }),
+      });
+      render(<App />);
+      const user = await openAi();
+      expect(screen.getByRole("button", { name: "Ask" })).not.toBeDisabled();
+      await user.click(screen.getAllByRole("button", { name: /Settings/ })[0]);
+      expect(screen.getByText("Offline rules")).toBeInTheDocument();
+      expect(screen.getByText("0 of 5")).toBeInTheDocument();
+      expect(screen.getByText(/Allowance resets/)).toBeInTheDocument();
+      expect(screen.queryByLabelText("Gemini API key")).not.toBeInTheDocument();
+    },
+  );
 
   test("does not discard saved AI mode before model availability loads", async () => {
     localStorage.setItem("cooper.mode.v1", "ai");
@@ -771,27 +1060,7 @@ describe("manual and ai", () => {
     );
   });
 
-  test("clearing a browser key refreshes deployment model availability", async () => {
-    const calls = stub({
-      view: view({ using_model: true }),
-      todayView: view({ using_model: false }),
-    });
-    localStorage.setItem("cooper.gemini_key.v1", "AIza-browser-key");
-    render(<App />);
-    const user = await openAi();
-
-    await user.type(screen.getByLabelText("Say something to Cooper"), "add a note{Enter}");
-    await user.click((await screen.findAllByRole("button", { name: /Settings/ }))[0]);
-    expect(screen.getByText("this browser")).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Clear" }));
-    await user.click((await screen.findAllByRole("button", { name: /Cooper/ }))[0]);
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).not.toBeDisabled());
-    expect(calls.filter((call) => call.url.includes("/api/today")).length).toBeGreaterThan(1);
-  });
-
-  test("with no model key, AI cannot be chosen", async () => {
-    // The app has to work with no key at all, so the switch disables rather than failing later.
+  test("Ask can be chosen without model help", async () => {
     stub({ view: view({ using_model: false }) });
     render(<App />);
     await openChat();
@@ -1974,6 +2243,84 @@ describe("the dashboard", () => {
     });
   }
 
+  test.each([false, true])(
+    "Home exposes unknown demand and estimate action; unavailable=%s",
+    async (unavailable) => {
+      const unknown = ranked({ id: "unknown", title: "Unestimated report", minutes: null });
+      const capacity = {
+        day: "2026-08-31",
+        generated_at: "2026-08-31T01:00:00Z",
+        demand_scope: "due_today_unscheduled" as const,
+        scheduling_scope: "all_open_local_tasks_7_days" as const,
+        due_today_ids: [unknown.id],
+        overdue_ids: [],
+        other_backlog_count: 2,
+        missed_block_ids: [],
+        unknown_estimate_ids: [unknown.id],
+        unknown_estimate_count: 1,
+        assessment_partial: true,
+        known_estimated_due_today_minutes: 0,
+        candidate_slots: [] as [],
+        unplaced: [],
+      };
+      const routes: Routes = {
+        view: snapshotView({
+          tasks: [unknown],
+          complete: !unavailable,
+          capacity: unavailable
+            ? { ...capacity, status: "source_unavailable" }
+            : { ...capacity, status: "needs_estimates", open_window_minutes: 100 },
+        }),
+      };
+      const calls = stub(routes);
+      render(<App />);
+      const summary = await screen.findByRole("region", { name: "Rest of today" });
+      expect(summary).toHaveTextContent("1 task has unknown effort");
+      expect(summary).toHaveTextContent("all open local tasks over seven days");
+      expect(summary).not.toHaveTextContent("0 unsaved candidate slots");
+      if (unavailable) expect(summary).toHaveTextContent("cannot be checked");
+      const user = userEvent.setup();
+      await user.click(
+        within(summary).getByRole("button", { name: "Estimate Unestimated report" }),
+      );
+      const frame = screen.getByRole("dialog");
+      await user.type(within(frame).getByLabelText("Estimated minutes"), "30");
+      const savedTask = { ...unknown, minutes: 30 };
+      routes.view = snapshotView({
+        tasks: [savedTask],
+        capacity: {
+          ...capacity,
+          status: "checked",
+          assessment_partial: false,
+          unknown_estimate_ids: [],
+          unknown_estimate_count: 0,
+          known_estimated_due_today_minutes: 30,
+          open_window_minutes: 100,
+        },
+      });
+      await user.click(within(frame).getByRole("button", { name: "Save estimate" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Open “Unestimated report”" })).toHaveFocus();
+      expect(
+        calls.find((call) => call.method === "PATCH" && call.url.endsWith("/api/items/unknown"))
+          ?.body,
+      ).toEqual({ minutes: 30 });
+      expect(screen.getByRole("region", { name: "Rest of today" })).toHaveTextContent(
+        "30 known estimated minutes",
+      );
+      expect(
+        screen.getAllByText("Estimate saved. Today’s capacity has been refreshed.").length,
+      ).toBeGreaterThan(0);
+    },
+  );
+
+  test("Home does not invent a summary for a legacy snapshot", async () => {
+    stub({ view: snapshotView({}) });
+    render(<App />);
+    await screen.findByRole("heading", { name: /Good morning/ });
+    expect(screen.queryByRole("region", { name: "Rest of today" })).not.toBeInTheDocument();
+  });
+
   test("Home uses snapshot focus as references to one Today agenda", async () => {
     const current = {
       ...block({ id: "current", title: "Team check-in", start_at: atLocal(TODAY, 9) }),
@@ -2040,12 +2387,13 @@ describe("the dashboard", () => {
     expect(document.querySelectorAll("#agenda-cooper\\:next")).toHaveLength(1);
   });
 
-  test("Home surfaces a free-block recommendation from the snapshot", async () => {
+  test("Home labels the legal earliest-start recommendation as unsaved", async () => {
     const task = ranked({ id: "proposal", title: "Draft the proposal", minutes: 45 });
     stub({
       view: snapshotView({
         tasks: [task],
         focus: { now_id: task.id, next_id: null },
+        recommended_start_at: "2026-08-31T01:15:00+00:00",
         metrics: {
           scheduled_count: 0,
           occupied_minutes: 0,
@@ -2060,7 +2408,9 @@ describe("the dashboard", () => {
 
     const nowReference = await screen.findByRole("link", { name: "Now: Draft the proposal" });
     expect(within(nowReference).getByText("Draft the proposal")).toBeVisible();
-    expect(nowReference).toHaveTextContent("90 min free");
+    expect(nowReference).toHaveTextContent("Suggested from");
+    expect(nowReference).toHaveTextContent("unsaved");
+    expect(nowReference).not.toHaveTextContent("90 min free");
     expect(document.querySelectorAll("#task-proposal")).toHaveLength(1);
   });
 
@@ -2671,7 +3021,7 @@ describe("the dashboard", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Say something" }));
 
     expect(screen.getByLabelText("Say something to Cooper")).toHaveFocus();
-    expect(within(nav).getByRole("button", { name: /Home/ })).toHaveAttribute(
+    expect(within(nav).getByRole("button", { name: /Cooper/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -2796,13 +3146,13 @@ describe("manual mode as a form", () => {
     });
   });
 
-  test("a stale AI mode falls back to Manual when there is no key", async () => {
+  test("saved Ask mode stays available without model help", async () => {
     localStorage.setItem("cooper.mode.v1", "ai");
     stub({ view: view({ using_model: false }) });
     render(<App />);
     await openChat();
 
-    expect(await screen.findByLabelText("What")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Form" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByLabelText("Say something to Cooper")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask" })).toHaveAttribute("aria-pressed", "true");
   });
 });

@@ -18,6 +18,7 @@ const PANELS = [
   { id: "features", label: "Features" },
   { id: "uses", label: "Uses" },
   { id: "proof", label: "How Cooper plans" },
+  { id: "plans", label: "Plans and FAQs" },
   { id: "start", label: "Try it" },
 ] as const;
 
@@ -142,16 +143,43 @@ function IntegrationCard({
 
 function ServiceChip({ service, note }: { service: Service; note: string }) {
   return (
-    <article
-      className={`landing__integration landing__service-chip landing__service-chip--${service}`}
-    >
-      <ServiceIcon service={service} />
-      <div>
-        <p>{SERVICE_LABEL[service]}</p>
-        <strong>{note === "planned" ? "Planned source" : "Event invitations"}</strong>
-        <span>{note === "planned" ? "Coming next" : "Arrives through Gmail"}</span>
-      </div>
-    </article>
+    <div className={`landing__source-note landing__source-note--${service}`}>
+      <svg className="landing__source-arrow" viewBox="0 0 40 40" aria-hidden="true">
+        <defs>
+          <marker
+            id={`source-arrow-${service}`}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 10 5 0 10Z" />
+          </marker>
+        </defs>
+        <path d="M20 36C20 28 16 18 20 6" markerEnd={`url(#source-arrow-${service})`} />
+      </svg>
+      <article
+        className={`landing__integration landing__service-chip landing__service-chip--${service}`}
+      >
+        <ServiceIcon service={service} />
+        <div>
+          <p>{SERVICE_LABEL[service]}</p>
+          <strong>{note === "planned" ? "Planned source" : "Event invitations"}</strong>
+          <span>{note === "planned" ? "Coming next" : "Arrives through Gmail"}</span>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function FAQIcon() {
+  return (
+    <svg className="landing__faq-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4 10h12" />
+      <path className="landing__faq-icon-vertical" d="M10 4v12" />
+    </svg>
   );
 }
 
@@ -159,6 +187,7 @@ export function LandingPage(_props: LandingProps) {
   const track = useRef<HTMLDivElement>(null);
   const lenis = useRef<Lenis | null>(null);
   const activeIndex = useRef(0);
+  const horizontalScroll = useRef(false);
   const wakeScroll = useRef(() => {});
 
   useEffect(() => {
@@ -184,6 +213,7 @@ export function LandingPage(_props: LandingProps) {
       observer?.disconnect();
 
       const horizontal = media.matches;
+      horizontalScroll.current = horizontal;
       const wrapper = horizontal ? track.current : window;
       if (!wrapper) return;
 
@@ -255,9 +285,10 @@ export function LandingPage(_props: LandingProps) {
   }
 
   function trackKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (!horizontalScroll.current) return;
     if (
       event.target instanceof HTMLElement &&
-      event.target.closest("input, textarea, select, [contenteditable]")
+      event.target.closest("input, textarea, select, summary, button, a, [contenteditable]")
     )
       return;
     if (event.key === "ArrowRight") {
@@ -410,56 +441,36 @@ export function LandingPage(_props: LandingProps) {
 
         <section className="landing__panel landing__panel--uses" id={panelId("uses")}>
           <div className="landing__uses-board">
-            <div className="landing__uses-window">
-              <CalendarMock />
+            <div className="landing__sources-layout">
+              <div className="landing__uses-window">
+                <CalendarMock />
+              </div>
+              <div className="landing__service-stack" aria-label="Connected and planned services">
+                <IntegrationCard
+                  service="gmail"
+                  title="Event confirmation"
+                  detail="Read-only · known senders"
+                />
+                <IntegrationCard
+                  service="calendar"
+                  title="Your existing schedule"
+                  detail="Busy time stays protected"
+                />
+              </div>
+              <div className="landing__service-chip-grid" aria-label="More event sources">
+                <ServiceChip service="luma" note="planned" />
+                <ServiceChip service="meetup" note="planned" />
+                <ServiceChip service="teams" note="planned" />
+                <ServiceChip service="classroom" note="planned" />
+              </div>
+              <div className="landing__source-caption">
+                <div className="landing__hand-note landing__hand-note--connected">
+                  <HandArrow />
+                  connected calendars protect busy time
+                </div>
+                <Mascot name="cooper_syncing" size="md" decorative />
+              </div>
             </div>
-            <div className="landing__service-stack" aria-label="Connected and planned services">
-              <IntegrationCard
-                service="gmail"
-                title="Event confirmation"
-                detail="Read-only · known senders"
-              />
-              <IntegrationCard
-                service="calendar"
-                title="Your existing schedule"
-                detail="Busy time stays protected"
-              />
-            </div>
-            <div className="landing__service-chip-grid" aria-label="More event sources">
-              <svg
-                className="landing__service-connectors"
-                viewBox="0 0 760 430"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <defs>
-                  <marker
-                    id="service-arrow"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="7"
-                    markerHeight="7"
-                    orient="auto-start-reverse"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" />
-                  </marker>
-                </defs>
-                <path d="M 132 188 C 126 183, 121 174, 116 166" markerEnd="url(#service-arrow)" />
-                <path d="M 245 78 C 245 69, 245 62, 245 55" markerEnd="url(#service-arrow)" />
-                <path d="M 176 274 C 176 290, 168 305, 158 316" markerEnd="url(#service-arrow)" />
-                <path d="M 362 274 C 366 290, 370 305, 370 316" markerEnd="url(#service-arrow)" />
-              </svg>
-              <ServiceChip service="luma" note="planned" />
-              <ServiceChip service="meetup" note="planned" />
-              <ServiceChip service="teams" note="planned" />
-              <ServiceChip service="classroom" note="planned" />
-            </div>
-            <div className="landing__hand-note landing__hand-note--connected">
-              <HandArrow />
-              connected calendars protect busy time
-            </div>
-            <Mascot name="cooper_syncing" size="md" decorative />
           </div>
           <div className="landing__copy landing__copy--narrow landing__week-margin">
             <h2>
@@ -599,6 +610,144 @@ export function LandingPage(_props: LandingProps) {
                 <h3>Take it back in one step</h3>
                 <p>The last change stays reversible, including a scheduling run.</p>
               </article>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="landing__panel landing__panel--plans"
+          id={panelId("plans")}
+          aria-label="Plans and FAQs"
+        >
+          <div className="landing__plans-layout">
+            <div className="landing__faq">
+              <h2>Frequently asked questions</h2>
+              <p className="landing__plans-intro">
+                A few things worth knowing before we make room.
+              </p>
+              <div
+                className="landing__faq-list"
+                onClick={(event) => {
+                  if (!(event.target instanceof Element)) return;
+                  const answer = event.target.closest("summary")?.parentElement;
+                  if (!(answer instanceof HTMLDetailsElement) || answer.open) return;
+                  for (const other of event.currentTarget.querySelectorAll<HTMLDetailsElement>(
+                    "details[open]",
+                  )) {
+                    if (other !== answer) other.open = false;
+                  }
+                }}
+              >
+                <details name="cooper-faq">
+                  <summary>
+                    What does Cooper actually do?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    Bring your tasks, events, and errands into one place. Cooper ranks your work,
+                    helps place it inside your available hours, and lets you undo the last change.
+                  </p>
+                </details>
+                <details name="cooper-faq">
+                  <summary>
+                    Do I need to connect a calendar?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    No. Manual capture and local scheduling work on their own. Connecting a
+                    supported calendar helps Cooper protect time you already have booked.
+                  </p>
+                </details>
+                <details name="cooper-faq">
+                  <summary>
+                    Will Cooper change my Google or iCloud events?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    No. Those calendars are read-only inputs. Cooper creates and edits its own local
+                    items, not your connected calendar events.
+                  </p>
+                </details>
+                <details name="cooper-faq">
+                  <summary>
+                    Do I need my own AI key?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    No. Cooper supplies model access when funded AI is enabled. Gemini with Groq
+                    fallback is planned for included AI; model help is unavailable until funding is
+                    enabled. Manual entry and built-in planning answers work now.
+                  </p>
+                </details>
+                <details name="cooper-faq">
+                  <summary>
+                    What if a task cannot fit?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    Your task stays captured even when it cannot be scheduled. Cooper respects your
+                    configured hours and busy time. If a connected calendar cannot be checked, new
+                    placement waits instead of assuming you are free.
+                  </p>
+                </details>
+                <details name="cooper-faq">
+                  <summary>
+                    Can I subscribe to Plus now?
+                    <FAQIcon />
+                  </summary>
+                  <p>
+                    Not yet. The prices and allowances beside these questions are proposals.
+                    Billing, included AI, and Plus planning workflows are planned; there is no paid
+                    checkout in the public beta.
+                  </p>
+                </details>
+              </div>
+            </div>
+
+            <div className="landing__subscriptions">
+              <h2>Subscription choices</h2>
+              <p className="landing__plans-intro">
+                Proposed plans in USD. Public beta has no paid subscriptions yet.
+              </p>
+              <div className="landing__plan-options">
+                <article className="landing__plan" aria-labelledby="landing-free-title">
+                  <h3 id="landing-free-title">Free</h3>
+                  <p className="landing__plan-purpose">A place to begin.</p>
+                  <p className="landing__plan-price">$0</p>
+                  <p className="landing__plan-period">Proposed free plan</p>
+                  <ul>
+                    <li>Manual capture and local scheduling</li>
+                    <li>Explainable priorities and undo</li>
+                    <li>20 AI actions a month, planned</li>
+                  </ul>
+                  <a className="landing__plan-action" href="/signup">
+                    Try the public beta
+                  </a>
+                </article>
+                <article
+                  className="landing__plan landing__plan--plus"
+                  aria-labelledby="landing-plus-title"
+                >
+                  <h3 id="landing-plus-title">Plus</h3>
+                  <p className="landing__plan-purpose">Room for a weekly reset.</p>
+                  <p className="landing__plan-price">
+                    $8<span> / month</span>
+                  </p>
+                  <p className="landing__plan-period">Proposed price · Coming soon</p>
+                  <ul>
+                    <li>Everything proposed in Free</li>
+                    <li>300 AI actions a month, planned</li>
+                    <li>Guided weekly planning and reusable routines, planned</li>
+                  </ul>
+                  <button className="landing__plan-action" type="button" disabled>
+                    Plus is coming soon
+                  </button>
+                </article>
+              </div>
+              <p className="landing__plans-note">
+                Included AI and paid workflows are not active in either plan yet. Prices and
+                allowances may change before launch.
+              </p>
             </div>
           </div>
         </section>

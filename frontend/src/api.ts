@@ -89,14 +89,19 @@ const post = (body?: unknown): RequestInit => ({
 
 export const api = {
   today: () => call<View>("/api/today"),
-  say: (text: string, mode: "manual" | "ai" = "manual", geminiKey = "", intent?: AskIntent) =>
+  say: (
+    text: string,
+    mode: "manual" | "ai" = "manual",
+    intent?: AskIntent,
+    logicalRequestId?: string,
+  ) =>
     call<Reply>(
       "/api/say",
       post({
         text,
         mode,
         ...(intent ? { intent } : {}),
-        ...(mode === "ai" && geminiKey.trim() ? { gemini_api_key: geminiKey.trim() } : {}),
+        ...(mode === "ai" && logicalRequestId ? { logical_request_id: logicalRequestId } : {}),
       }),
     ),
   createItem: (item: NewItem) => call<Reply>("/api/items", post(item)),

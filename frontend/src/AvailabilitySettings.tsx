@@ -265,7 +265,8 @@ export function AvailabilitySettings({
       </div>
       <p className="hint">
         End before start means overnight; matching times mean 24 hours. Times use{" "}
-        {hours.timezone ?? "your calendar timezone"}.
+        {hours.timezone ?? "the configured server timezone"}. This pilot uses the same server
+        timezone for everyone; timezone selection is not available yet.
       </p>
       <button
         type="button"

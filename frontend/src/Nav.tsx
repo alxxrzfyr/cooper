@@ -1,4 +1,16 @@
+import { useState } from "react";
+
 import { Mascot } from "./Mascot";
+
+const SIDEBAR_COLLAPSED_KEY = "cooper.sidebar.collapsed.v1";
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export type Tab = "home" | "chat" | "calendar" | "settings";
 
@@ -91,17 +103,23 @@ export function Nav({
   current,
   todo,
   booked,
-  collapsed,
   onChange,
-  onToggleCollapsed,
 }: {
   current: Tab;
   todo: number;
   booked: number;
-  collapsed: boolean;
   onChange: (tab: Tab) => void;
-  onToggleCollapsed: () => void;
 }) {
+  const [collapsed, setCollapsed] = useState(loadSidebarCollapsed);
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      // Navigation still works when browser storage is blocked.
+    }
+  }
   function count(tab: Tab): number {
     // Home is where the open tasks live now, so it carries the count the Plan tab used to.
     if (tab === "home") return todo;
@@ -183,7 +201,7 @@ export function Nav({
           aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
           aria-expanded={!collapsed}
           title={collapsed ? "Show sidebar" : "Hide sidebar"}
-          onClick={onToggleCollapsed}
+          onClick={toggleCollapsed}
         >
           <span className="rail__footer-toggle-glyph">
             <CollapseIcon />

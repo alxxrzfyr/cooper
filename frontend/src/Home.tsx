@@ -435,8 +435,9 @@ export function Home({
             currentTime,
             planning.complete &&
             current.kind === "task" &&
-            planning.metrics.current_free_block_minutes > 0
-              ? `${planning.metrics.current_free_block_minutes} min free`
+            !current.value.start_at &&
+            planning.recommended_start_at
+              ? `Suggested from ${clock(new Date(planning.recommended_start_at), zone)} · unsaved`
               : null,
           ]}
           onComplete={onComplete}
@@ -451,6 +452,78 @@ export function Home({
           onComplete={onComplete}
           busy={busy}
         />
+      )}
+
+      {planning.capacity && (
+        <section className="group" aria-label="Rest of today">
+          <h2 className="group__label">Rest of today</h2>
+          <div className="inset home-capacity">
+            <p className="hint">
+              Updated {clock(new Date(planning.capacity.generated_at), zone)} · {zone}
+            </p>
+            <p>
+              {planning.capacity.due_today_ids.length} unscheduled tasks due today ·{" "}
+              {planning.capacity.known_estimated_due_today_minutes} known estimated minutes
+            </p>
+            {planning.capacity.unknown_estimate_count > 0 && (
+              <p role="status">
+                Partial assessment: {planning.capacity.unknown_estimate_count}{" "}
+                {planning.capacity.unknown_estimate_count === 1 ? "task has" : "tasks have"} unknown
+                effort. Add estimates before judging the full workload.
+              </p>
+            )}
+            {planning.capacity.status === "source_unavailable" ? (
+              <p>Capacity cannot be checked while a connected calendar is unavailable.</p>
+            ) : planning.capacity.assessment_partial &&
+              planning.capacity.candidate_slots.length === 0 ? (
+              <p>No projected slots yet for due-today work with known estimates.</p>
+            ) : (
+              <p>
+                {planning.capacity.candidate_slots.length} unsaved candidate slots for known
+                due-today work. {planning.capacity.open_window_minutes} open window minutes is a gap
+                metric, not a capacity verdict.
+              </p>
+            )}
+            <p className="hint">
+              Today’s demand: unscheduled tasks due before midnight in {zone}. Candidates come from
+              scheduling all open local tasks over seven days; pinned future work can compete.
+            </p>
+            <p className="hint">
+              {planning.capacity.overdue_ids.length} overdue ·{" "}
+              {planning.capacity.missed_block_ids.length} missed blocks ·{" "}
+              {planning.capacity.other_backlog_count} other unscheduled tasks
+            </p>
+            {planning.capacity.unknown_estimate_ids.map((id) => {
+              const item = planning.tasks.find((task) => task.id === id);
+              return item ? (
+                <p key={id}>
+                  <button
+                    type="button"
+                    className="btn btn--quiet"
+                    disabled={busy}
+                    onClick={() => onOpen(item)}
+                  >
+                    Estimate {item.title}
+                  </button>
+                </p>
+              ) : null;
+            })}
+            {planning.capacity.unplaced.map(({ item_id, reason }) => {
+              const item = planning.tasks.find((task) => task.id === item_id);
+              return item ? (
+                <p key={item_id}>
+                  <button type="button" className="btn btn--quiet" onClick={() => onOpen(item)}>
+                    {item.title}
+                  </button>
+                  :{" "}
+                  {reason === "overdue"
+                    ? "Deadline has passed"
+                    : "No legal slot in the full seven-day projection"}
+                </p>
+              ) : null;
+            })}
+          </div>
+        </section>
       )}
 
       {catchUpCommitments.length > 0 && (
