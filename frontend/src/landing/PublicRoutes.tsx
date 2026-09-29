@@ -1,4 +1,5 @@
 import "./landing.css";
+import "./landing-chapters.css";
 
 import { Mascot } from "../Mascot";
 import { AuthPage } from "./AuthPage";
