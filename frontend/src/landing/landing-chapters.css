@@ -1255,3 +1255,72 @@
     grid-template-columns: repeat(2, minmax(0, 260px));
   }
 }
+
+/*
+ * Fluid phone-to-tablet scale. Below the desktop scroller, type and gutters
+ * interpolate with the viewport instead of stepping at 480/560/600/700px.
+ * End points match the previous smallest and largest sizes.
+ */
+@media (max-width: 899px) {
+  .landing--keeby {
+    --landing-fluid-gutter: clamp(16px, 2.4vw + 8.3px, 32px);
+  }
+
+  .landing--keeby .landing__panel--meet h1 {
+    font-size: clamp(48px, 6.2vw + 28px, 82px);
+  }
+
+  .landing--keeby .landing__panel:not(.landing__panel--meet) h2 {
+    font-size: clamp(34px, 3.9vw + 21.5px, 52px);
+  }
+
+  .landing--keeby .landing__panel,
+  .landing--keeby :is(.landing__panel--hero-v2, .landing__panel--story, .landing__panel--closing) {
+    padding-inline: var(--landing-fluid-gutter);
+  }
+}
+
+/* Tablet portrait: restore the tag-beside-copy week list and tidy the source collage. */
+@media (min-width: 561px) and (max-width: 899px) {
+  .landing--keeby .landing__week-sheet .landing__use-verb {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-list article > div {
+    grid-template-columns: minmax(0, 1fr);
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-list article > div > * {
+    grid-column: 1;
+  }
+
+  .landing--keeby :is(.landing__service-stack, .landing__service-chip-grid) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    right: auto;
+    left: auto;
+    width: 100%;
+    margin-inline: 0;
+    transform: none;
+  }
+
+  .landing--keeby :is(.landing__service-stack, .landing__service-chip-grid) .landing__integration {
+    width: 100%;
+    transform: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .landing--keeby .landing__closing-line {
+    background: transparent;
+  }
+
+  .landing--keeby .landing__uses-window .landing__product-window--capture {
+    height: auto;
+    aspect-ratio: auto;
+  }
+}
