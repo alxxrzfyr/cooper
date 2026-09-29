@@ -59,7 +59,7 @@ function NavIcon({ name }: { name: Tab }) {
   );
 }
 
-function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+function CollapseIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <rect
@@ -74,7 +74,8 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
       />
       <path d="M9 4v16" fill="none" stroke="currentColor" strokeWidth="1.7" />
       <path
-        d={collapsed ? "m13.5 9 3 3-3 3" : "m16.5 9-3 3 3 3"}
+        className="rail__collapse-chevron"
+        d="m16.5 9-3 3 3 3"
         fill="none"
         stroke="currentColor"
         strokeLinecap="round"
@@ -185,7 +186,7 @@ export function Nav({
           onClick={onToggleCollapsed}
         >
           <span className="rail__footer-toggle-glyph">
-            <CollapseIcon collapsed={collapsed} />
+            <CollapseIcon />
           </span>
           <span className="rail__footer-toggle-label">
             {collapsed ? "Show sidebar" : "Hide sidebar"}
