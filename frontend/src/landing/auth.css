@@ -1285,20 +1285,163 @@
 }
 
 /* Phone polish: keep the visual caption inside its panel and give text links a full touch target. */
-@media (max-width: 1040px) {
-  .auth-page__visual-message,
-  .auth-page--signup .auth-page__visual-message {
-    width: auto;
+/*
+ * Fluid showcase. Geometry is the 520 x 420 desktop composition expressed as
+ * percentages, so the same collage scales to any panel instead of being
+ * re-laid-out per breakpoint. At full size it matches the desktop pixels.
+ */
+.public-page.auth-page {
+  --auth-chrome: 230px;
+}
+
+.public-page.auth-page .auth-page__showcase {
+  container-type: inline-size;
+  width: min(100%, 520px, calc((100dvh - var(--auth-chrome)) * 1.238));
+  height: auto;
+  aspect-ratio: 520 / 420;
+}
+
+.public-page.auth-page .auth-page__showcase--login {
+  width: min(100%, 460px, calc(100dvh - var(--auth-chrome)));
+  aspect-ratio: 1;
+}
+
+.public-page.auth-page .auth-page__preview-bar {
+  overflow: hidden;
+  height: clamp(18px, 5.77cqi, 30px);
+  font-size: clamp(7px, 1.92cqi, 10px);
+  white-space: nowrap;
+}
+
+.public-page.auth-page .auth-page__preview img {
+  height: calc(100% - clamp(18px, 5.77cqi, 30px));
+}
+
+.public-page.auth-page--signup .auth-page__preview--1 {
+  top: 1%;
+  left: 2.7%;
+  width: 60.4%;
+  height: 48.6%;
+}
+
+.public-page.auth-page--signup .auth-page__preview--2 {
+  top: 31.4%;
+  right: 0;
+  left: auto;
+  width: 50.8%;
+  height: 41.9%;
+}
+
+.public-page.auth-page--signup .auth-page__preview--3 {
+  top: 63.8%;
+  right: auto;
+  left: 10.4%;
+  display: block;
+  width: 47.3%;
+  height: 33.8%;
+}
+
+.public-page.auth-page--signup .auth-page__mascot-stage {
+  right: 1.9%;
+  bottom: -1%;
+  width: 39.6%;
+  height: 41%;
+}
+
+.public-page.auth-page--signup .auth-page__mascot-stage .mascot {
+  width: 74.8%;
+  height: auto;
+}
+
+.public-page.auth-page--login .auth-page__mascot-stage {
+  right: auto;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  transform: none;
+}
+
+.public-page.auth-page .auth-page__visual-message p {
+  font-size: clamp(17px, min(0.9rem + 1.1vw, 4.4dvh), 28px);
+}
+
+/* Side-by-side layout (desktop and landscape devices): the art panel holds the viewport. */
+@media (min-width: 1041px), (min-width: 560px) and (orientation: landscape) {
+  .auth-page__visual,
+  .public-page.auth-page--login .auth-page__visual,
+  .public-page.auth-page--signup .auth-page__visual {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    min-height: 0;
+    align-self: start;
+    padding-block: clamp(14px, 4.7dvh, 42px);
+    padding-inline: clamp(20px, 4vw, 64px);
   }
 }
 
-@media (max-width: 520px) {
-  .auth-page__showcase--login {
-    height: 196px;
+@media (min-width: 560px) and (max-width: 1040px) and (orientation: landscape) {
+  .public-page.auth-page .auth-page__main,
+  .public-page.auth-page--signup .auth-page__main {
+    display: grid;
+    min-height: 100dvh;
   }
 
-  .auth-page--login .auth-page__mascot-stage {
-    width: min(100%, 186px);
+  .auth-page__visual-message,
+  .auth-page--signup .auth-page__visual-message {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    margin: auto;
+  }
+
+  .auth-page__form-panel {
+    min-height: 100dvh;
+    padding-inline: clamp(20px, 4vw, 56px);
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .public-page.auth-page {
+    --auth-chrome: 150px;
+  }
+
+  .auth-page__visual-message p,
+  .auth-page--signup .auth-page__visual-message p {
+    margin-top: 6px;
+  }
+}
+
+/* Stacked layout (portrait tablets and phones): the art becomes a short header. */
+@media (max-width: 1040px) and (orientation: portrait), (max-width: 559px) {
+  .auth-page__visual,
+  .public-page.auth-page--signup .auth-page__visual,
+  .public-page.auth-page--login .auth-page__visual {
+    min-height: 0;
+  }
+
+  .auth-page__visual-message,
+  .auth-page--signup .auth-page__visual-message {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    margin: 4px auto 0;
+  }
+
+  .public-page.auth-page .auth-page__showcase {
+    width: min(100%, 420px, 32dvh);
+  }
+
+  .public-page.auth-page .auth-page__showcase--login {
+    width: min(100%, 240px, 28dvh);
+  }
+}
+
+@media (max-width: 360px) {
+  .public-page.auth-page .landing__auth-divider span {
+    max-width: none;
+    white-space: nowrap;
   }
 }
 
