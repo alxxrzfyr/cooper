@@ -1283,3 +1283,35 @@
     padding: 18px 16px;
   }
 }
+
+/* Phone polish: keep the visual caption inside its panel and give text links a full touch target. */
+@media (max-width: 1040px) {
+  .auth-page__visual-message,
+  .auth-page--signup .auth-page__visual-message {
+    width: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-page__showcase--login {
+    height: 196px;
+  }
+
+  .auth-page--login .auth-page__mascot-stage {
+    width: min(100%, 186px);
+  }
+}
+
+@media (max-width: 899px) {
+  .public-page.auth-page
+    :is(
+      .landing__forgot,
+      .landing__auth-alternate a,
+      .landing__auth-alternate button,
+      .public-page__footer nav a
+    ) {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+  }
+}
