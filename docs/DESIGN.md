@@ -80,6 +80,13 @@ connected to the frame edge. It caps output at 512px and preserves alpha at the 
 Use the mascot where it communicates state: beside active work, in an empty state, for an
 ambiguous reference, or when the backend is unavailable. Do not add decorative mascot instances.
 
+## Public authentication visuals
+
+Login and signup use separate responsive compositions inside the public auth visual panel. The
+login illustration stays centered with a small inset from the panel edges so the mascot has room to
+breathe at desktop and compact viewport sizes. Keep that inset proportional when adjusting the
+illustration; the signup collage has its own layout and should not inherit the login sizing.
+
 ## Interaction rules
 
 - Show score details in a disclosure instead of making users infer the ranking.
