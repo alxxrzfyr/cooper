@@ -682,21 +682,21 @@
 }
 
 .public-page.auth-page--signup .landing__google:not(.landing__google--unavailable) {
-  background: #fffdf8;
+  background: #f3e0bf;
   color: #28452f;
 }
 
 .public-page.auth-page--signup .landing__google:hover:not(:disabled) {
-  background: #fff9ef;
+  background: #f9ebd0;
 }
 
 .public-page.auth-page--signup .landing__email-submit {
-  background: #f7eddd;
+  background: #f3e0bf;
   color: #28452f;
 }
 
 .public-page.auth-page--signup .landing__email-submit:hover:not(:disabled) {
-  background: #fff9ef;
+  background: #f9ebd0;
 }
 
 .public-page.auth-page--signup .landing__auth-alternate a,
