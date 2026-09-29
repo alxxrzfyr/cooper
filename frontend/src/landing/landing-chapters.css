@@ -1150,3 +1150,108 @@
     padding-top: 16px;
   }
 }
+
+/* Phone polish: let the proof and closing art follow their content instead of fixed stage heights. */
+@media (max-width: 560px) {
+  .landing--keeby .landing__hero-proof {
+    height: auto;
+    min-height: 0;
+    padding: 18px 12px 150px;
+  }
+
+  .landing--keeby .landing__hero-spread {
+    position: relative;
+    inset: auto;
+  }
+
+  .landing--keeby .landing__hero-spread::after {
+    content: none;
+  }
+
+  .landing--keeby .landing__hero-spread .landing__hero-plan {
+    border-top: 1px solid rgb(49 70 50 / 10%);
+  }
+
+  .landing--keeby .landing__hero-cooper {
+    top: auto;
+    bottom: 10px;
+    left: 6%;
+    width: 128px;
+    transform: none;
+  }
+
+  .landing--keeby .landing__hero-hand-note {
+    top: auto;
+    right: 8%;
+    bottom: 40px;
+    left: auto;
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-list article {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-verb {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-list article > div {
+    grid-template-columns: minmax(0, 1fr);
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  .landing--keeby .landing__week-sheet .landing__use-list article > div > * {
+    grid-column: 1;
+  }
+
+  .landing--keeby :is(.landing__service-stack, .landing__service-chip-grid) {
+    right: auto;
+    left: auto;
+    width: 100%;
+    margin-inline: 0;
+    transform: none;
+  }
+
+  .landing--keeby :is(.landing__service-stack, .landing__service-chip-grid) .landing__integration {
+    width: 100%;
+    transform: none;
+  }
+
+  .landing--keeby .landing__closing-line {
+    background: transparent;
+  }
+
+  .landing--keeby .landing__closing-visual {
+    min-height: 340px;
+  }
+
+  .landing--keeby .landing__closing-visual img {
+    z-index: 6;
+    bottom: 0;
+    left: 3%;
+    width: min(34%, 124px);
+    transform: none;
+  }
+
+  .landing--keeby .landing__closing-plan-card {
+    width: 60%;
+  }
+}
+
+@media (max-width: 899px) {
+  .landing--keeby .landing__footer a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    padding-inline: 4px;
+  }
+}
+
+/* Tablet portrait: full-bleed hero buttons read as bars at this width, so size them to a pair. */
+@media (min-width: 561px) and (max-width: 899px) {
+  .landing--keeby .landing__panel--meet .landing__cta-row {
+    grid-template-columns: repeat(2, minmax(0, 260px));
+  }
+}
