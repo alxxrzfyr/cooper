@@ -127,6 +127,11 @@
   --layout-gap: clamp(12px, 2dvh, 24px);
   --public-heading: clamp(40px, min(4.2vw, 7dvh), 64px);
   --public-body: clamp(16px, 1.25vw, 20px);
+
+  --rail-open: 216px;
+  --rail-closed: 84px;
+  --rail-duration: 0.2s;
+  --rail-ease: ease-out;
 }
 
 :root[data-theme="dark"] {
@@ -554,7 +559,6 @@ select {
   border-radius: var(--r-sm);
   background: var(--tint);
   transition:
-    transform 0.34s cubic-bezier(0.16, 1, 0.3, 1),
     background 0.14s ease,
     color 0.14s ease;
 }
@@ -562,6 +566,16 @@ select {
 .rail__footer-toggle-label {
   min-width: 0;
   white-space: nowrap;
+}
+
+.rail__collapse-chevron {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--rail-duration) var(--rail-ease);
+}
+
+.rail[data-collapsed="true"] .rail__collapse-chevron {
+  transform: scaleX(-1);
 }
 
 .composer {
@@ -1980,13 +1994,10 @@ select {
     grid-template-areas:
       "rail main"
       "rail composer";
-    grid-template-columns: 216px minmax(0, 1fr);
+    /* auto track follows the rail's animated width — more reliable than
+       interpolating grid-template-columns / custom properties. */
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
-    transition: grid-template-columns 0.34s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .app.app--rail-collapsed {
-    grid-template-columns: 84px minmax(0, 1fr);
   }
 
   .topbar,
@@ -1996,8 +2007,17 @@ select {
 
   .rail {
     display: flex;
+    width: var(--rail-open);
     min-width: 0;
     overflow: hidden;
+    contain: layout paint;
+    /* One layout property only — everything else snaps or clips. */
+    transition: width var(--rail-duration) var(--rail-ease);
+  }
+
+  .app.app--rail-collapsed .rail,
+  .rail[data-collapsed="true"] {
+    width: var(--rail-closed);
   }
 
   .rail[data-collapsed="true"] .rail__brand {
@@ -3992,14 +4012,7 @@ button.slot:active {
   }
 
   .app:not(.app--public) {
-    --rail-width: 216px;
-
-    grid-template-columns: var(--rail-width) minmax(0, 1fr);
-    transition: grid-template-columns 0.34s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .app.app--rail-collapsed:not(.app--public) {
-    --rail-width: 84px;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .app:not(.app--public) .rail {
@@ -4008,6 +4021,9 @@ button.slot:active {
     border-right: 1px solid var(--hair);
     background: color-mix(in srgb, var(--bar) 92%, transparent);
     box-shadow: none;
+    /* Blur is expensive while width is animating; solid mix is enough here. */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .app:not(.app--public) .rail__brand {
@@ -4020,7 +4036,6 @@ button.slot:active {
     border-radius: var(--r-lg);
     background: var(--card);
     box-shadow: var(--shadow-sm);
-    transition: grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .app:not(.app--public) .rail__brand-row {
@@ -4034,21 +4049,6 @@ button.slot:active {
     font-family: "Excalifont";
     font-size: 13px;
     transform: rotate(-1deg);
-  }
-
-  .app:not(.app--public) .rail__brand .who__name,
-  .app:not(.app--public) .rail__tagline,
-  .app:not(.app--public) .rail__section-label,
-  .app:not(.app--public) .rail__label,
-  .app:not(.app--public) .rail__footer-toggle-label {
-    opacity: 1;
-    visibility: visible;
-    clip-path: inset(0 0 0 0);
-    transition:
-      opacity 0.18s ease 0.12s,
-      transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-      clip-path 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-      visibility 0s;
   }
 
   .app:not(.app--public) .rail__section-label {
@@ -4068,7 +4068,6 @@ button.slot:active {
 
   .app:not(.app--public) .rail__glyph {
     transition:
-      transform 0.34s cubic-bezier(0.16, 1, 0.3, 1),
       background 0.14s ease,
       color 0.14s ease;
   }
@@ -4084,7 +4083,6 @@ button.slot:active {
     inset-inline-end: 10px;
     transform: translateY(-50%);
     transition:
-      transform 0.34s cubic-bezier(0.16, 1, 0.3, 1),
       background 0.14s ease,
       color 0.14s ease;
   }
@@ -4138,19 +4136,12 @@ button.slot:active {
   }
 
   .app:not(.app--public) .rail[data-collapsed="true"] .rail__brand .who__name,
-  .app:not(.app--public) .rail[data-collapsed="true"] .rail__tagline,
   .app:not(.app--public) .rail[data-collapsed="true"] .rail__section-label,
   .app:not(.app--public) .rail[data-collapsed="true"] .rail__label,
-  .app:not(.app--public) .rail[data-collapsed="true"] .rail__footer-toggle-label {
+  .app:not(.app--public) .rail[data-collapsed="true"] .rail__footer-toggle-label,
+  .app:not(.app--public) .rail[data-collapsed="true"] .rail__tagline {
     opacity: 0;
     visibility: hidden;
-    clip-path: inset(0 100% 0 0);
-    transform: translateX(-8px);
-    transition:
-      opacity 0.1s ease,
-      transform 0.16s ease,
-      clip-path 0.16s ease,
-      visibility 0s 0.16s;
   }
 
   .app:not(.app--public) .rail[data-collapsed="true"] .rail__group,
@@ -4165,10 +4156,6 @@ button.slot:active {
     padding: 7px 10px;
   }
 
-  .app:not(.app--public) .rail[data-collapsed="true"] .rail__glyph {
-    transform: translateX(3px);
-  }
-
   .app:not(.app--public) .rail[data-collapsed="true"] .rail__count {
     transform: translate(8px, calc(-50% - 13px)) scale(0.78);
   }
@@ -4177,10 +4164,6 @@ button.slot:active {
     justify-content: flex-start;
     gap: 12px;
     padding: 7px 10px;
-  }
-
-  .app:not(.app--public) .rail[data-collapsed="true"] .rail__footer-toggle-glyph {
-    transform: translateX(3px);
   }
 }
 
