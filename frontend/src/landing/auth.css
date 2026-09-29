@@ -6,7 +6,10 @@
   --auth-line: #daddd7;
 
   min-height: 100dvh;
-  overflow-x: hidden;
+  flex-shrink: 0;
+  /* One document scroller: the shared .public-page rule makes this a scroll container. */
+  overflow: visible;
+  overflow-x: clip;
   background: #fbfaf7;
   color: var(--auth-ink);
 }
@@ -18,6 +21,7 @@
 
 .public-page.auth-page .auth-page__main {
   display: grid;
+  flex-shrink: 0;
   grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
   align-items: stretch;
   gap: 0;
@@ -284,8 +288,6 @@
 
 .auth-page__form-panel {
   display: flex;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   min-width: 0;
   min-height: 100dvh;
   padding: clamp(32px, 6vh, 64px) clamp(28px, 6vw, 112px) max(24px, env(safe-area-inset-bottom));
@@ -1309,7 +1311,7 @@
 .public-page.auth-page .auth-page__preview-bar {
   overflow: hidden;
   height: clamp(18px, 5.77cqi, 30px);
-  font-size: clamp(7px, 1.92cqi, 10px);
+  font-size: clamp(8px, 1.92cqi, 10px);
   white-space: nowrap;
 }
 
@@ -1364,6 +1366,7 @@
 
 .public-page.auth-page .auth-page__visual-message p {
   font-size: clamp(17px, min(0.9rem + 1.1vw, 4.4dvh), 28px);
+  text-wrap: balance;
 }
 
 /* Side-by-side layout (desktop and landscape devices): the art panel holds the viewport. */
