@@ -2,7 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import Lenis from "lenis";
 
 import { Mascot } from "../Mascot";
-import { AuthCard, type AuthIntent } from "./AuthCard";
+import type { AuthIntent } from "./AuthCard";
 
 interface LandingProps {
   busy: boolean;
@@ -17,6 +17,7 @@ const PANELS = [
   { id: "meet", label: "Meet Cooper" },
   { id: "features", label: "Features" },
   { id: "uses", label: "Uses" },
+  { id: "proof", label: "How Cooper plans" },
   { id: "start", label: "Try it" },
 ] as const;
 
@@ -154,14 +155,7 @@ function ServiceChip({ service, note }: { service: Service; note: string }) {
   );
 }
 
-export function LandingPage({
-  busy,
-  error,
-  authEnabled = true,
-  authLoading = false,
-  onSignIn,
-  onEmailAuth,
-}: LandingProps) {
+export function LandingPage(_props: LandingProps) {
   const track = useRef<HTMLDivElement>(null);
   const lenis = useRef<Lenis | null>(null);
   const activeIndex = useRef(0);
@@ -216,7 +210,6 @@ export function LandingPage({
             for (const entry of entries) {
               entry.target.classList.toggle("is-in-view", entry.isIntersecting);
               if (!entry.isIntersecting) continue;
-              entry.target.classList.add("has-entered");
               const index = PANELS.findIndex((panel) => panelId(panel.id) === entry.target.id);
               if (index >= 0) activeIndex.current = index;
             }
@@ -293,16 +286,10 @@ export function LandingPage({
         onKeyDown={trackKeyDown}
       >
         <section
-          className="landing__panel landing__panel--hero landing__panel--meet"
+          className="landing__panel landing__panel--hero landing__panel--meet landing__panel--hero-v2"
           id={panelId("meet")}
         >
-          <div className="landing__copy">
-            <svg className="landing__paper-doodles" viewBox="0 0 680 430" aria-hidden="true">
-              <path d="m24 82 3 15 15 3-15 3-3 15-3-15-15-3 15-3Z" />
-              <path d="m648 286 2.5 12 12 2.5-12 2.5-2.5 12-2.5-12-12-2.5 12-2.5Z" />
-              <path d="m625 72 1.5 8 8 1.5-8 1.5-1.5 8-1.5-8-8-1.5 8-1.5Z" />
-              <path className="landing__paper-squiggle" d="M14 340c16-13 30 13 46 0s30 13 46 0" />
-            </svg>
+          <div className="landing__hero-copy-v2">
             <h1>
               Hi, I&rsquo;m <span>Cooper.</span>
             </h1>
@@ -322,54 +309,81 @@ export function LandingPage({
                 See how Cooper helps
               </a>
               <a className="landing__secondary" href="/signup">
-                Try the beta
+                Create your account
               </a>
             </div>
+            <p className="landing__hero-assurance">Tasks, events, and errands in one calm place.</p>
           </div>
-          <div className="landing__stage landing__stage--today">
-            <div className="landing__cooper-hello">
-              <svg className="landing__avatar-doodles" viewBox="0 0 590 570" aria-hidden="true">
-                <path className="landing__doodle-orbit" d="M72 210C82 98 184 34 298 38" />
-                <path className="landing__doodle-orbit" d="M506 346c-28 106-128 170-239 166" />
-                <path
-                  className="landing__doodle-spark"
-                  d="m103 119 3 15 15 3-15 3-3 15-3-15-15-3 15-3Z"
-                />
-                <path
-                  className="landing__doodle-spark"
-                  d="m491 392 2 11 11 2-11 2-2 11-2-11-11-2 11-2Z"
-                />
-                <path className="landing__doodle-wave" d="M88 391c18-14 35 14 53 0s35 14 53 0" />
-              </svg>
-              <div className="landing__cooper-portrait">
-                <Mascot name="cooper_avatar" size="lg" decorative loading="eager" />
+          <div
+            className="landing__hero-proof"
+            role="img"
+            aria-label="An example of Cooper turning a sentence into a ninety-minute calendar block"
+          >
+            <div className="landing__hero-spread">
+              <div className="landing__hero-thought">
+                <span>You say</span>
+                <p>Send the proposal Thursday. It needs about 90 minutes.</p>
+                <div className="landing__hero-thought-facts" aria-hidden="true">
+                  <b>Task</b>
+                  <b>Thursday</b>
+                  <b>90 min</b>
+                </div>
               </div>
-              <div className="landing__hello-note">
-                <HandArrow flip />
-                <span>Hi! Give me the messy version. We&rsquo;ll sort it out together.</span>
-              </div>
-              <div className="landing__intro-slips" aria-hidden="true">
-                <span>tasks</span>
-                <span>events</span>
-                <span>errands</span>
+              <div className="landing__hero-plan">
+                <div className="landing__hero-plan-heading">
+                  <div>
+                    <span>Cooper made room</span>
+                    <strong>Proposal</strong>
+                  </div>
+                  <b>Thursday</b>
+                </div>
+                <div className="landing__hero-day" aria-hidden="true">
+                  <time>1:00</time>
+                  <span className="landing__hero-day-event">Class</span>
+                  <time>2:00</time>
+                  <span className="landing__hero-day-task">
+                    <strong>Proposal</strong>
+                    <small>90 min</small>
+                  </span>
+                  <time>3:30</time>
+                  <span className="landing__hero-day-open">Open</span>
+                </div>
+                <div className="landing__hero-plan-meta">
+                  <span>Exact duration</span>
+                  <span>Inside your hours</span>
+                </div>
               </div>
             </div>
+            <img
+              className="landing__hero-cooper"
+              src="/assets/mascot/cooper_landing_hero.webp"
+              alt=""
+              loading="eager"
+              decoding="async"
+            />
+            <p className="landing__hero-hand-note" aria-hidden="true">
+              Messy is fine. I&rsquo;ll find the fit.
+            </p>
           </div>
         </section>
 
-        <section className="landing__panel landing__panel--features" id={panelId("features")}>
-          <div className="landing__copy landing__copy--narrow">
-            <h2>One thought in. A clear day out.</h2>
-            <p className="landing__body">
+        <section
+          className="landing__panel landing__panel--features landing__panel--story"
+          id={panelId("features")}
+        >
+          <header className="landing__story-heading">
+            <h2>
+              One thought in. <span>A clear day out.</span>
+            </h2>
+            <p>
               No boards to groom or system to maintain. Cooper turns ordinary words into a useful
               next step.
             </p>
-            <div className="landing__hand-note landing__hand-note--features">
-              <HandArrow />
-              the boring planning bits, handled
-            </div>
-          </div>
-          <div className="landing__feature-grid" aria-label="Cooper features">
+          </header>
+          <div
+            className="landing__feature-grid landing__feature-grid--notes"
+            aria-label="How Cooper helps"
+          >
             <article className="landing__feature-card landing__feature-card--capture">
               <span className="landing__feature-number">01</span>
               <Mascot name="cooper_landing_capture" size="sm" decorative />
@@ -447,72 +461,193 @@ export function LandingPage({
             </div>
             <Mascot name="cooper_syncing" size="md" decorative />
           </div>
-          <div className="landing__copy landing__copy--narrow">
-            <h2>For the week that changes by Tuesday.</h2>
-            <div className="landing__use-list">
-              <article>
-                <strong>Classes &amp; deadlines</strong>
-                <span>Keep your tasks visible without booking over connected events.</span>
-              </article>
-              <article>
-                <strong>Work &amp; errands</strong>
-                <span>Give focused work a block; leave quick errands on the list.</span>
-              </article>
-              <article>
-                <strong>Events from your inbox</strong>
-                <span>Supported Gmail confirmations can reserve their time when connected.</span>
-              </article>
-            </div>
-            <div className="landing__privacy-note">
-              <Mascot name="cooper_secure" size="xs" decorative />
-              <div>
-                <strong>Private by design</strong>
-                <span>Connected calendars are read-only. New blocks stay in Cooper.</span>
+          <div className="landing__copy landing__copy--narrow landing__week-margin">
+            <h2>
+              For the week that changes by <span>Tuesday.</span>
+            </h2>
+            <div className="landing__week-sheet">
+              <div className="landing__use-list">
+                <article>
+                  <span className="landing__use-verb">Keep visible</span>
+                  <div>
+                    <strong>Classes &amp; deadlines</strong>
+                    <span>Keep your tasks visible without booking over connected events.</span>
+                  </div>
+                </article>
+                <article>
+                  <span className="landing__use-verb">Make room</span>
+                  <div>
+                    <strong>Work &amp; errands</strong>
+                    <span>Give focused work a block; leave quick errands on the list.</span>
+                  </div>
+                </article>
+                <article>
+                  <span className="landing__use-verb">Reserve time</span>
+                  <div>
+                    <strong>Events from your inbox</strong>
+                    <span>
+                      Supported Gmail confirmations can reserve their time when connected.
+                    </span>
+                  </div>
+                </article>
+              </div>
+              <div className="landing__privacy-note">
+                <Mascot name="cooper_secure" size="xs" decorative />
+                <div>
+                  <strong>Private by design</strong>
+                  <span>Connected calendars are read-only. New blocks stay in Cooper.</span>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
+        <section className="landing__panel landing__panel--proof" id={panelId("proof")}>
+          <div className="landing__proof-shell">
+            <div className="landing__proof-copy">
+              <h2>
+                Messy thought in. <span>Realistic time out.</span>
+              </h2>
+              <p>
+                Cooper handles the small planning decisions between remembering something and seeing
+                it fit your actual day.
+              </p>
+            </div>
+
+            <div
+              className="landing__proof-grid"
+              aria-label="How Cooper turns a thought into a workable plan"
+            >
+              <article className="landing__proof-card landing__proof-card--capture">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <span className="landing__proof-message">
+                    Finish the proposal by Thursday. About 90 minutes.
+                  </span>
+                  <span className="landing__proof-caret" />
+                </div>
+                <h3>Say it naturally</h3>
+                <p>One sentence is enough to capture the task, deadline, and duration.</p>
+              </article>
+
+              <article className="landing__proof-card landing__proof-card--priority">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <span className="landing__rank landing__rank--first">
+                    <b>1</b>
+                    <i />
+                    <em>due soon</em>
+                  </span>
+                  <span className="landing__rank">
+                    <b>2</b>
+                    <i />
+                  </span>
+                  <span className="landing__rank">
+                    <b>3</b>
+                    <i />
+                  </span>
+                </div>
+                <h3>Know what comes first</h3>
+                <p>Every priority keeps a plain reason you can inspect.</p>
+              </article>
+
+              <article className="landing__proof-card landing__proof-card--duration">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <div className="landing__time-ruler">
+                    <span>9</span>
+                    <span>10</span>
+                    <span>11</span>
+                    <i />
+                    <strong>90 min</strong>
+                  </div>
+                </div>
+                <h3>Keep the real duration</h3>
+                <p>A ninety-minute task gets a ninety-minute block—not a guess.</p>
+              </article>
+
+              <article className="landing__proof-card landing__proof-card--hours">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <div className="landing__hours-bar">
+                    <span />
+                    <strong>9:00–17:00</strong>
+                    <span />
+                  </div>
+                  <small>Your working hours</small>
+                </div>
+                <h3>Your hours stay yours</h3>
+                <p>Cooper only considers the availability you configured.</p>
+              </article>
+
+              <article className="landing__proof-card landing__proof-card--protected">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <div className="landing__mini-day">
+                    <span className="landing__mini-event">Class</span>
+                    <span className="landing__mini-gap" />
+                    <span className="landing__mini-task">Proposal</span>
+                  </div>
+                </div>
+                <h3>Busy time stays protected</h3>
+                <p>New work fits around connected commitments instead of over them.</p>
+              </article>
+
+              <article className="landing__proof-card landing__proof-card--undo">
+                <div className="landing__proof-visual" aria-hidden="true">
+                  <div className="landing__undo-row">
+                    <span>Scheduled proposal</span>
+                    <strong>Undo</strong>
+                  </div>
+                  <span className="landing__undo-return">Back where it was</span>
+                </div>
+                <h3>Take it back in one step</h3>
+                <p>The last change stays reversible, including a scheduling run.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
         <section
-          className="landing__panel landing__panel--auth landing__panel--start auth-screen"
+          className="landing__panel landing__panel--start landing__panel--closing"
           id={panelId("start")}
         >
-          <div className="landing__copy landing__copy--narrow">
-            <h2>
-              Give <span className="public-brand-name">Cooper</span> one thing to remember.
-            </h2>
-            <p className="landing__body">
-              Start small. Add one task, see why it matters, and let{" "}
-              <span className="public-brand-name">Cooper</span> find it a sensible place.
-            </p>
-            <ul className="landing__start-checks" aria-label="What you get">
-              <li>Private workspace</li>
-              <li>Works before you connect Google</li>
-              <li>Google sign-in or email access</li>
-            </ul>
-            <div className="landing__start-art">
-              <Mascot name="cooper_waving" size="md" decorative />
-              <span className="landing__scribble">I&rsquo;ll take it from here →</span>
+          <div className="landing__closing-stage">
+            <div className="landing__closing-copy">
+              <h2>Ready for a calmer day?</h2>
+              <p>
+                Give your tasks, events, and errands one private place to land. Start with one
+                thought and let Cooper help with the rest.
+              </p>
+              <div className="landing__closing-actions">
+                <a className="landing__closing-primary" href="/signup">
+                  Create your account
+                </a>
+                <a className="landing__closing-secondary" href="/login">
+                  Log in
+                </a>
+              </div>
+              <p className="landing__closing-assurance">
+                <span>Private workspace</span>
+                <span>Works before you connect Google</span>
+              </p>
+            </div>
+            <div className="landing__closing-visual" aria-hidden="true">
+              <span className="landing__closing-note">One thought is enough to begin.</span>
+              <span className="landing__closing-thought-card">
+                <small>You bring</small>
+                <strong>Send the proposal Thursday</strong>
+              </span>
+              <span className="landing__closing-plan-card">
+                <small>Cooper makes room</small>
+                <strong>Thursday · 2:00–3:30</strong>
+                <em>Inside your hours</em>
+              </span>
+              <img src="/assets/mascot/cooper_waving.webp" alt="" loading="lazy" decoding="async" />
+              <span className="landing__closing-line" />
             </div>
           </div>
-          <div className="landing__start-column">
-            <AuthCard
-              intent="signup"
-              busy={busy}
-              error={error}
-              authEnabled={authEnabled}
-              authLoading={authLoading}
-              onSignIn={onSignIn}
-              onEmailAuth={onEmailAuth}
-            />
-            <div className="landing__setup-note">
-              <HandArrow tall />
-              <span className="landing__setup-note-copy">about two minutes to get settled</span>
-            </div>
-          </div>
-          <footer className="landing__footer">
-            <span>
-              <span className="public-brand-name">Cooper</span> © 2026
+          <footer className="landing__footer landing__closing-footer">
+            <span className="landing__footer-signature">
+              <span>
+                <span className="public-brand-name">Cooper</span> © 2026
+              </span>
+              <span>· for your own words and your own time.</span>
             </span>
             <nav aria-label="Legal">
               <a href="/privacy" target="_blank" rel="noopener noreferrer">

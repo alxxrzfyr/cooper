@@ -580,12 +580,20 @@ describe("first impression", () => {
     expect(
       screen.queryByRole("heading", { name: "Checking your account." }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Checking your account…" })).toBeDisabled();
+    expect(screen.getAllByRole("link", { name: "Create your account" })[0]).toHaveAttribute(
+      "href",
+      "/signup",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Checking your account…" }),
+    ).not.toBeInTheDocument();
     expect(calls).toHaveLength(0);
 
     await emitFirebaseUser(null);
 
-    expect(await screen.findByRole("button", { name: /Google/ })).toBeEnabled();
+    expect(
+      (await screen.findAllByRole("link", { name: "Create your account" }))[0],
+    ).toHaveAttribute("href", "/signup");
     expect(
       screen.queryByRole("button", { name: "Checking your account…" }),
     ).not.toBeInTheDocument();
@@ -607,10 +615,7 @@ describe("first impression", () => {
     expect(calls).toHaveLength(0);
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
-    expect(document.querySelector(".auth-page__note .mascot")).toHaveAttribute(
-      "src",
-      "/assets/mascot/cooper_waving.webp",
-    );
+    expect(document.querySelector(".auth-page__visual")).toBeInTheDocument();
   });
 
   test("signed-in Firebase requests use the bearer token", async () => {

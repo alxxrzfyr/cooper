@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import { Landing } from "../landing/LandingPage";
@@ -9,12 +8,20 @@ describe("public landing", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "Hi, I’m Cooper." })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Create account" })).not.toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "Create your account" })[0]).toHaveAttribute(
+      "href",
+      "/signup",
+    );
     expect(screen.getAllByRole("link", { name: "Log in" })).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: "Register with Google" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "One thought in. A clear day out." }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ready for a calmer day?" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Messy thought in. Realistic time out." }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Say it naturally" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Busy time stays protected" })).toBeInTheDocument();
     expect(screen.getByText("Private by design")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -26,9 +33,10 @@ describe("public landing", () => {
       screen.getByText("Cooper is currently in public beta · The app is still under construction"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Landing sections" })).not.toBeInTheDocument();
-    expect(
-      document.querySelector("#landing-meet .landing__cooper-portrait .mascot"),
-    ).toHaveAttribute("src", "/assets/mascot/cooper_avatar.webp");
+    expect(document.querySelector("#landing-meet .landing__hero-cooper")).toHaveAttribute(
+      "src",
+      "/assets/mascot/cooper_landing_hero.webp",
+    );
     expect(
       screen.getByRole("img", { name: "Cooper calendar showing protected working hours" }),
     ).toBeInTheDocument();
@@ -39,26 +47,10 @@ describe("public landing", () => {
     render(<Landing busy={false} error={null} onSignIn={onSignIn} />);
 
     expect(screen.getAllByRole("link", { name: "Log in" })[0]).toHaveAttribute("href", "/login");
-    expect(screen.getAllByRole("link", { name: "Create account" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Create your account" })[0]).toHaveAttribute(
       "href",
       "/signup",
     );
-  });
-
-  test("shows sign-in errors and disables the Google action while redirecting", () => {
-    render(<Landing busy={true} error="Could not start sign in." onSignIn={vi.fn()} />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not start sign in.");
-    expect(screen.getByRole("button", { name: "Opening Google…" })).toBeDisabled();
-  });
-
-  test("uses the existing Google sign-in action", async () => {
-    const onSignIn = vi.fn();
-    render(<Landing busy={false} error={null} onSignIn={onSignIn} />);
-
-    await userEvent.setup().click(screen.getByRole("button", { name: "Register with Google" }));
-
-    expect(onSignIn).toHaveBeenCalledOnce();
   });
 
   test("does not render a first-panel scroll cue", () => {
@@ -67,34 +59,27 @@ describe("public landing", () => {
     expect(screen.queryByText("Keep going")).not.toBeInTheDocument();
   });
 
-  test("shows an email form and submits the current auth intent", async () => {
-    const onEmailAuth = vi.fn(async () => undefined);
-    render(<Landing busy={false} error={null} onSignIn={vi.fn()} onEmailAuth={onEmailAuth} />);
-
-    expect(screen.getByLabelText("Email address")).toBeInTheDocument();
-    expect(screen.getByLabelText("Create your password")).toBeInTheDocument();
-    expect(screen.getByLabelText("Re-enter your password")).toBeInTheDocument();
-    await userEvent.setup().type(screen.getByLabelText("Email address"), "friend@example.com");
-    await userEvent.setup().type(screen.getByLabelText("Create your password"), "password");
-    await userEvent.setup().type(screen.getByLabelText("Re-enter your password"), "password");
-    await userEvent.setup().click(screen.getByRole("button", { name: "Register with email" }));
-
-    expect(onEmailAuth).toHaveBeenCalledWith("friend@example.com", "password", "signup");
-  });
-
-  test("lets a visitor reveal and hide the password they entered", async () => {
-    const user = userEvent.setup();
+  test("keeps the product proof before the final account invitation", () => {
     render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
 
-    const password = screen.getByLabelText("Create your password");
-    await user.type(password, "cooper-secret");
-    expect(password).toHaveAttribute("type", "password");
+    const sections = Array.from(document.querySelectorAll(".landing__panel")).map(
+      (section) => section.id,
+    );
 
-    await user.click(screen.getByRole("button", { name: "Show password" }));
-    expect(password).toHaveAttribute("type", "text");
-    expect(password).toHaveValue("cooper-secret");
+    expect(sections).toEqual([
+      "landing-meet",
+      "landing-features",
+      "landing-uses",
+      "landing-proof",
+      "landing-start",
+    ]);
+  });
 
-    await user.click(screen.getByRole("button", { name: "Hide password" }));
-    expect(password).toHaveAttribute("type", "password");
+  test("keeps account forms on the dedicated auth pages", () => {
+    render(<Landing busy={false} error={null} onSignIn={vi.fn()} />);
+
+    expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Create your password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Register with Google" })).not.toBeInTheDocument();
   });
 });

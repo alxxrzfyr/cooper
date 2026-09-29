@@ -218,7 +218,7 @@ describe("public auth flow", () => {
     await emitFirebaseUser(null);
 
     expect(window.location.pathname).toBe("/login");
-    expect(await screen.findByRole("heading", { name: "Log in to Cooper" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
@@ -258,10 +258,7 @@ describe("public auth flow", () => {
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
-    expect(document.querySelector(".auth-page__note .mascot")).toHaveAttribute(
-      "src",
-      "/assets/mascot/cooper_waving.webp",
-    );
+    expect(document.querySelector(".auth-page__visual")).toBeInTheDocument();
   });
 
   test("signed-in Firebase requests use the bearer token", async () => {

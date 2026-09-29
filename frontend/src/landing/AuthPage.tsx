@@ -18,17 +18,6 @@ interface AuthPageProps {
   onUseAnotherAccount?: () => void;
 }
 
-const PAGE_COPY: Record<AuthIntent, { title: string; description: string }> = {
-  signup: {
-    title: "Get started",
-    description: "A small, steady place for the things you need to remember and do.",
-  },
-  login: {
-    title: "Welcome back",
-    description: "Log in to see what matters now and the time you have to make it happen.",
-  },
-};
-
 function PublicBrand() {
   return (
     <a className="public-page__brand" href="/" aria-label="Cooper home">
@@ -52,66 +41,99 @@ export function AuthPage({
   onResetPassword,
   onUseAnotherAccount,
 }: AuthPageProps) {
-  const copy = PAGE_COPY[intent];
+  const previews: Array<[string, string, number, number]> =
+    intent === "signup"
+      ? [
+          ["Calendar", "/assets/landing/cooper-app-calendar.webp", 1920, 960],
+          ["Ask Cooper", "/assets/landing/cooper-app-ai.webp", 1440, 680],
+          ["Home", "/assets/landing/cooper-app-home.webp", 1440, 680],
+        ]
+      : [];
 
   return (
     <div className={`public-page auth-page auth-page--${intent}`}>
-      <header className="public-page__header">
-        <PublicBrand />
-        <a className="public-page__back" href="/" aria-label="Back to Cooper home">
-          <span aria-hidden="true">←</span>
-          <span>
-            Back to <span className="public-brand-name">Cooper</span>
-          </span>
-        </a>
-      </header>
-
-      <section className="auth-page__main" aria-labelledby="auth-page-title">
-        <div className="auth-page__intro">
-          <h1 id="auth-page-title">{copy.title}</h1>
-          <p>{copy.description}</p>
-          <div className="auth-page__note">
-            <Mascot
-              name={intent === "signup" ? "cooper_landing_ready" : "cooper_waving"}
-              size="md"
-              decorative
-              loading="eager"
-            />
-            <span>
-              {intent === "signup" ? "One task is enough to begin." : "Good to see you again."}
-            </span>
+      <main className="auth-page__main" aria-labelledby="auth-card-title">
+        <aside className="auth-page__visual" aria-label="Cooper welcome">
+          <PublicBrand />
+          <div className="auth-page__visual-message">
+            <div
+              className={`auth-page__showcase auth-page__showcase--${intent}`}
+              aria-hidden="true"
+            >
+              {previews.map(([label, src, width, height], index) => (
+                <div className={`auth-page__preview auth-page__preview--${index + 1}`} key={label}>
+                  <div className="auth-page__preview-bar">
+                    <span>{label}</span>
+                  </div>
+                  <img
+                    src={src}
+                    alt=""
+                    width={width}
+                    height={height}
+                    loading={index === 0 ? "eager" : "lazy"}
+                  />
+                </div>
+              ))}
+              <div className="auth-page__mascot-stage">
+                {intent === "login" ? (
+                  <img
+                    className="auth-page__login-scene"
+                    src="/assets/auth/login-cooper-planner.png"
+                    alt=""
+                    width={1254}
+                    height={1254}
+                    loading="eager"
+                  />
+                ) : (
+                  <>
+                    <img
+                      className="auth-page__visual-asset auth-page__visual-asset--signup"
+                      src="/assets/auth/cooper-ground-vignette.png"
+                      alt=""
+                      width={1086}
+                      height={362}
+                      loading="eager"
+                    />
+                    <Mascot name="cooper_landing_ready" size="lg" decorative loading="eager" />
+                  </>
+                )}
+              </div>
+            </div>
+            <p>{intent === "login" ? "Good to see you again." : "One task is enough to begin."}</p>
           </div>
-        </div>
-        <AuthCard
-          intent={intent}
-          busy={busy}
-          error={error}
-          authEnabled={authEnabled}
-          authLoading={authLoading}
-          onSignIn={onSignIn}
-          onEmailAuth={onEmailAuth}
-          authStatus={authStatus}
-          onCheckVerification={onCheckVerification}
-          onResendVerification={onResendVerification}
-          onResetPassword={onResetPassword}
-          onUseAnotherAccount={onUseAnotherAccount}
-        />
-      </section>
+        </aside>
 
-      <footer className="public-page__footer">
-        <span>
-          <span className="public-brand-name">Cooper</span> © 2026 · for your own words and your own
-          time.
-        </span>
-        <nav aria-label="Legal">
-          <a href="/terms" target="_blank" rel="noopener noreferrer">
-            Terms
-          </a>
-          <a href="/privacy" target="_blank" rel="noopener noreferrer">
-            Privacy
-          </a>
-        </nav>
-      </footer>
+        <section className="auth-page__form-panel" aria-label="Account access">
+          <AuthCard
+            intent={intent}
+            busy={busy}
+            error={error}
+            authEnabled={authEnabled}
+            authLoading={authLoading}
+            onSignIn={onSignIn}
+            onEmailAuth={onEmailAuth}
+            authStatus={authStatus}
+            onCheckVerification={onCheckVerification}
+            onResendVerification={onResendVerification}
+            onResetPassword={onResetPassword}
+            onUseAnotherAccount={onUseAnotherAccount}
+          />
+          <footer className="public-page__footer">
+            <span>
+              <span className="public-brand-name">Cooper</span> © 2026 · for your own words and your
+              own time.
+            </span>
+            <nav aria-label="Legal">
+              <a href="/terms" target="_blank" rel="noopener noreferrer">
+                Terms
+              </a>
+              <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                Privacy
+              </a>
+            </nav>
+          </footer>
+        </section>
+      </main>
     </div>
   );
 }
