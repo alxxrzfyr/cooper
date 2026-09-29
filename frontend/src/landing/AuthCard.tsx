@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 export type AuthIntent = "login" | "signup";
 
@@ -19,14 +19,30 @@ interface AuthCardProps {
 
 const COPY: Record<AuthIntent, { title: string; description: string }> = {
   signup: {
-    title: "Create your Cooper account",
-    description: "Create a private Cooper workspace for your own tasks, events, and errands.",
+    title: "Create your account",
+    description: "Start a private workspace for your tasks, events, and errands.",
   },
   login: {
-    title: "Log in to Cooper",
-    description: "Return to your private workspace and the commitments you already made.",
+    title: "Welcome back",
+    description: "Log in to your private workspace and pick up where you left off.",
   },
 };
+
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return visible ? (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" />
+      <path d="M9.9 4.3A10.8 10.8 0 0 1 12 4c5.5 0 9 5.1 9 5.1a14.6 14.6 0 0 1-2.2 2.7" />
+      <path d="M6.6 6.6A15.8 15.8 0 0 0 3 9.1S6.5 14.2 12 14.2c.8 0 1.6-.1 2.3-.3" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 12s3.5-5.1 9-5.1 9 5.1 9 5.1-3.5 5.1-9 5.1S3 12 3 12Z" />
+      <circle cx="12" cy="12" r="2.3" />
+    </svg>
+  );
+}
 
 /** Shared sign-in action for the landing page and the dedicated auth pages. */
 export function AuthCard({
@@ -48,8 +64,10 @@ export function AuthCard({
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordConfirmationVisible, setPasswordConfirmationVisible] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const passwordConfirmationRef = useRef<HTMLInputElement>(null);
   const copy = COPY[intent];
   const disabled = busy || authLoading;
   const googleDisabled = disabled || !authEnabled;
@@ -87,12 +105,13 @@ export function AuthCard({
         <button
           type="button"
           className="landing__text-button"
+          disabled={busy}
           onClick={onUseAnotherAccount ?? onSignIn}
         >
           Use another account
         </button>
         {error && (
-          <p className="landing__error" role="alert">
+          <p id="auth-form-error" className="landing__error" role="alert" aria-live="assertive">
             {error}
           </p>
         )}
@@ -105,6 +124,7 @@ export function AuthCard({
     if (disabled || !onEmailAuth) return;
     if (intent === "signup" && password !== passwordConfirmation) {
       setPasswordError("Passwords do not match.");
+      passwordConfirmationRef.current?.focus();
       return;
     }
     setPasswordError(null);
@@ -113,7 +133,7 @@ export function AuthCard({
 
   function submitReset(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    if (!onResetPassword) return;
+    if (disabled || !onResetPassword) return;
     setResetSent(false);
     void onResetPassword(email.trim()).then(
       () => setResetSent(true),
@@ -170,7 +190,7 @@ export function AuthCard({
           </p>
         )}
         {error && (
-          <p className="landing__error" role="alert">
+          <p id="auth-form-error" className="landing__error" role="alert" aria-live="assertive">
             {error}
           </p>
         )}
@@ -182,15 +202,6 @@ export function AuthCard({
     <section className="landing__auth-card" aria-labelledby="auth-card-title" aria-busy={disabled}>
       <h2 id="auth-card-title">{copy.title}</h2>
       <p>{copy.description}</p>
-
-      <nav className="landing__auth-switch" aria-label="Account action">
-        <a href="/signup" aria-current={intent === "signup" ? "page" : undefined}>
-          Create account
-        </a>
-        <a href="/login" aria-current={intent === "login" ? "page" : undefined}>
-          Log in
-        </a>
-      </nav>
 
       <button
         type="button"
@@ -238,69 +249,113 @@ export function AuthCard({
       >
         <label>
           Email address
-          <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={disabled}
-            required
-          />
+          <span className="landing__field-control">
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={disabled}
+              required
+            />
+          </span>
         </label>
         <label>
           {intent === "signup" ? "Create your password" : "Password"}
-          <span className="landing__password-control">
+          <span
+            className={`landing__password-control${password ? " landing__password-control--populated" : ""}`}
+          >
             <input
               type={passwordVisible ? "text" : "password"}
               name="password"
               autoComplete={intent === "login" ? "current-password" : "new-password"}
+              placeholder={intent === "login" ? "Enter your password" : "At least 6 characters"}
               value={password}
+              aria-invalid={Boolean(passwordError)}
+              aria-describedby={passwordError ? "password-error" : undefined}
               onChange={(event) => {
-                setPassword(event.target.value);
+                const nextPassword = event.target.value;
+                setPassword(nextPassword);
+                if (!nextPassword) setPasswordVisible(false);
                 setPasswordError(null);
               }}
               disabled={disabled}
               minLength={6}
               required
             />
-            <button
-              type="button"
-              className="landing__password-toggle"
-              aria-label={passwordVisible ? "Hide password" : "Show password"}
-              aria-pressed={passwordVisible}
-              disabled={disabled}
-              onClick={() => setPasswordVisible((visible) => !visible)}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
-                <circle cx="12" cy="12" r="2.75" />
-              </svg>
-            </button>
+            {password && (
+              <button
+                type="button"
+                className="landing__password-toggle"
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                aria-pressed={passwordVisible}
+                disabled={disabled}
+                onClick={() => setPasswordVisible((visible) => !visible)}
+              >
+                <PasswordVisibilityIcon visible={passwordVisible} />
+              </button>
+            )}
           </span>
         </label>
         {intent === "signup" && (
           <label>
             Re-enter your password
-            <input
-              type="password"
-              name="password-confirmation"
-              autoComplete="new-password"
-              value={passwordConfirmation}
-              onChange={(event) => {
-                setPasswordConfirmation(event.target.value);
-                setPasswordError(null);
-              }}
-              disabled={disabled}
-              minLength={6}
-              required
-            />
+            <span
+              className={`landing__password-control${passwordConfirmation ? " landing__password-control--populated" : ""}`}
+            >
+              <input
+                type={passwordConfirmationVisible ? "text" : "password"}
+                name="password-confirmation"
+                autoComplete="new-password"
+                value={passwordConfirmation}
+                ref={passwordConfirmationRef}
+                aria-invalid={Boolean(passwordError)}
+                aria-describedby={passwordError ? "password-error" : undefined}
+                onChange={(event) => {
+                  const nextConfirmation = event.target.value;
+                  setPasswordConfirmation(nextConfirmation);
+                  if (!nextConfirmation) setPasswordConfirmationVisible(false);
+                  setPasswordError(null);
+                }}
+                disabled={disabled}
+                minLength={6}
+                required
+              />
+              {passwordConfirmation && (
+                <button
+                  type="button"
+                  className="landing__password-toggle"
+                  aria-label={
+                    passwordConfirmationVisible
+                      ? "Hide password confirmation"
+                      : "Show password confirmation"
+                  }
+                  aria-pressed={passwordConfirmationVisible}
+                  disabled={disabled}
+                  onClick={() => setPasswordConfirmationVisible((visible) => !visible)}
+                >
+                  <PasswordVisibilityIcon visible={passwordConfirmationVisible} />
+                </button>
+              )}
+            </span>
           </label>
         )}
         {passwordError && (
-          <p className="landing__error" role="alert">
+          <p id="password-error" className="landing__error" role="alert" aria-live="assertive">
             {passwordError}
           </p>
+        )}
+        {intent === "login" && (
+          <button
+            type="button"
+            className="landing__text-button landing__forgot"
+            disabled={disabled}
+            onClick={() => setResetMode(true)}
+          >
+            Forgot password?
+          </button>
         )}
         <button
           type="submit"
@@ -310,27 +365,19 @@ export function AuthCard({
         >
           {busy ? "Working…" : emailAction}
         </button>
-        {intent === "login" && (
-          <button type="button" className="landing__text-button" onClick={() => setResetMode(true)}>
-            Forgot password?
-          </button>
-        )}
       </form>
 
-      {!authEnabled && (
-        <p className="landing__availability">
-          You can fill in your details now. Connect Firebase to complete email sign-in.
-        </p>
-      )}
-
       {error && (
-        <p className="landing__error" role="alert">
+        <p id="auth-form-error" className="landing__error" role="alert" aria-live="assertive">
           {error}
         </p>
       )}
 
-      <p className="landing__fineprint">
-        Your account stays private to you. Cooper never shares your tasks or calendar.
+      <p className="landing__auth-alternate">
+        <span>{intent === "login" ? "New to Cooper?" : "Already have an account?"}</span>
+        <a href={intent === "login" ? "/signup" : "/login"}>
+          {intent === "login" ? "Create an account" : "Log in"}
+        </a>
       </p>
     </section>
   );
