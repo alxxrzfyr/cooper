@@ -1358,8 +1358,8 @@
 .public-page.auth-page--login .auth-page__mascot-stage {
   right: auto;
   bottom: 0;
-  left: 0;
-  width: 100%;
+  left: 5%;
+  width: 90%;
   height: auto;
   transform: none;
 }
