@@ -26,25 +26,27 @@
 
 ## File map
 
-| File | Change |
-|---|---|
-| `cooper/planner.py` | `released` parameter on `project_open_tasks`/`place`; new `RecoveryPlan` dataclass and `preview_recovery()` |
-| `cooper/app.py` | `_recovery_fingerprint`, `recovery_preview`, `apply_recovery`, `recovery` branch in `undo_last`, two routes |
-| `tests/test_cooper.py` | Pure preview tests |
-| `tests/test_api.py` | HTTP preview/apply/stale/undo tests |
-| `frontend/src/types.ts`, `frontend/src/api.ts` | `RecoveryPreview` type, two API calls |
-| `frontend/src/Home.tsx`, `frontend/src/App.tsx` | Inline preview in At Risk, wiring through `act()` |
-| `frontend/src/test/App.test.tsx` | UI tests |
+| File                                            | Change                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `cooper/planner.py`                             | `released` parameter on `project_open_tasks`/`place`; new `RecoveryPlan` dataclass and `preview_recovery()` |
+| `cooper/app.py`                                 | `_recovery_fingerprint`, `recovery_preview`, `apply_recovery`, `recovery` branch in `undo_last`, two routes |
+| `tests/test_cooper.py`                          | Pure preview tests                                                                                          |
+| `tests/test_api.py`                             | HTTP preview/apply/stale/undo tests                                                                         |
+| `frontend/src/types.ts`, `frontend/src/api.ts`  | `RecoveryPreview` type, two API calls                                                                       |
+| `frontend/src/Home.tsx`, `frontend/src/App.tsx` | Inline preview in At Risk, wiring through `act()`                                                           |
+| `frontend/src/test/App.test.tsx`                | UI tests                                                                                                    |
 
 ---
 
 ### Task 1: Pure recovery preview
 
 **Files:**
+
 - Modify: `cooper/planner.py` (`project_open_tasks` ~L265, `place` ~L496)
 - Test: `tests/test_cooper.py`
 
 **Interfaces:**
+
 - Produces:
   - `project_open_tasks(..., released: frozenset[str] = frozenset()) -> list[Slot]`
   - `place(..., released: frozenset[str] = frozenset()) -> list[Slot]`
@@ -58,9 +60,18 @@
 ```python
 def _task(item_id, *, start, minutes=45, pinned=0, due=None, status="open", source="me"):
     return Item(
-        id=item_id, owner_id="local", source=source, kind="task", title=item_id,
-        minutes=minutes, importance=3, status=status, pinned=pinned, due=due,
-        start_at=start, end_at=(start + dt.timedelta(minutes=minutes or 30)) if start else None,
+        id=item_id,
+        owner_id="local",
+        source=source,
+        kind="task",
+        title=item_id,
+        minutes=minutes,
+        importance=3,
+        status=status,
+        pinned=pinned,
+        due=due,
+        start_at=start,
+        end_at=(start + dt.timedelta(minutes=minutes or 30)) if start else None,
         created_at=start or AT,
     )
 
@@ -103,14 +114,18 @@ def test_recovery_reports_unplaced_reasons() -> None:
     )
     assert plan.moves == []
     assert dict(plan.unplaced) == {
-        "overdue": "overdue", "unknown": "unknown_estimate", "huge": "no_feasible_slot",
+        "overdue": "overdue",
+        "unknown": "unknown_estimate",
+        "huge": "no_feasible_slot",
     }
 
 
 def test_recovery_ignores_events_done_and_provider_items() -> None:
     done = _task("done", start=AT - dt.timedelta(hours=1), status="done")
     remote = _task("remote", start=AT - dt.timedelta(hours=1), source="google")
-    plan = planner.preview_recovery(items=[done, remote], remote_busy=[], hours=DEFAULT_HOURS, at=AT)
+    plan = planner.preview_recovery(
+        items=[done, remote], remote_busy=[], hours=DEFAULT_HOURS, at=AT
+    )
     assert plan == planner.RecoveryPlan(moves=[], kept=[], unplaced=[])
 ```
 
@@ -195,16 +210,29 @@ def preview_recovery(
     slots = {
         slot.item_id: slot
         for slot in project_open_tasks(
-            items=items, remote_busy=remote_busy, hours=hours, at=at, days=days,
-            item_ids=sorted(released), released=released,
+            items=items,
+            remote_busy=remote_busy,
+            hours=hours,
+            at=at,
+            days=days,
+            item_ids=sorted(released),
+            released=released,
         )
     }
     moves, unplaced = [], []
     for item in sorted((i for i in missed if i.id in released), key=lambda i: aware(i.start_at)):
         slot = slots.get(item.id)
         if slot is not None:
-            moves.append(RecoveryMove(item.id, item.title, aware(item.start_at),
-                                      aware(item.end_at), slot.start, slot.end))
+            moves.append(
+                RecoveryMove(
+                    item.id,
+                    item.title,
+                    aware(item.start_at),
+                    aware(item.end_at),
+                    slot.start,
+                    slot.end,
+                )
+            )
         elif item.due and aware(item.due) < at:
             unplaced.append((item.id, "overdue"))
         elif not item.minutes:
@@ -228,10 +256,12 @@ Expected: all PASS (the `released` default keeps existing behavior).
 ### Task 2: Read-only preview endpoint with fingerprint
 
 **Files:**
+
 - Modify: `cooper/app.py` (near `apply_slots` ~L2936; routes near `/api/schedule` ~L3264)
 - Test: `tests/test_api.py`
 
 **Interfaces:**
+
 - Consumes: `planner.preview_recovery`, `RecoveryPlan`, `_external_availability(owner_id, days=8)`, `current_hours(owner_id)`, `store.open_items(session, owner_id)`.
 - Produces:
   - `_recovery_fingerprint(items, hours, busy, plan) -> str` (hex SHA-256)
@@ -247,20 +277,32 @@ RECOVERY_AT = dt.datetime(2026, 10, 5, 2, 0, tzinfo=dt.UTC)  # Monday 10:00 SGT
 def _recovery_setup(module, monkeypatch, *, busy=None, complete=True):
     monkeypatch.setattr(module, "now", lambda: RECOVERY_AT)
     monkeypatch.setattr(
-        module, "_external_availability",
+        module,
+        "_external_availability",
         lambda _owner, **_kw: {"complete": complete, "busy": list(busy or []), "health": []},
     )
     with module.store.session() as session:
-        session.add(module.Item(
-            id="missed-1", owner_id="local", source="me", kind="task", title="Draft memo",
-            minutes=45, importance=3, category="work", status="open",
-            start_at=RECOVERY_AT - dt.timedelta(minutes=90),
-            end_at=RECOVERY_AT - dt.timedelta(minutes=45), created_at=RECOVERY_AT,
-        ))
+        session.add(
+            module.Item(
+                id="missed-1",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="Draft memo",
+                minutes=45,
+                importance=3,
+                category="work",
+                status="open",
+                start_at=RECOVERY_AT - dt.timedelta(minutes=90),
+                end_at=RECOVERY_AT - dt.timedelta(minutes=45),
+                created_at=RECOVERY_AT,
+            )
+        )
 
 
 def test_recovery_preview_is_read_only(client: TestClient, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch)
     body = client.post("/api/recovery/preview", headers=HEADERS).json()
     assert body["complete"] is True
@@ -274,6 +316,7 @@ def test_recovery_preview_is_read_only(client: TestClient, monkeypatch) -> None:
 
 def test_recovery_preview_proposes_nothing_when_a_calendar_failed(client, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch, complete=False)
     body = client.post("/api/recovery/preview", headers=HEADERS).json()
     assert body["complete"] is False and body["moves"] == []
@@ -290,17 +333,29 @@ Expected: FAIL with 404/405 on `/api/recovery/preview`.
 
 ```python
 def _recovery_fingerprint(
-    items: list[Item], hours: Hours, busy: list[tuple[dt.datetime, dt.datetime]],
+    items: list[Item],
+    hours: Hours,
+    busy: list[tuple[dt.datetime, dt.datetime]],
     plan: planner.RecoveryPlan,
 ) -> str:
     """Hash every input that can change the plan, plus the plan itself."""
+
     def iso(value: dt.datetime | None) -> str | None:
         return aware(value).isoformat() if value else None
+
     payload = {
         "items": sorted(
-            [item.id, iso(item.start_at), iso(item.end_at), item.minutes, item.status,
-             int(item.pinned or 0), iso(item.due)]
-            for item in items if (item.source or "me") == "me"
+            [
+                item.id,
+                iso(item.start_at),
+                iso(item.end_at),
+                item.minutes,
+                item.status,
+                int(item.pinned or 0),
+                iso(item.due),
+            ]
+            for item in items
+            if (item.source or "me") == "me"
         ),
         "hours": dataclasses.asdict(hours),
         "busy": sorted([iso(start), iso(end)] for start, end in busy),
@@ -329,9 +384,14 @@ def _recovery_dict(items, plan, fingerprint, complete: bool) -> dict[str, Any]:
         "fingerprint": fingerprint,
         "complete": complete,
         "moves": [
-            {"item_id": m.item_id, "title": m.title, "old_start": m.old_start.isoformat(),
-             "old_end": m.old_end.isoformat(), "start": m.start.isoformat(),
-             "end": m.end.isoformat()}
+            {
+                "item_id": m.item_id,
+                "title": m.title,
+                "old_start": m.old_start.isoformat(),
+                "old_end": m.old_end.isoformat(),
+                "start": m.start.isoformat(),
+                "end": m.end.isoformat(),
+            }
             for m in plan.moves
         ],
         "kept": [{"item_id": i, "title": titles.get(i, ""), "reason": r} for i, r in plan.kept],
@@ -370,10 +430,12 @@ Expected: PASS.
 ### Task 3: Atomic apply with stale rejection
 
 **Files:**
+
 - Modify: `cooper/app.py`
 - Test: `tests/test_api.py`
 
 **Interfaces:**
+
 - Consumes: `_recovery_in_session`, `_locked_hours(session, owner_id)`, `store.record`, `_verified_write_response(result, view, operation=..., item_ids=...)`, `today_view`.
 - Produces:
   - `apply_recovery(owner_id: str, fingerprint: str) -> dict` returning `{"kind": "rescheduled", "message": ..., "item_ids": [...]}`
@@ -386,6 +448,7 @@ Expected: PASS.
 ```python
 def test_recovery_apply_moves_the_batch_with_one_change(client, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch)
     preview = client.post("/api/recovery/preview", headers=HEADERS).json()
     response = client.post(
@@ -401,12 +464,14 @@ def test_recovery_apply_moves_the_batch_with_one_change(client, monkeypatch) -> 
 
 def test_recovery_apply_rejects_a_calendar_change_since_preview(client, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch)
     preview = client.post("/api/recovery/preview", headers=HEADERS).json()
     move = preview["moves"][0]
     new_event = (dt.datetime.fromisoformat(move["start"]), dt.datetime.fromisoformat(move["end"]))
     monkeypatch.setattr(
-        module, "_external_availability",
+        module,
+        "_external_availability",
         lambda _owner, **_kw: {"complete": True, "busy": [new_event], "health": []},
     )
     response = client.post(
@@ -421,6 +486,7 @@ def test_recovery_apply_rejects_a_calendar_change_since_preview(client, monkeypa
 
 def test_recovery_apply_rejects_a_local_edit_since_preview(client, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch)
     preview = client.post("/api/recovery/preview", headers=HEADERS).json()
     client.patch("/api/items/missed-1", headers=HEADERS, json={"minutes": 90})
@@ -432,10 +498,12 @@ def test_recovery_apply_rejects_a_local_edit_since_preview(client, monkeypatch) 
 
 def test_recovery_apply_refuses_when_a_calendar_failed(client, monkeypatch) -> None:
     import cooper.app as module
+
     _recovery_setup(module, monkeypatch)
     preview = client.post("/api/recovery/preview", headers=HEADERS).json()
     monkeypatch.setattr(
-        module, "_external_availability",
+        module,
+        "_external_availability",
         lambda _owner, **_kw: {"complete": False, "busy": [], "health": []},
     )
     response = client.post(
@@ -475,18 +543,30 @@ def apply_recovery(owner_id: str, fingerprint: str) -> dict[str, Any]:
         before, after = [], []
         for move in plan.moves:
             item = store.get_item(session, owner_id, move.item_id)
-            before.append({"id": item.id, "start_at": move.old_start.isoformat(),
-                           "end_at": move.old_end.isoformat()})
+            before.append(
+                {
+                    "id": item.id,
+                    "start_at": move.old_start.isoformat(),
+                    "end_at": move.old_end.isoformat(),
+                }
+            )
             item.start_at, item.end_at = move.start, move.end
-            after.append({"id": item.id, "start_at": move.start.isoformat(),
-                          "end_at": move.end.isoformat()})
+            after.append(
+                {"id": item.id, "start_at": move.start.isoformat(), "end_at": move.end.isoformat()}
+            )
         store.record(
-            session, owner_id, label=f"Recovered {len(plan.moves)} missed blocks",
-            item=None, before={"recovery": {"before": before, "after": after}},
+            session,
+            owner_id,
+            label=f"Recovered {len(plan.moves)} missed blocks",
+            item=None,
+            before={"recovery": {"before": before, "after": after}},
         )
     ids = [move.item_id for move in plan.moves]
-    return {"kind": "rescheduled", "message": f"Recovered {len(ids)} missed blocks.",
-            "item_ids": ids}
+    return {
+        "kind": "rescheduled",
+        "message": f"Recovered {len(ids)} missed blocks.",
+        "item_ids": ids,
+    }
 
 
 @app.post("/api/recovery/apply")
@@ -515,10 +595,12 @@ Expected: PASS.
 **Policy (all-or-nothing):** Undo restores every moved item's old slot only if every item still exists, is open, and still has exactly the slot recovery wrote. Otherwise it changes nothing, leaves the `Change` not undone, and names the items that changed so the user can fix them manually. Only `start_at`/`end_at` are restored, so later title/estimate edits survive.
 
 **Files:**
+
 - Modify: `cooper/app.py` (`undo_last` ~L2967)
 - Test: `tests/test_api.py`
 
 **Interfaces:**
+
 - Consumes: `Change.before["recovery"]` from Task 3.
 - Produces: `undo_last` returns `{"kind": "undone", ...}` on success or `{"kind": "note", "message": "Can’t undo recovery: <titles> changed since. Nothing was changed."}` on conflict.
 
@@ -528,12 +610,14 @@ Expected: PASS.
 def _applied_recovery(client, module, monkeypatch):
     _recovery_setup(module, monkeypatch)
     preview = client.post("/api/recovery/preview", headers=HEADERS).json()
-    client.post("/api/recovery/apply", headers=HEADERS,
-                json={"fingerprint": preview["fingerprint"]})
+    client.post(
+        "/api/recovery/apply", headers=HEADERS, json={"fingerprint": preview["fingerprint"]}
+    )
 
 
 def test_recovery_undo_restores_every_old_slot(client, monkeypatch) -> None:
     import cooper.app as module
+
     _applied_recovery(client, module, monkeypatch)
     body = client.post("/api/undo", headers=HEADERS).json()
     assert body["kind"] == "undone"
@@ -544,6 +628,7 @@ def test_recovery_undo_restores_every_old_slot(client, monkeypatch) -> None:
 
 def test_recovery_undo_refuses_when_an_item_diverged(client, monkeypatch) -> None:
     import cooper.app as module
+
     _applied_recovery(client, module, monkeypatch)
     with module.store.session() as session:  # an unrecorded write, e.g. another writer
         item = module.store.get_item(session, "local", "missed-1")
@@ -552,7 +637,9 @@ def test_recovery_undo_refuses_when_an_item_diverged(client, monkeypatch) -> Non
     body = client.post("/api/undo", headers=HEADERS).json()
     assert body["kind"] == "note" and "Draft memo" in body["message"]
     with module.store.session() as session:
-        assert module.aware(module.store.get_item(session, "local", "missed-1").start_at) == moved_to
+        assert (
+            module.aware(module.store.get_item(session, "local", "missed-1").start_at) == moved_to
+        )
         assert module.store.last_change(session, "local").label.startswith("Recovered")
 ```
 
@@ -602,10 +689,12 @@ Expected: PASS.
 ### Task 5: Home recovery preview
 
 **Files:**
+
 - Modify: `frontend/src/types.ts`, `frontend/src/api.ts` (~L110), `frontend/src/Home.tsx` (props ~L306, At Risk ~L572), `frontend/src/App.tsx` (~L1105)
 - Test: `frontend/src/test/App.test.tsx`
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
@@ -627,6 +716,7 @@ onApplyRecovery: (fingerprint: string) => Promise<boolean>;
 ```
 
 UI rules:
+
 - Show a `Review recovery` button in the At Risk section only when `planning.capacity.missed_block_ids.length > 0`.
 - Clicking it loads the preview into an inline `<section aria-label="Recovery preview">` inside At Risk. Each move reads `Title: <old time> → <new time>` in `planning.timezone`. Kept rows read `Title stays (pinned)`. Unplaced rows read `Title isn’t placed: overdue | needs an estimate | no free time in the next 7 days`.
 - `Apply recovery` is disabled when `moves` is empty or `complete` is false. When incomplete, show `A connected calendar couldn’t be checked, so nothing will move.`
@@ -638,16 +728,25 @@ UI rules:
 
 ```tsx
 const previewBody = {
-  fingerprint: "a".repeat(64), complete: true,
-  moves: [{ item_id: "t1", title: "Draft memo", old_start: "2026-10-05T01:00:00+00:00",
-            old_end: "2026-10-05T01:45:00+00:00", start: "2026-10-05T03:00:00+00:00",
-            end: "2026-10-05T03:45:00+00:00" }],
-  kept: [], unplaced: [],
+  fingerprint: "a".repeat(64),
+  complete: true,
+  moves: [
+    {
+      item_id: "t1",
+      title: "Draft memo",
+      old_start: "2026-10-05T01:00:00+00:00",
+      old_end: "2026-10-05T01:45:00+00:00",
+      start: "2026-10-05T03:00:00+00:00",
+      end: "2026-10-05T03:45:00+00:00",
+    },
+  ],
+  kept: [],
+  unplaced: [],
 };
 
 it("previews and applies recovery from At Risk", async () => {
   const calls = stub({
-    "/api/today": view({ /* capacity.missed_block_ids: ["t1"] plus a missed_block risk for t1 */ }),
+    "/api/today": view({/* capacity.missed_block_ids: ["t1"] plus a missed_block risk for t1 */}),
     "/api/recovery/preview": previewBody,
     "/api/recovery/apply": reply({ kind: "rescheduled", message: "Recovered 1 missed blocks." }),
   });
@@ -656,13 +755,17 @@ it("previews and applies recovery from At Risk", async () => {
   const panel = await screen.findByRole("region", { name: "Recovery preview" });
   expect(within(panel).getByText(/Draft memo/)).toBeInTheDocument();
   await userEvent.click(within(panel).getByRole("button", { name: "Apply recovery" }));
-  await waitFor(() => expect(screen.queryByRole("region", { name: "Recovery preview" })).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Recovery preview" })).toBeNull(),
+  );
   expect(calls.some((c) => c.url.endsWith("/api/recovery/apply"))).toBe(true);
 });
 
 it("dismisses recovery without a request", async () => {
-  const calls = stub({ "/api/today": view({ /* missed block as above */ }),
-                       "/api/recovery/preview": previewBody });
+  const calls = stub({
+    "/api/today": view({/* missed block as above */}),
+    "/api/recovery/preview": previewBody,
+  });
   render(<App />);
   await userEvent.click(await screen.findByRole("button", { name: "Review recovery" }));
   await userEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
@@ -670,8 +773,10 @@ it("dismisses recovery without a request", async () => {
 });
 
 it("disables apply when a calendar could not be checked", async () => {
-  stub({ "/api/today": view({ /* missed block */ }),
-         "/api/recovery/preview": { ...previewBody, complete: false, moves: [] } });
+  stub({
+    "/api/today": view({/* missed block */}),
+    "/api/recovery/preview": { ...previewBody, complete: false, moves: [] },
+  });
   render(<App />);
   await userEvent.click(await screen.findByRole("button", { name: "Review recovery" }));
   expect(await screen.findByRole("button", { name: "Apply recovery" })).toBeDisabled();

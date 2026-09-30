@@ -72,7 +72,7 @@ planned, not current runtime capabilities. See the reviewed draft and first capa
 | Frontend                     | React 19, TypeScript, Vite                                             |
 | Authentication               | Firebase Authentication with Google or verified email/password sign-in |
 | Calendar and mail            | Google Calendar/Gmail REST APIs and iCloud CalDAV                      |
-| AI assistance                | Cooper-supplied Gemini with Groq fallback; disabled until funded        |
+| AI assistance                | Cooper-supplied Gemini with Groq fallback; disabled until funded       |
 | Delivery                     | Firebase Hosting for the frontend and Render for the API               |
 
 ## Architecture
