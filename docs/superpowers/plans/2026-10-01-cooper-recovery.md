@@ -55,7 +55,7 @@
   - `preview_recovery(*, items, remote_busy, hours, at, days=7) -> RecoveryPlan`
   - Unplaced reasons: `"overdue"`, `"unknown_estimate"`, `"no_feasible_slot"`. Kept reason: `"pinned"`.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_cooper.py`; reuse the file's existing `Item`/`Hours` builders if present, otherwise construct as below)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_cooper.py`; reuse the file's existing `Item`/`Hours` builders if present, otherwise construct as below)
 
 ```python
 def _task(item_id, *, start, minutes=45, pinned=0, due=None, status="open", source="me"):
@@ -131,12 +131,12 @@ def test_recovery_ignores_events_done_and_provider_items() -> None:
 
 `DEFAULT_HOURS`: use the default `Hours` the file already builds for placement tests (weekdays, Asia/Singapore). If none exists, build `planner.Hours` with the same defaults `app._ensure_hours` writes.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_cooper.py -k recovery -q`
 Expected: FAIL, `AttributeError: module 'cooper.planner' has no attribute 'preview_recovery'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `place`, change the skip and the scheduled-usage loop so released items count as unscheduled and free their old time:
 
@@ -244,12 +244,12 @@ def preview_recovery(
 
 Note: `project_open_tasks` with `item_ids` only ranks the selected items, but `scheduled=local` still reserves every other open block, so future blocks are never displaced.
 
-- [ ] **Step 4: Run to verify pass, plus the existing placement suite**
+- [x] **Step 4: Run to verify pass, plus the existing placement suite**
 
 Run: `uv run pytest tests/test_cooper.py -q`
 Expected: all PASS (the `released` default keeps existing behavior).
 
-- [ ] **Step 5: Commit** — `feat(planner): preview recovery for missed local blocks`
+- [x] **Step 5: Commit** — `feat(planner): preview recovery for missed local blocks`
 
 ---
 
@@ -268,7 +268,7 @@ Expected: all PASS (the `released` default keeps existing behavior).
   - `recovery_preview(owner_id) -> dict` with keys `fingerprint`, `complete: bool`, `moves: [{item_id,title,old_start,old_end,start,end}]`, `kept: [{item_id,title,reason}]`, `unplaced: [{item_id,title,reason}]`
   - `POST /api/recovery/preview` → that dict (no write, no `Change`).
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_api.py`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_api.py`)
 
 ```python
 RECOVERY_AT = dt.datetime(2026, 10, 5, 2, 0, tzinfo=dt.UTC)  # Monday 10:00 SGT
@@ -324,12 +324,12 @@ def test_recovery_preview_proposes_nothing_when_a_calendar_failed(client, monkey
 
 Check the real return shape of `_external_availability` in `app.py` (~L2473) and match the stub's keys to it before running.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_api.py -k recovery_preview -q`
 Expected: FAIL with 404/405 on `/api/recovery/preview`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 def _recovery_fingerprint(
@@ -418,12 +418,12 @@ def do_recovery_preview(request: Request) -> dict[str, Any]:
 
 Add `import dataclasses, hashlib, json` if missing; use the existing `Hours` import. If `Hours` is not a dataclass, serialize its fields explicitly instead of `dataclasses.asdict`.
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/test_api.py -k recovery -q`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(api): add read-only recovery preview`
+- [x] **Step 5: Commit** — `feat(api): add read-only recovery preview`
 
 ---
 
@@ -443,7 +443,7 @@ Expected: PASS.
   - `POST /api/recovery/apply` → verified `Reply` with `receipt` and `view`. 409 `"Your plan changed since this preview. Review the updated preview."` on mismatch; 409 `"A connected calendar couldn’t be checked, so Cooper won’t move anything."` when availability is incomplete; 422 `"Nothing to recover."` when there are no moves.
   - `Change.before = {"recovery": {"before": [{"id","start_at","end_at"}], "after": [{"id","start_at","end_at"}]}}`, label `f"Recovered {n} missed blocks"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_recovery_apply_moves_the_batch_with_one_change(client, monkeypatch) -> None:
@@ -512,12 +512,12 @@ def test_recovery_apply_refuses_when_a_calendar_failed(client, monkeypatch) -> N
     assert response.status_code == 409
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_api.py -k recovery_apply -q`
 Expected: FAIL with 404/405.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 class RecoveryApplyIn(BaseModel):
@@ -581,12 +581,12 @@ def do_recovery_apply(body: RecoveryApplyIn, request: Request) -> dict[str, Any]
 
 Check `_verified_write_response`'s real signature (~L1988) and the `move_item` route (~L3202) and call it the same way. Add `import hmac` if missing. Raising `HTTPException` inside `store.session()` must roll back; confirm `Store.session` rolls back on exception (the move 422 test at ~L310 relies on this).
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/test_api.py -k recovery -q`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(api): apply recovery atomically and reject stale previews`
+- [x] **Step 5: Commit** — `feat(api): apply recovery atomically and reject stale previews`
 
 ---
 
@@ -604,7 +604,7 @@ Expected: PASS.
 - Consumes: `Change.before["recovery"]` from Task 3.
 - Produces: `undo_last` returns `{"kind": "undone", ...}` on success or `{"kind": "note", "message": "Can’t undo recovery: <titles> changed since. Nothing was changed."}` on conflict.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def _applied_recovery(client, module, monkeypatch):
@@ -643,12 +643,12 @@ def test_recovery_undo_refuses_when_an_item_diverged(client, monkeypatch) -> Non
         assert module.store.last_change(session, "local").label.startswith("Recovered")
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_api.py -k recovery_undo -q`
 Expected: first test FAIL (undo falls through and changes nothing but reports undone), second FAIL on `kind`.
 
-- [ ] **Step 3: Implement** — add before the `change.undone = 1` line, as a new branch after `"batch"`:
+- [x] **Step 3: Implement** — add before the `change.undone = 1` line, as a new branch after `"batch"`:
 
 ```python
         elif "recovery" in before:
@@ -677,12 +677,12 @@ Expected: first test FAIL (undo falls through and changes nothing but reports un
 
 Add a small helper next to `_restore` if none exists: `def _iso(value): return aware(value).isoformat() if value else None`. The early `return` exits the `with` block without flushing changes because nothing was modified.
 
-- [ ] **Step 4: Run to verify pass, plus the existing undo tests**
+- [x] **Step 4: Run to verify pass, plus the existing undo tests**
 
 Run: `uv run pytest tests/test_api.py -k "undo or recovery" -q`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(api): conflict-safe batch undo for recovery`
+- [x] **Step 5: Commit** — `feat(api): conflict-safe batch undo for recovery`
 
 ---
 
@@ -724,7 +724,7 @@ UI rules:
 - After apply: on `true`, close the preview. On `false` (409 is already announced by `act`), reload the preview and show `Your plan changed. Here’s the updated preview.`
 - Don't use green or red here; those are reserved for done and gone. Use existing neutral classes.
 
-- [ ] **Step 1: Write the failing tests** (use the existing `stub`, `view`, `reply` helpers)
+- [x] **Step 1: Write the failing tests** (use the existing `stub`, `view`, `reply` helpers)
 
 ```tsx
 const previewBody = {
@@ -786,12 +786,12 @@ it("disables apply when a calendar could not be checked", async () => {
 
 Match the `stub` call-record shape (`c.url` vs another field) and the `view()` capacity/risk builder arguments to the helpers at App.test.tsx ~L217–300. A 409 stub is only needed if `stub` supports status codes; otherwise cover the stale path in a Home-level test that passes `onApplyRecovery={async () => false}`.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd frontend && npx vitest --run src/test/App.test.tsx -t recovery`
 Expected: FAIL, the `Review recovery` button isn't found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 App wiring next to `onMove`:
 
@@ -823,24 +823,41 @@ async function applyRecovery(fingerprint: string) {
 
 Format times with the same time formatter Home already uses for commitments, in `zone`. Render the At Risk section when `riskTargets.length > 0 || missed_block_ids.length > 0`.
 
-- [ ] **Step 4: Run the full frontend suite, format and build**
+- [x] **Step 4: Run the full frontend suite, format and build**
 
 Run: `cd frontend && npm test -- --run && npm run format:check && npm run build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** — `feat(web): preview and apply recovery from At Risk`
+- [x] **Step 5: Commit** — `feat(web): preview and apply recovery from At Risk`
 
 ---
 
 ### Task 6: Acceptance, docs and PR
 
-- [ ] Run `uv run pytest`, `uv run ruff check . && uv run ruff format --check .`, frontend tests, format and build, and `git diff --check`.
+- [x] Run `uv run pytest`, `uv run ruff check . && uv run ruff format --check .`, frontend tests, format and build, and `git diff --check`.
 - [ ] Run the app locally with a missed block. Check the At Risk button, the preview's old → new times in the right timezone, Dismiss, Apply, undo via Ask ("undo"), and the no-connected-calendar path. Record owner confirmation.
-- [ ] Update `docs/designs/cooper-product-rethink.md` (Guided recovery row), `PRD.md`/`ARCHITECTURE.md` ("recovery remains future" lines) and the spec's L279 note to say it's implemented, ungated in the beta, with the all-or-nothing undo policy.
-- [ ] Implement on this stacked branch (PR #15) with Conventional Commits; fill in the PR template.
+- [x] Update `docs/designs/cooper-product-rethink.md` (Guided recovery row), `PRD.md`/`ARCHITECTURE.md` ("recovery remains future" lines) and the spec's L279 note to say it's implemented, ungated in the beta, with the all-or-nothing undo policy.
+- [x] Implement on this stacked branch (PR #15) with Conventional Commits; fill in the PR template.
 
 ## Self-review
 
 - Spec coverage: missed-block selection (T1), pinned preserved (T1), fixed/remote immutable (T1, via `project_open_tasks` busy/scheduled), old/new times and unplaced before apply (T2, T5), reread of items/hours/providers at apply (T3), stale rejection (T3), no partial plan (T3: whole fingerprint), one transaction and one undo (T3, T4), defined undo conflict policy (T4), dismiss with no mutation (T5), Free manual rescheduling untouched (Global Constraints), recovery vs new calendar event race (T3 test).
 - Open owner decision: Plus gating. Ungated in the beta by default; one guard in `apply_recovery` when billing exists.
 - Known limitation: the fingerprint includes the plan, so a preview can go stale if the lead-time boundary passes a candidate slot between preview and apply. Apply then returns 409 and the UI shows the refreshed preview, which is the safe outcome.
+
+## Execution record
+
+2026-10-01: Tasks 1–5 implemented on the stacked branch (PR #15). Tasks 2–4 landed as
+one backend commit. Deviations from the plan:
+
+- The UI lives in a new `frontend/src/RecoveryPanel.tsx` rendered inside At Risk, which
+  keeps `Home.tsx` from growing further.
+- `Review recovery` appears when `planning.risks` contains a `missed_block`, not from
+  `capacity.missed_block_ids`, because capacity is optional in the snapshot.
+- Change labels are singular or plural (`Recovered 1 missed block`).
+- The apply body forbids extra fields and requires a lowercase 64-hex fingerprint.
+
+Evidence: backend 501 pytest pass, including 11 recovery HTTP tests and 4 pure preview
+tests; Ruff check and format clean; frontend 245 tests pass, including 4 recovery UI
+tests; `npm run format:check` and build pass. Browser acceptance is open until the
+owner confirms it, because the agent environment cannot launch dev servers.

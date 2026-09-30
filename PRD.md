@@ -248,7 +248,8 @@ from the full seven-day scheduler. Unknown effort makes the assessment partial;
 unavailable calendars suppress capacity claims. Duration-fit answers respect exact
 placement constraints and local midnight. Manual estimate editing refreshes the
 assessment and supports undo. The pilot uses one configured server timezone for all
-owners. Broader demand analysis, recovery coordination and weekly review remain future work.
+owners. Guided recovery of missed blocks (preview, then explicit apply, one undo) is
+implemented and ungated in the beta. Broader demand analysis and weekly review remain future work.
 
 The public landing includes FAQs beside proposed Free and Plus choices ($0 and
 $8/month). The beta signup link works; Plus checkout is disabled and explicitly

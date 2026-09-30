@@ -275,8 +275,10 @@ preview's expected item/hours values, recompute the proposed plan and reject a
 changed result with a conflict response. Apply no stale or partial plan unless
 the refreshed preview explicitly says so. Record every previous slot in one
 transaction so one undo restores the batch. Undo must have a defined conflict
-policy before concurrent recovery ships. This is a follow-up specification, not
-authorization to add a recovery endpoint today.
+policy before concurrent recovery ships. Implemented on 2026-10-01 per
+`docs/superpowers/plans/2026-10-01-cooper-recovery.md`: fingerprint-based stale
+rejection, one `Change` per batch, and all-or-nothing undo that refuses and names
+items whose slot changed after recovery. Ungated in the beta until billing exists.
 
 Free basic recovery means existing manual per-item edits/rescheduling and undo.
 Proposed Plus coordination means a reviewed multi-task preview/apply with one
