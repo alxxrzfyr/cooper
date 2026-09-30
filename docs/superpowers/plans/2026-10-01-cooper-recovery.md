@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md` ("Recovery and weekly value require their own contracts", lines ~266–292) and `docs/designs/cooper-product-rethink.md` (guided recovery rules and the recovery/calendar race risk row).
 
-**Depends on:** PR #14 (`feat/included-ai-accounting`), which contains `project_open_tasks`, capacity `missed_block_ids` and the `task_state()` `missed_block` state. Execute on a branch cut from `main` after #14 merges.
+**Depends on:** PR #14 (`feat/included-ai-accounting`), which contains `project_open_tasks`, capacity `missed_block_ids` and the `task_state()` `missed_block` state. This branch is stacked on #14, so execute here directly; GitHub retargets the PR to `main` when #14 merges.
 
 ## Global Constraints
 
@@ -732,7 +732,7 @@ Expected: PASS.
 - [ ] Run `uv run pytest`, `uv run ruff check . && uv run ruff format --check .`, frontend tests, format and build, and `git diff --check`.
 - [ ] Run the app locally with a missed block. Check the At Risk button, the preview's old → new times in the right timezone, Dismiss, Apply, undo via Ask ("undo"), and the no-connected-calendar path. Record owner confirmation.
 - [ ] Update `docs/designs/cooper-product-rethink.md` (Guided recovery row), `PRD.md`/`ARCHITECTURE.md` ("recovery remains future" lines) and the spec's L279 note to say it's implemented, ungated in the beta, with the all-or-nothing undo policy.
-- [ ] Branch `feat/recovery`, Conventional Commits, `gh pr create --base main` with the template.
+- [ ] Implement on this stacked branch (PR #15) with Conventional Commits; fill in the PR template.
 
 ## Self-review
 
