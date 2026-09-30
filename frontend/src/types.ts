@@ -306,3 +306,27 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+export interface RecoveryRow {
+  item_id: string;
+  title: string;
+  reason: string;
+}
+
+export interface RecoveryMove {
+  item_id: string;
+  title: string;
+  old_start: string;
+  old_end: string;
+  start: string;
+  end: string;
+}
+
+/** A read-only re-plan of missed local blocks; apply sends the fingerprint back. */
+export interface RecoveryPreview {
+  fingerprint: string;
+  complete: boolean;
+  moves: RecoveryMove[];
+  kept: RecoveryRow[];
+  unplaced: RecoveryRow[];
+}

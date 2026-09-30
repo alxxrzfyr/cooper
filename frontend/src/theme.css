@@ -4905,6 +4905,38 @@ button.slot:active {
   font-weight: 700;
 }
 
+.home-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 13px 16px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.home-recovery__note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.home-recovery__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-recovery__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 520px) {
   .home-focus__body {
     align-items: stretch;

@@ -7,6 +7,7 @@ import {
   type Item,
   type NewItem,
   type MutationReceipt,
+  type RecoveryPreview,
   type Reply,
   type SyncSummary,
   type View,
@@ -111,6 +112,8 @@ export const api = {
   schedule: () =>
     call<{ placed: unknown[]; receipt?: MutationReceipt; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
+  recoveryPreview: () => call<RecoveryPreview>("/api/recovery/preview", post()),
+  applyRecovery: (fingerprint: string) => call<Reply>("/api/recovery/apply", post({ fingerprint })),
   act: (id: string, verb: "complete" | "drop" | "pin" | "schedule") =>
     call<Reply>(`/api/items/${id}/${verb}`, post()),
   reschedule: (id: string, start: string, minutes: number) =>
