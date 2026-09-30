@@ -2768,3 +2768,76 @@ class TestIncludedProviderTransport:
             },
         )
         assert reader.read("write report", []).verb == "ask"
+
+
+
+class TestRecoveryPreview:
+    """Missed local blocks are re-placed without moving anything fixed or pinned."""
+
+    AT = dt.datetime(2026, 10, 5, 2, 0, tzinfo=dt.UTC)  # Monday 10:00 Asia/Singapore
+
+    def block(self, item_id: str, *, start: dt.datetime, minutes: int | None = 45, **fields):
+        # The stored slot is always a short past block; `minutes` is the current estimate.
+        length = dt.timedelta(minutes=min(minutes or 30, 60))
+        fields.setdefault("source", "me")
+        return task(
+            id=item_id,
+            title=item_id,
+            minutes=minutes,
+            start_at=start,
+            end_at=start + length,
+            created_at=self.AT - dt.timedelta(days=1),
+            **fields,
+        )
+
+    def preview(self, items, *, busy=(), days=7):
+        from cooper.planner import preview_recovery
+
+        return preview_recovery(items=items, remote_busy=list(busy), hours=Hours(), at=self.AT, days=days)
+
+    def test_moves_missed_blocks_and_keeps_pinned_and_future(self) -> None:
+        missed = self.block("missed", start=self.AT - dt.timedelta(hours=1))
+        pinned = self.block("pinned", start=self.AT - dt.timedelta(hours=1), pinned=1)
+        future = self.block("future", start=self.AT + dt.timedelta(hours=2))
+
+        plan = self.preview([missed, pinned, future])
+
+        assert [move.item_id for move in plan.moves] == ["missed"]
+        assert plan.moves[0].start >= self.AT
+        assert plan.moves[0].old_end == missed.end_at
+        assert plan.kept == [("pinned", "pinned")]
+        assert missed.start_at == self.AT - dt.timedelta(hours=1)  # inputs are not mutated
+
+    def test_never_overlaps_remote_busy_or_future_blocks(self) -> None:
+        missed = self.block("missed", start=self.AT - dt.timedelta(hours=1), minutes=60)
+        future = self.block("future", start=self.AT + dt.timedelta(minutes=30), minutes=60)
+        busy = [(self.AT + dt.timedelta(hours=2), self.AT + dt.timedelta(hours=4))]
+
+        plan = self.preview([missed, future], busy=busy)
+
+        move = plan.moves[0]
+        for start, end in [*busy, (future.start_at, future.end_at)]:
+            assert move.end <= start or move.start >= end
+
+    def test_reports_unplaced_reasons(self) -> None:
+        early = self.AT - dt.timedelta(hours=2)
+        overdue = self.block("overdue", start=early, due=self.AT - dt.timedelta(hours=1))
+        unknown = self.block("unknown", start=early, minutes=None)
+        huge = self.block("huge", start=early, minutes=60 * 20)
+
+        plan = self.preview([overdue, unknown, huge], days=1)
+
+        assert plan.moves == []
+        assert dict(plan.unplaced) == {
+            "overdue": "overdue",
+            "unknown": "unknown_estimate",
+            "huge": "no_feasible_slot",
+        }
+
+    def test_ignores_done_and_provider_items(self) -> None:
+        from cooper.planner import RecoveryPlan
+
+        done = self.block("done", start=self.AT - dt.timedelta(hours=1), status="done")
+        remote = self.block("remote", start=self.AT - dt.timedelta(hours=1), source="google")
+
+        assert self.preview([done, remote]) == RecoveryPlan(moves=[], kept=[], unplaced=[])
