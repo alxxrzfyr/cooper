@@ -2770,7 +2770,6 @@ class TestIncludedProviderTransport:
         assert reader.read("write report", []).verb == "ask"
 
 
-
 class TestRecoveryPreview:
     """Missed local blocks are re-placed without moving anything fixed or pinned."""
 
@@ -2793,7 +2792,9 @@ class TestRecoveryPreview:
     def preview(self, items, *, busy=(), days=7):
         from cooper.planner import preview_recovery
 
-        return preview_recovery(items=items, remote_busy=list(busy), hours=Hours(), at=self.AT, days=days)
+        return preview_recovery(
+            items=items, remote_busy=list(busy), hours=Hours(), at=self.AT, days=days
+        )
 
     def test_moves_missed_blocks_and_keeps_pinned_and_future(self) -> None:
         missed = self.block("missed", start=self.AT - dt.timedelta(hours=1))

@@ -66,10 +66,12 @@ from cooper.google import Calendar, CalendarError, Gmail
 from cooper.icloud import ICloudCalDAVProvider
 from cooper.planner import (
     Hours,
+    RecoveryPlan,
     Slot,
     accepts_interval,
     build_planning_snapshot,
     place,
+    preview_recovery,
     project_open_tasks,
     rank,
 )
@@ -2964,6 +2966,131 @@ def apply_slots(owner_id: str, slots: list[Slot] | None, *, days: int = 7) -> li
         return applied
 
 
+# Recovery: re-place missed local blocks. Preview is read-only; apply rereads every input
+# under the hours lock and refuses if the result differs from what the person reviewed.
+RECOVERY_DAYS = 7
+RECOVERY_STALE = "Your plan changed since this preview. Review the updated preview."
+RECOVERY_UNCHECKED = "A connected calendar couldn’t be checked, so Cooper won’t move anything."
+
+
+def _iso(value: dt.datetime | None) -> str | None:
+    return aware(value).isoformat() if value else None
+
+
+def _recovery_fingerprint(
+    items: list[Item],
+    hours: Hours,
+    busy: list[tuple[dt.datetime, dt.datetime]],
+    plan: RecoveryPlan,
+) -> str:
+    """Hash every input that can change the plan, plus the plan itself."""
+    payload = {
+        "items": sorted(
+            [
+                item.id,
+                _iso(item.start_at),
+                _iso(item.end_at),
+                item.minutes,
+                item.status,
+                int(item.pinned or 0),
+                _iso(item.due),
+            ]
+            for item in items
+            if (item.source or "me") == "me"
+        ),
+        "hours": dataclasses.asdict(hours),
+        "busy": sorted([_iso(start), _iso(end)] for start, end in busy),
+        "moves": [[move.item_id, _iso(move.start), _iso(move.end)] for move in plan.moves],
+        "kept": plan.kept,
+        "unplaced": plan.unplaced,
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _recovery_in_session(
+    session: Any, owner_id: str, hours: Hours, availability: dict[str, Any]
+) -> tuple[list[Item], RecoveryPlan, str]:
+    items = store.open_items(session, owner_id)
+    busy = list(availability["busy"]) if availability["complete"] else []
+    plan = (
+        preview_recovery(items=items, remote_busy=busy, hours=hours, at=now(), days=RECOVERY_DAYS)
+        if availability["complete"]
+        else RecoveryPlan(moves=[], kept=[], unplaced=[])
+    )
+    return items, plan, _recovery_fingerprint(items, hours, busy, plan)
+
+
+def recovery_preview(owner_id: str) -> dict[str, Any]:
+    availability = _external_availability(owner_id, days=RECOVERY_DAYS + 1)
+    _ensure_hours(owner_id)
+    with store.session() as session:
+        items, plan, fingerprint = _recovery_in_session(
+            session, owner_id, current_hours(owner_id), availability
+        )
+        titles = {item.id: item.title for item in items}
+        return {
+            "fingerprint": fingerprint,
+            "complete": bool(availability["complete"]),
+            "moves": [
+                {
+                    "item_id": move.item_id,
+                    "title": move.title,
+                    "old_start": move.old_start.isoformat(),
+                    "old_end": move.old_end.isoformat(),
+                    "start": move.start.isoformat(),
+                    "end": move.end.isoformat(),
+                }
+                for move in plan.moves
+            ],
+            "kept": [
+                {"item_id": item_id, "title": titles.get(item_id, ""), "reason": reason}
+                for item_id, reason in plan.kept
+            ],
+            "unplaced": [
+                {"item_id": item_id, "title": titles.get(item_id, ""), "reason": reason}
+                for item_id, reason in plan.unplaced
+            ],
+        }
+
+
+def apply_recovery(owner_id: str, fingerprint: str) -> dict[str, Any]:
+    availability = _external_availability(owner_id, days=RECOVERY_DAYS + 1)
+    if not availability["complete"]:
+        raise HTTPException(status_code=409, detail=RECOVERY_UNCHECKED)
+    _ensure_hours(owner_id)
+    with store.session() as session:
+        hours = _locked_hours(session, owner_id)  # serialize writers before rereading
+        _items, plan, current = _recovery_in_session(session, owner_id, hours, availability)
+        if not hmac.compare_digest(current, fingerprint):
+            raise HTTPException(status_code=409, detail=RECOVERY_STALE)
+        if not plan.moves:
+            raise HTTPException(status_code=422, detail="Nothing to recover.")
+        before: list[dict[str, Any]] = []
+        after: list[dict[str, Any]] = []
+        for move in plan.moves:
+            item = store.get_item(session, owner_id, move.item_id)
+            before.append(
+                {"id": item.id, "start_at": _iso(move.old_start), "end_at": _iso(move.old_end)}
+            )
+            item.start_at, item.end_at = move.start, move.end
+            after.append({"id": item.id, "start_at": _iso(move.start), "end_at": _iso(move.end)})
+        count = len(plan.moves)
+        label = f"Recovered {count} missed block{'' if count == 1 else 's'}"
+        store.record(
+            session,
+            owner_id,
+            label=label,
+            item=None,
+            before={"recovery": {"before": before, "after": after}},
+        )
+    return {
+        "kind": "rescheduled",
+        "message": f"{label}.",
+        "item_ids": [move.item_id for move in plan.moves],
+    }
+
+
 def undo_last(owner_id: str) -> dict[str, Any]:
     with store.session() as session:
         change = store.last_change(session, owner_id)
@@ -3004,6 +3131,33 @@ def undo_last(owner_id: str) -> dict[str, Any]:
                 if item is None:
                     continue
                 session.delete(item)
+        elif "recovery" in before:
+            # All-or-nothing: restore old slots only if every item still holds exactly the
+            # slot recovery wrote. Otherwise change nothing and name what moved.
+            recovery = before["recovery"]
+            after_rows = recovery.get("after", [])
+            current = {
+                row["id"]: store.get_item(session, owner_id, row["id"]) for row in after_rows
+            }
+            diverged = [
+                item.title if item is not None else row["id"]
+                for row in after_rows
+                if (item := current[row["id"]]) is None
+                or item.status != "open"
+                or _iso(item.start_at) != row["start_at"]
+                or _iso(item.end_at) != row["end_at"]
+            ]
+            if diverged:
+                return {
+                    "kind": "note",
+                    "message": f"Can’t undo recovery: {', '.join(diverged)} changed since. "
+                    "Nothing was changed.",
+                }
+            for row in recovery.get("before", []):
+                item = current.get(row["id"])
+                if item is not None:
+                    item.start_at = _parse(row["start_at"])
+                    item.end_at = _parse(row["end_at"])
 
         change.undone = 1
         label = change.label
@@ -3285,6 +3439,27 @@ def do_schedule(request: Request) -> dict[str, Any]:
         )
         response["receipt"] = receipt
     return response
+
+
+@app.post("/api/recovery/preview")
+def do_recovery_preview(request: Request) -> dict[str, Any]:
+    return recovery_preview(request_owner(request).uid)
+
+
+class RecoveryApplyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+@app.post("/api/recovery/apply")
+def do_recovery_apply(body: RecoveryApplyIn, request: Request) -> dict[str, Any]:
+    owner_id = request_owner(request).uid
+    result = apply_recovery(owner_id, body.fingerprint)
+    item_ids = result.pop("item_ids")
+    view = today_view(owner_id)
+    response = _verified_write_response(result, view, operation="reschedule", item_ids=item_ids)
+    return {**response, "view": view}
 
 
 @app.post("/api/undo")
