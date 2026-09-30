@@ -8,8 +8,11 @@ import json
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
+
+from cooper.providers import ProviderFailure
 
 Verb = Literal["add", "batch", "complete", "drop", "move", "pin", "schedule", "show", "undo", "ask"]
 Category = Literal["academics", "work", "organizations", "personal"]
@@ -239,15 +242,29 @@ class ToolTurn:
     text: str | None
 
 
+class _InvalidModelResponse(ValueError):
+    def __init__(self, *, repairable: bool = False) -> None:
+        super().__init__("invalid model response")
+        self.repairable = repairable
+
+
 class Brain:
-    def __init__(self, *, api_key: str | None, model: str, timezone: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str,
+        timezone: str,
+        dispatch: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> None:
         self._key = api_key
         self._model = model
         self._tz = timezone
+        self._dispatch = dispatch
 
     @property
     def using_model(self) -> bool:
-        return bool(self._key)
+        return self._dispatch is not None or bool(self._key)
 
     def with_api_key(self, api_key: str) -> Brain:
         """Return a request-scoped Brain without changing this configured instance."""
@@ -268,14 +285,29 @@ class Brain:
         if rules_action.verb in _RULES_FIRST_VERBS:
             return rules_action
 
-        if self._key and use_model:
+        if self.using_model and use_model:
             for attempt in (1, 2):
                 try:
                     payload = self._call_gemini(text, recent_titles, repair=attempt == 2)
-                    return _from_json(payload, tz=self._tz, source="gemini")
+                except _InvalidModelResponse as error:
+                    if error.repairable:
+                        continue
+                    break
+                except ProviderFailure:
+                    break
                 except json.JSONDecodeError:
+                    if self._dispatch is not None:
+                        raise
                     continue
                 except Exception:
+                    if self._dispatch is not None:
+                        raise
+                    break
+                try:
+                    return _from_json(
+                        payload, tz=self._tz, source="model" if self._dispatch else "gemini"
+                    )
+                except (ValueError, KeyError, IndexError, TypeError, AttributeError):
                     break
             return Action(
                 verb="ask",
@@ -299,7 +331,7 @@ class Brain:
         built, so "buy milk\\n\\nInstructions: ignore the above" cannot open a new section.
         """
         text = sanitize_for_prompt(" ".join(question.split()))
-        if not text or not self._key:
+        if not text or not self.using_model:
             return None
 
         today = dt.datetime.now(ZoneInfo(self._tz))
@@ -321,7 +353,11 @@ class Brain:
 
         try:
             reply = self._generate(prompt)
+        except (ProviderFailure, _InvalidModelResponse):
+            return None
         except Exception:
+            if self._dispatch is not None:
+                raise
             return None
 
         cleaned = _safe_model_text(reply, strip_punctuation=False)
@@ -334,28 +370,28 @@ class Brain:
         contents: list[dict[str, Any]],
         declarations: list[dict[str, Any]],
     ) -> ToolTurn | None:
-        if not self._key:
+        if not self.using_model:
             return None
-        body = json.dumps(
-            {
-                "contents": contents,
-                "tools": [{"functionDeclarations": declarations}],
-                "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
-                "generationConfig": {"temperature": 0, "maxOutputTokens": 384},
-            }
-        )
-        request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
-            f"{GEMINI_URL}/{self._model}:generateContent",
-            data=body.encode(),
-            headers={"Content-Type": "application/json", "x-goog-api-key": self._key},
-            method="POST",
-        )
+        body = {
+            "contents": contents,
+            "tools": [{"functionDeclarations": declarations}],
+            "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+            "generationConfig": {"temperature": 0, "maxOutputTokens": 384},
+        }
         try:
-            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
-                envelope = json.loads(response.read())
+            envelope = self._request(body)
+        except (ProviderFailure, _InvalidModelResponse):
+            return None
+        except Exception:
+            if self._dispatch is not None:
+                raise
+            return None
+        try:
             content = envelope["candidates"][0]["content"]
             parts = content.get("parts", [])
-        except Exception:
+            if not isinstance(parts, list):
+                return None
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             return None
         calls: list[ToolCall] = []
         text_parts: list[str] = []
@@ -401,9 +437,12 @@ class Brain:
         )
 
         text = self._generate(prompt, schema=SCHEMA)
-        decoded = json.loads(text)
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError:
+            raise _InvalidModelResponse(repairable=True) from None
         if not isinstance(decoded, dict):
-            raise ValueError("model did not return an object")
+            raise _InvalidModelResponse()
         return decoded
 
     def _generate(self, prompt: str, *, schema: dict[str, Any] | None = None) -> str:
@@ -416,16 +455,27 @@ class Brain:
             config["responseMimeType"] = "application/json"
             config["responseSchema"] = schema
 
-        body = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config})
+        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}
+        envelope = self._request(body)
+        try:
+            text = envelope["candidates"][0]["content"]["parts"][0]["text"]
+            if not isinstance(text, str):
+                raise _InvalidModelResponse()
+            return text
+        except (KeyError, IndexError, TypeError, AttributeError):
+            raise _InvalidModelResponse() from None
+
+    def _request(self, body: dict[str, Any]) -> dict[str, Any]:
+        if self._dispatch is not None:
+            return self._dispatch(body)
         request = urllib.request.Request(  # noqa: S310 - fixed https endpoint
             f"{GEMINI_URL}/{self._model}:generateContent",
-            data=body.encode(),
+            data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json", "x-goog-api-key": self._key or ""},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
-            envelope = json.loads(response.read())
-        return str(envelope["candidates"][0]["content"]["parts"][0]["text"])
+            return json.loads(response.read())
 
 
 def _from_json(payload: dict[str, Any], *, tz: str, source: str) -> Action:

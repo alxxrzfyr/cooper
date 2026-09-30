@@ -8,7 +8,7 @@ const DONE_PREFIX = "cooper.onboarding.done.v1:";
 
 export interface OnboardingProgress {
   hasItem: boolean;
-  hasGeminiKey: boolean;
+  hasAsked: boolean;
   googleConnected: boolean;
   icloudConnected: boolean;
 }
@@ -30,11 +30,13 @@ export function finishOnboarding(uid: string): void {
 }
 
 interface OnboardingProps {
+  timezone?: string;
   progress: OnboardingProgress;
   tab: Tab;
   mode: Mode;
   onOpenForm: () => void;
   onOpenSettings: () => void;
+  onOpenAsk: () => void;
   onDismiss: () => void;
 }
 
@@ -55,11 +57,13 @@ interface TargetBox {
 }
 
 export function Onboarding({
+  timezone,
   progress,
   tab,
   mode,
   onOpenForm,
   onOpenSettings,
+  onOpenAsk,
   onDismiss,
 }: OnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
@@ -84,12 +88,20 @@ export function Onboarding({
       onAction: onOpenForm,
     },
     {
-      title: "Set up Ask",
-      body: "Add your Gemini key here if you want to talk to Cooper. Form works without it.",
+      title: "Set availability",
+      body: `Choose your work windows and daily limits in Settings. This pilot uses ${timezone ?? "the configured server timezone"} for everyone; timezone selection is not available yet.`,
       actionLabel: "Open Settings",
       optional: true,
-      complete: (value) => value.hasGeminiKey,
+      complete: () => false,
       onAction: onOpenSettings,
+    },
+    {
+      title: "Try Ask",
+      body: "Ask what comes next or what is left today. Planning questions work even when model help is unavailable.",
+      actionLabel: "Open Ask",
+      optional: true,
+      complete: (value) => value.hasAsked,
+      onAction: onOpenAsk,
     },
     {
       title: "Connect a calendar",
@@ -103,16 +115,25 @@ export function Onboarding({
   const step = steps[stepIndex];
   const isLastStep = stepIndex === steps.length - 1;
   const targetName =
-    stepIndex === 0
-      ? tab === "chat" && mode === "manual"
-        ? "form-title"
+    stepIndex === 2
+      ? tab === "chat" && mode === "ai"
+        ? "ask-composer"
         : "nav-chat"
-      : tab === "settings"
-        ? stepIndex === 1
-          ? "gemini-key"
-          : "calendar-connections"
-        : "nav-settings";
-  const actionVisible = stepIndex === 0 ? tab !== "chat" || mode !== "manual" : tab !== "settings";
+      : stepIndex === 0
+        ? tab === "chat" && mode === "manual"
+          ? "form-title"
+          : "nav-chat"
+        : tab === "settings"
+          ? stepIndex === 1
+            ? "availability"
+            : "calendar-connections"
+          : "nav-settings";
+  const actionVisible =
+    stepIndex === 2
+      ? tab !== "chat" || mode !== "ai"
+      : stepIndex === 0
+        ? tab !== "chat" || mode !== "manual"
+        : tab !== "settings";
 
   useEffect(() => {
     if (!hadItem.current && progress.hasItem && stepIndex === 0) setStepIndex(1);
@@ -131,7 +152,8 @@ export function Onboarding({
 
     if (
       targetName === "form-title" ||
-      targetName === "gemini-key" ||
+      targetName === "availability" ||
+      targetName === "ask-composer" ||
       targetName === "calendar-connections"
     ) {
       target.scrollIntoView?.({ block: "center", behavior: "smooth" });

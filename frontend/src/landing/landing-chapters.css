@@ -4,6 +4,226 @@
  * older feature/start selectors cannot reintroduce their previous grids.
  */
 
+.landing--keeby .landing__panel--plans {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
+  background: #f7f2e5;
+  color: #243126;
+}
+
+.landing--keeby .landing__plans-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(28px, 4vw, 64px);
+  width: min(100%, 1240px);
+  margin: auto;
+  padding-block: 0;
+}
+
+.landing--keeby .landing__panel.landing__panel--plans h2 {
+  max-width: 18ch;
+  margin: 0;
+  color: #243126;
+  font-size: clamp(28px, 2.6vw, 40px);
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.landing--keeby .landing__plans-intro {
+  margin: 14px 0 22px;
+  color: #53645a;
+  font-size: clamp(15px, 0.4vw + 11px, 17px);
+  line-height: 1.55;
+}
+
+.landing--keeby .landing__faq-list details {
+  border-top: 1px solid rgb(64 85 54 / 24%);
+}
+
+.landing--keeby .landing__faq-list details:last-child {
+  border-bottom: 1px solid rgb(64 85 54 / 24%);
+}
+
+.landing--keeby .landing__faq-list summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 50px;
+  padding-block: 13px;
+  font-size: clamp(15px, 0.5vw + 9px, 17px);
+  font-weight: 700;
+  line-height: 1.35;
+  cursor: pointer;
+  list-style: none;
+}
+
+.landing--keeby .landing__faq-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.landing--keeby .landing__faq-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: #405f38;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.landing--keeby .landing__faq-list details[open] .landing__faq-icon-vertical {
+  display: none;
+}
+
+.landing--keeby .landing__faq-list summary:hover,
+.landing--keeby .landing__faq-list details[open] summary {
+  color: #405f38;
+}
+
+.landing--keeby .landing__faq-list p {
+  position: static;
+  margin: 0;
+  max-width: 60ch;
+  padding: 0 28px 16px 0;
+  color: #53645a;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.landing--keeby :is(.landing__faq, .landing__subscriptions, .landing__faq-list) {
+  min-width: 0;
+}
+
+.landing--keeby .landing__plan-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: clamp(12px, 1vw, 18px);
+}
+
+.landing--keeby .landing__plan {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: clamp(18px, 1.6vw, 26px);
+  border: 1px solid #b4bea9;
+  border-radius: 16px;
+  background: #fffaf0;
+  color: #243126;
+}
+
+.landing--keeby .landing__plan--plus {
+  border-color: #304d36;
+  background: #304d36;
+  color: #fffaf0;
+}
+
+.landing--keeby .landing__plan h3 {
+  margin: 0;
+  color: inherit;
+  font-size: 25px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.landing--keeby .landing__plan-purpose {
+  min-height: 2.8em;
+  margin: 6px 0 16px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.landing--keeby .landing__plan-price {
+  margin: 0;
+  font-size: clamp(36px, 3vw, 44px);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.landing--keeby .landing__plan-price span {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.landing--keeby .landing__plan-period {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.landing--keeby .landing__plan ul {
+  margin: 20px 0 24px;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.landing--keeby .landing__plan li + li {
+  margin-top: 10px;
+}
+
+.landing--keeby .landing__plan-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  margin-top: auto;
+  padding: 12px;
+  border: 1px solid #405f38;
+  border-radius: 12px;
+  background: #405f38;
+  color: #fffaf0;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+}
+
+.landing--keeby a.landing__plan-action:hover {
+  background: #30492b;
+}
+
+.landing--keeby .landing__plan-action:disabled {
+  border-color: #f2dec0;
+  background: #f2dec0;
+  color: #304d36;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.landing--keeby .landing__faq-list summary:focus-visible,
+.landing--keeby a.landing__plan-action:focus-visible {
+  outline: 3px solid #0f7285;
+  outline-offset: 4px;
+}
+
+.landing--keeby .landing__plans-note {
+  margin: 14px 0 0;
+  color: #53645a;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+  .landing--keeby .landing__plan-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing--keeby .landing__plan-purpose {
+    min-height: 0;
+  }
+}
+
 .landing--keeby :is(.landing__panel--hero-v2, .landing__panel--story, .landing__panel--closing) {
   width: 100%;
   max-width: none;
@@ -1322,5 +1542,330 @@
   .landing--keeby .landing__uses-window .landing__product-window--capture {
     height: auto;
     aspect-ratio: auto;
+  }
+}
+
+/* Preserve chapter scrolling, but keep browser scrollbars out of the public design. */
+:root:has(.app--landing),
+body:has(.app--landing),
+.app--landing,
+.app--landing .landing__track,
+.landing--keeby .landing__panel {
+  scrollbar-width: none;
+}
+
+:root:has(.app--landing)::-webkit-scrollbar,
+body:has(.app--landing)::-webkit-scrollbar,
+.app--landing::-webkit-scrollbar,
+.app--landing .landing__track::-webkit-scrollbar,
+.landing--keeby .landing__panel::-webkit-scrollbar {
+  display: none;
+}
+
+.landing--keeby .landing__panel--plans {
+  padding: clamp(24px, 3dvh, 40px) clamp(20px, 5vw, 96px);
+}
+
+@media (min-width: 900px) {
+  .landing--keeby .landing__plans-layout {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    grid-template-rows: repeat(4, auto);
+    column-gap: clamp(24px, 4vw, 64px);
+    row-gap: 0;
+  }
+
+  .landing--keeby :is(.landing__faq, .landing__subscriptions) {
+    display: grid;
+    grid-row: 1 / span 4;
+    grid-template-rows: subgrid;
+    align-items: start;
+  }
+
+  .landing--keeby .landing__faq {
+    grid-column: 1;
+  }
+  .landing--keeby .landing__subscriptions {
+    grid-column: 2;
+  }
+
+  .landing--keeby .landing__plan-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto auto 1fr auto;
+    row-gap: 0;
+  }
+
+  .landing--keeby .landing__plan {
+    display: grid;
+    grid-row: 1 / span 6;
+    grid-template-rows: subgrid;
+    padding: clamp(18px, 1.6vw, 26px);
+  }
+
+  .landing--keeby .landing__plan:first-child {
+    grid-column: 1;
+  }
+  .landing--keeby .landing__plan--plus {
+    grid-column: 2;
+  }
+
+  .landing--keeby .landing__panel--hero-v2 {
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  }
+
+  .landing--keeby .landing__hero-proof {
+    height: clamp(490px, 61dvh, 620px);
+    min-height: 0;
+  }
+
+  .landing--keeby .landing__story-heading {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 0.65fr);
+    gap: clamp(24px, 4vw, 64px);
+  }
+
+  .landing--keeby .landing__panel--story .landing__feature-grid--notes {
+    height: auto;
+    align-items: stretch;
+  }
+
+  .landing--keeby .landing__panel--story .landing__feature-card,
+  .landing--keeby .landing__panel--story .landing__feature-card:nth-child(2) {
+    height: auto;
+  }
+
+  .landing--keeby .landing__panel--uses {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
+
+  .landing--keeby .landing__proof-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: clamp(28px, 6vw, 90px);
+    margin-bottom: clamp(24px, 4dvh, 40px);
+  }
+
+  .landing--keeby .landing__proof-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .landing--keeby .landing__proof-card {
+    min-height: 0;
+    padding: clamp(18px, 1.7vw, 24px);
+  }
+
+  .landing--keeby .landing__proof-visual {
+    min-height: 108px;
+    flex: none;
+  }
+
+  .landing--keeby .landing__closing-stage {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    height: auto;
+    min-height: 0;
+  }
+
+  .landing--keeby .landing__closing-visual {
+    min-height: clamp(470px, 68dvh, 650px);
+    margin: 0;
+  }
+}
+
+.landing--keeby .landing__panel > *,
+.landing--keeby :is(.landing__hero-spread, .landing__proof-copy, .landing__closing-stage) > * {
+  min-width: 0;
+}
+
+.landing--keeby .landing__panel {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.landing--keeby
+  :is(
+    .landing__faq-list summary,
+    .landing__plans-intro,
+    .landing__plan li,
+    .landing__feature-card h3,
+    .landing__proof-card h3
+  ) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .landing--keeby .landing__plans-layout {
+    gap: clamp(32px, 5vw, 56px);
+  }
+
+  .landing--keeby .landing__panel {
+    overflow: visible;
+  }
+}
+
+/* Source labels own their connector space; no independent drawing coordinates. */
+.landing--keeby .landing__panel--uses .landing__uses-board {
+  container: landing-sources / inline-size;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(16px, 2vw, 32px);
+}
+
+.landing--keeby .landing__panel--uses .landing__sources-layout {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas: "luma meetup meetup ." "calendar calendar calendar live" "teams classroom caption caption";
+  gap: clamp(12px, 1.2vw, 20px);
+  align-items: center;
+}
+
+.landing--keeby .landing__panel--uses .landing__uses-window {
+  grid-area: calendar;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+}
+
+.landing--keeby .landing__panel--uses .landing__uses-window .landing__product-window--capture {
+  height: auto;
+  aspect-ratio: auto;
+}
+
+.landing--keeby .landing__panel--uses .landing__service-stack {
+  grid-area: live;
+  position: static;
+  width: 100%;
+  margin: 0;
+  transform: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__service-chip-grid {
+  display: contents;
+  pointer-events: auto;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding-top: 36px;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note--meetup {
+  grid-area: meetup;
+  padding: 0 0 36px;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note--luma {
+  grid-area: luma;
+  padding: 0 0 36px;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note--teams {
+  grid-area: teams;
+}
+.landing--keeby .landing__panel--uses .landing__source-note--classroom {
+  grid-area: classroom;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note .landing__service-chip {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: 210px;
+  min-width: 0;
+  min-height: 0;
+  transform: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__integration {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: clamp(10px, 1vw, 16px);
+  overflow-wrap: anywhere;
+}
+
+.landing--keeby .landing__panel--uses .landing__integration :is(p, strong, div > span) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-arrow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: #557247;
+  stroke-width: 1.7;
+  stroke-dasharray: 4 5;
+  stroke-linecap: round;
+  transform: translateX(-50%) rotate(180deg);
+  pointer-events: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-arrow marker path {
+  fill: #557247;
+  stroke: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note--meetup .landing__source-arrow {
+  top: auto;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+.landing--keeby .landing__panel--uses .landing__source-note--luma .landing__source-arrow {
+  top: auto;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+.landing--keeby .landing__panel--uses .landing__source-caption {
+  grid-area: caption;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-caption .landing__hand-note--connected {
+  position: static;
+  width: min(50%, 220px);
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  transform: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-caption .landing__hand-arrow {
+  position: static;
+  display: block;
+  width: 64px;
+  height: 30px;
+  margin: 0 auto 6px;
+  transform: none;
+}
+
+.landing--keeby .landing__panel--uses .landing__source-caption > .mascot {
+  position: static;
+  width: clamp(80px, 9vw, 120px);
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0;
+  transform: none;
+}
+
+@container landing-sources (max-width: 560px) {
+  .landing--keeby .landing__panel--uses .landing__sources-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "meetup luma" "calendar calendar" "live live" "teams classroom" "caption caption";
+  }
+
+  .landing--keeby .landing__panel--uses .landing__service-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -12,6 +12,39 @@ Read `PRD.md`, then `ARCHITECTURE.md`. `PRD.md` has seven requirements; the prov
 is only partly built. Know which sources are live before you start, and check
 `docs/LIVE_PROVIDER_ACCEPTANCE.md` for the latest manual provider verification record.
 
+The owner approved the product-refinement direction in
+`docs/designs/cooper-product-rethink.md`. Initial included AI will use Gemini primary
+and Groq fallback, as recorded in `docs/decisions/2026-09-30-included-ai-providers.md`.
+The owner clarified on 2026-10-01 that Cooper supplies both keys and BYOK is removed,
+including Settings, onboarding and request payloads. That cutover and the approved
+four-table accounting ledger are implemented in the working tree; funded dispatch stays
+disabled (`COOPER_INCLUDED_AI_ENABLED=false`) until cash budgets, evaluated model IDs,
+prices and live provider acceptance exist. See the operator section of
+`docs/superpowers/plans/2026-10-01-included-ai-implementation.md`.
+Fallback shares one request/cost allowance, preserves model input privacy and never
+retries a committed mutation or a safety refusal. Funded-key activation needs explicit
+durable accounting and a spend envelope;
+do not silently relax the current schema, single-writer or no-model/manual rules.
+
+The owner selected one responsive web/PWA product, not native mobile or an app
+suite. See `docs/decisions/2026-09-30-web-first-product-boundary.md` and the draft
+`docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md`. Its capacity
+implementation is present in the working tree: shared seven-day projection, scoped
+today assessment, legal duration probes, and manual estimate editing. The pilot
+uses the configured server timezone for every owner. Keep product recommendations, accepted owner
+boundaries, automated evidence and shipped behavior separate. Do not infer approval
+for commercial schema or budgets from the web-first decision.
+
+The landing now shows FAQs beside proposed Free/Plus choices. Keep coming-soon and
+included-AI disclosures accurate until paid billing and funded AI are actually active.
+Preserve horizontal landing chapters from 900px, independent of window height.
+Hide section scrollbars without clipping content or disabling scrolling.
+Vertical wheel input must still drive smooth horizontal chapter travel on desktop,
+including over FAQs. Keep content in flow, use flexible columns, and verify resize
+and browser zoom before recording visual acceptance.
+Planning answers must distinguish current from next, unscheduled from due today,
+and priority from feasibility; calendar occupancy is not a capacity verdict.
+
 ## Commands
 
 ```bash

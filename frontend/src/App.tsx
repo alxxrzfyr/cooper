@@ -68,56 +68,96 @@ const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
   { id: "classroom", label: "Google Classroom" },
 ];
 
-const GEMINI_KEY = "cooper.gemini_key.v1";
-const SIDEBAR_COLLAPSED_KEY = "cooper.sidebar.collapsed.v1";
-type GeminiKeyStatus = "saved" | "empty" | "cleared" | null;
-
 const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
 
 function normalizePathname(pathname: string): string {
   return pathname.replace(/\/+$/, "") || "/";
 }
 
-function geminiStorageKey(uid?: string | null): string | null {
-  if (firebaseConfigured) return uid ? `${GEMINI_KEY}:${uid}` : null;
-  return GEMINI_KEY;
-}
-
-function loadGeminiKey(uid?: string | null): string {
-  const storageKey = geminiStorageKey(uid);
-  if (!storageKey) return "";
+export function purgeLegacyModelKeys(): void {
   try {
-    return localStorage.getItem(storageKey) ?? "";
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key === "cooper.gemini_key.v1" || key?.startsWith("cooper.gemini_key.v1:")) {
+        localStorage.removeItem(key);
+      }
+    }
   } catch {
-    return "";
+    // A blocked store must not prevent local planning.
   }
 }
 
-function saveGeminiKey(value: string, uid?: string | null): void {
-  const storageKey = geminiStorageKey(uid);
-  if (!storageKey) return;
+interface PendingSubmission {
+  text: string;
+  intent?: AskIntent;
+  logicalRequestId: string;
+  message: string;
+  persisted: boolean;
+}
+
+function pendingStorageKey(owner: string): string {
+  return `cooper.ai.pending.v1:${owner}`;
+}
+
+function restorePendingSubmission(owner: string): PendingSubmission | null {
   try {
-    const key = value.trim();
-    if (key) localStorage.setItem(storageKey, key);
-    else localStorage.removeItem(storageKey);
+    const raw = sessionStorage.getItem(pendingStorageKey(owner));
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("text" in value) ||
+      typeof value.text !== "string" ||
+      !value.text.trim() ||
+      !("logicalRequestId" in value) ||
+      typeof value.logicalRequestId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value.logicalRequestId,
+      )
+    )
+      return null;
+    const intents: AskIntent[] = [
+      "focus_week",
+      "remaining_today",
+      "work_next",
+      "fit_duration",
+      "deadline_summary",
+      "overload_check",
+    ];
+    const intent =
+      "intent" in value ? intents.find((candidate) => candidate === value.intent) : undefined;
+    if ("intent" in value && value.intent !== undefined && !intent) return null;
+    return {
+      text: value.text,
+      intent,
+      logicalRequestId: value.logicalRequestId,
+      message: "Cooper has not confirmed this request yet.",
+      persisted: true,
+    };
   } catch {
-    /* a blocked store is not worth failing over; the key still applies this session */
+    return null;
   }
 }
 
-function loadSidebarCollapsed(): boolean {
+function persistPendingSubmission(
+  owner: string,
+  request: Pick<PendingSubmission, "text" | "intent" | "logicalRequestId">,
+): boolean {
   try {
-    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    sessionStorage.setItem(pendingStorageKey(owner), JSON.stringify(request));
+    return true;
   } catch {
+    // Retry remains available in memory; reload recovery depends on browser storage.
     return false;
   }
 }
 
-function saveSidebarCollapsed(collapsed: boolean): void {
+function clearPendingSubmission(owner: string): void {
   try {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    sessionStorage.removeItem(pendingStorageKey(owner));
   } catch {
-    // The rail can still collapse for this session when browser storage is blocked.
+    // A later reload may safely replay the completed request using its original ID.
   }
 }
 
@@ -354,7 +394,6 @@ export default function App() {
         ? { kind: "loading" }
         : { kind: "local" },
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const [tab, setTab] = useState<Tab>("home");
   const [view, setView] = useState<View | null>(null);
   const [loadResolved, setLoadResolved] = useState(false);
@@ -369,9 +408,11 @@ export default function App() {
   const [agentSteps, setAgentSteps] = useState<AgentStep[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
-  const [geminiKey, setGeminiKey] = useState(loadGeminiKey);
-  const [geminiKeyDraft, setGeminiKeyDraft] = useState(loadGeminiKey);
-  const [geminiKeyStatus, setGeminiKeyStatus] = useState<GeminiKeyStatus>(null);
+  const [hasAsked, setHasAsked] = useState(false);
+  const [retrySubmission, setRetrySubmission] = useState<PendingSubmission | null>(() =>
+    firebaseConfigured ? null : restorePendingSubmission("local"),
+  );
+  useEffect(purgeLegacyModelKeys, []);
   const [icloudEmail, setIcloudEmail] = useState("");
   const [icloudPassword, setIcloudPassword] = useState("");
   const [mode, setMode] = useState<Mode>(loadMode);
@@ -385,7 +426,6 @@ export default function App() {
   const observedGoogleEvents = useRef<Set<string> | null>(null);
   const firebaseSubject = useRef<string | null>(null);
   const authEpoch = useRef(0);
-  const modeAvailabilityChecked = useRef(false);
   const [pathname, setPathname] = useState(() =>
     typeof window === "undefined" ? "/" : window.location.pathname,
   );
@@ -393,26 +433,13 @@ export default function App() {
   /** The one task a frame is open on, if any. Plan and Calendar share the component. */
   const [detail, setDetail] = useState<Item | Ranked | CalendarEvent | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const canUseAi =
-    Boolean(geminiKey.trim()) || Boolean(view?.using_model && authState.kind === "local");
-  const canCompose = canUseAi || authState.kind === "local";
-  const canAsk = canUseAi || authState.kind === "local";
+  const canUseAi = view?.ai?.status === "ready";
+  const canCompose = authState.kind === "local" || authState.kind === "signed-in";
+  const canAsk = canCompose;
   const signedInUser =
     authState.kind === "signed-in" || authState.kind === "verification-pending"
       ? authState.user
       : null;
-  const signedInUid = signedInUser?.uid ?? null;
-  const saveGeminiKeyFromSettings = useCallback(() => {
-    const key = geminiKeyDraft.trim();
-    if (!key) {
-      setGeminiKeyStatus("empty");
-      return;
-    }
-    saveGeminiKey(key, signedInUid);
-    setGeminiKey(key);
-    setGeminiKeyDraft(key);
-    setGeminiKeyStatus("saved");
-  }, [geminiKeyDraft, signedInUid]);
   const canLoadProtectedData = authState.kind === "local" || authState.kind === "signed-in";
   const publicRoute = readPublicRoute(pathname);
   const normalizedPathname = normalizePathname(pathname);
@@ -454,6 +481,29 @@ export default function App() {
     saveTurns([]);
   }, []);
 
+  const resetRequestUi = useCallback(() => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = null;
+    agentPhaseTimers.current.forEach((timer) => window.clearTimeout(timer));
+    agentPhaseTimers.current = [];
+    setAgentSteps(null);
+    setChatPending(false);
+    setRetrySubmission(null);
+    setText("");
+    setNotice(null);
+    setFailure(null);
+    setHasAsked(false);
+  }, []);
+
+  useEffect(
+    () => () => {
+      authEpoch.current += 1;
+      agentPhaseTimers.current.forEach((timer) => window.clearTimeout(timer));
+      agentPhaseTimers.current = [];
+    },
+    [],
+  );
+
   useEffect(() => {
     if (firebaseConfigError) {
       setAuthState({ kind: "config-error", message: firebaseConfigError });
@@ -471,10 +521,11 @@ export default function App() {
         firebaseSubject.current = nextSubject;
         authEpoch.current += 1;
         clearConversation();
-        const nextKey = loadGeminiKey(nextSubject);
-        setGeminiKey(nextKey);
-        setGeminiKeyDraft(nextKey);
-        setGeminiKeyStatus(null);
+        resetRequestUi();
+        if (nextSubject)
+          setRetrySubmission(
+            restorePendingSubmission(`firebase:${encodeURIComponent(nextSubject)}`),
+          );
         setGuideVisible(false);
         setGuideSessionDismissed(false);
         setHasCreatedItem(false);
@@ -489,13 +540,14 @@ export default function App() {
       setView(null);
       setLoadResolved(!user || !verified);
     });
-  }, [clearConversation, navigate]);
+  }, [clearConversation, navigate, resetRequestUi]);
 
   const signOutOfFirebase = useCallback(() => {
     if (!firebaseConfigured) return;
     authEpoch.current += 1;
     firebaseSubject.current = null;
     clearConversation();
+    resetRequestUi();
     setView(null);
     setAuthState({ kind: "signed-out" });
     setLoadResolved(true);
@@ -503,7 +555,7 @@ export default function App() {
       navigate("/login");
     }
     void signOutUser();
-  }, [clearConversation, navigate]);
+  }, [clearConversation, navigate, resetRequestUi]);
 
   const returnToSignIn = useCallback(() => {
     if (!firebaseConfigured) return false;
@@ -559,9 +611,6 @@ export default function App() {
         return;
       }
       setAuthState({ kind: "signed-in", user });
-      const nextKey = loadGeminiKey(user.uid);
-      setGeminiKey(nextKey);
-      setGeminiKeyDraft(nextKey);
       navigate("/app");
     } catch (error: unknown) {
       setFailure(firebaseAuthMessage(error));
@@ -679,15 +728,6 @@ export default function App() {
 
   useEffect(() => saveTurns(turns), [turns]);
 
-  useEffect(() => {
-    if (!loadResolved || modeAvailabilityChecked.current) return;
-    modeAvailabilityChecked.current = true;
-    if (!canUseAi && mode === "ai") {
-      setMode("manual");
-      saveMode("manual");
-    }
-  }, [canUseAi, loadResolved, mode]);
-
   const load = useCallback(async () => {
     if (!workspaceVisible) return;
     const requestEpoch = authEpoch.current;
@@ -749,24 +789,49 @@ export default function App() {
 
   /** Send one sentence and let the otter answer. */
   const say = useCallback(
-    async (sentence: string, intent?: AskIntent) => {
+    async (sentence: string, intent?: AskIntent, retryId?: string) => {
       const said = sentence.trim();
       if (!said || chatPending) return;
       const requestEpoch = authEpoch.current;
       if (!canCompose) return;
-      const openAsk = canUseAi || mode === "ai";
+      const openAsk = canUseAi || mode === "ai" || Boolean(intent) || Boolean(retryId);
+      const trackedRequest = openAsk && !intent;
+      if (trackedRequest && retrySubmission && !retryId) {
+        setRetrySubmission({
+          ...retrySubmission,
+          message: "Check the pending request before sending another.",
+        });
+        return;
+      }
+      const owner =
+        authState.kind === "signed-in"
+          ? `firebase:${encodeURIComponent(authState.user.uid)}`
+          : "local";
+      const logicalRequestId = trackedRequest ? (retryId ?? crypto.randomUUID()) : undefined;
+      const pendingRequest = logicalRequestId
+        ? {
+            text: said,
+            intent,
+            logicalRequestId,
+            message: "Cooper has not confirmed this request yet.",
+            persisted: persistPendingSubmission(owner, { text: said, intent, logicalRequestId }),
+          }
+        : null;
+      if (pendingRequest) setRetrySubmission(pendingRequest);
       if (openAsk) {
         setMode("ai");
         saveMode("ai");
         setTab("chat");
       }
 
-      setText("");
-      setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
+      if (!retryId) setText("");
+      if (!retryId)
+        setTurns((current) => [...current, { id: id(), at: Date.now(), who: "you", text: said }]);
       setAgentSteps(initialAgentSteps());
       setChatPending(true);
 
       const advanceAgentStep = (completedId: string, runningId: string) => {
+        if (requestEpoch !== authEpoch.current) return;
         setAgentSteps(
           (current) =>
             current?.map((step) =>
@@ -784,10 +849,19 @@ export default function App() {
       ];
 
       try {
-        const result = await api.say(said, openAsk ? "ai" : "manual", geminiKey, intent);
+        const result = await api.say(said, openAsk ? "ai" : "manual", intent, logicalRequestId);
         if (requestEpoch !== authEpoch.current) return;
         setView(result.view);
         setFailure(null);
+        if (result.kind === "pending" && pendingRequest) {
+          setRetrySubmission({ ...pendingRequest, message: result.message });
+          return;
+        }
+        if (pendingRequest) {
+          clearPendingSubmission(owner);
+          setRetrySubmission(null);
+        }
+        if (result.kind === "answered") setHasAsked(true);
         announce(result.kind, result.message, !openAsk);
 
         reply({
@@ -824,13 +898,23 @@ export default function App() {
           announce("note", message);
         }
       } finally {
+        if (requestEpoch !== authEpoch.current) return;
         agentPhaseTimers.current.forEach((timer) => window.clearTimeout(timer));
         agentPhaseTimers.current = [];
         setAgentSteps(null);
         setChatPending(false);
       }
     },
-    [announce, canCompose, canUseAi, chatPending, geminiKey, handleApiAuthFailure, mode],
+    [
+      announce,
+      authState,
+      canCompose,
+      canUseAi,
+      chatPending,
+      handleApiAuthFailure,
+      mode,
+      retrySubmission,
+    ],
   );
 
   /** Buttons elsewhere in the app update the source screen and show a transient notice. */
@@ -923,7 +1007,7 @@ export default function App() {
         view?.shortlist.some((item) => item.source === "me") ||
         view?.scheduled.some((item) => item.source === "me"),
       ),
-    hasGeminiKey: canUseAi,
+    hasAsked,
     googleConnected: Boolean(view?.calendar.connected),
     icloudConnected: Boolean(view?.icloud.connected),
   };
@@ -945,36 +1029,23 @@ export default function App() {
     setGuideVisible(false);
   }, [authState]);
 
-  const openSettings = useCallback(() => {
-    setTab("settings");
-    window.setTimeout(() => document.getElementById("gemini-key")?.focus(), 0);
-  }, []);
-
   return (
     <div
       className={`app${showPublicRoutes ? " app--public" : ""}${
         publicLandingSurface ? " app--landing" : ""
-      }${!showPublicRoutes && sidebarCollapsed ? " app--rail-collapsed" : ""}`}
+      }`}
     >
       {workspaceVisible && (
         <Nav
           current={tab}
           todo={shortlist.length}
           booked={view?.planning?.metrics.scheduled_count ?? scheduled.length}
-          collapsed={sidebarCollapsed}
           onChange={(next) => {
             setTab(next);
             if (guideVisible && next === "chat" && !guideProgress.hasItem) {
               setMode("manual");
               saveMode("manual");
             }
-          }}
-          onToggleCollapsed={() => {
-            setSidebarCollapsed((current) => {
-              const next = !current;
-              saveSidebarCollapsed(next);
-              return next;
-            });
           }}
         />
       )}
@@ -1028,34 +1099,6 @@ export default function App() {
               </div>
             )}
 
-            {workspaceVisible && firebaseConfigured && tab === "home" && view && !canUseAi && (
-              <div className="home-ask-setup" role="status" aria-labelledby="home-ask-title">
-                <Mascot name="cooper_thinking" size="sm" decorative />
-                <div className="home-ask-setup__body">
-                  <h2 id="home-ask-title">Ask is one small setup away</h2>
-                  <p>
-                    Add your Gemini API key in Settings when you want natural-language help. Form
-                    works offline.
-                  </p>
-                </div>
-                <div className="home-ask-setup__actions">
-                  <button
-                    type="button"
-                    className="btn btn--accent"
-                    onClick={() => {
-                      setTab("chat");
-                      setMode("manual");
-                    }}
-                  >
-                    Add with Form
-                  </button>
-                  <button type="button" className="btn btn--quiet" onClick={openSettings}>
-                    Set up Ask
-                  </button>
-                </div>
-              </div>
-            )}
-
             {workspaceVisible && tab === "home" && view && (
               <Home
                 view={view}
@@ -1067,17 +1110,10 @@ export default function App() {
                   act(() => api.reschedule(itemId, start, minutes))
                 }
                 onGoToChat={() => {
-                  if (canUseAi) {
-                    setTab("chat");
-                    setMode("ai");
-                    saveMode("ai");
-                    window.setTimeout(() => input.current?.focus(), 0);
-                  } else if (authState.kind === "local") {
-                    window.setTimeout(() => input.current?.focus(), 0);
-                  } else {
-                    setTab("chat");
-                    setMode("manual");
-                  }
+                  setTab("chat");
+                  setMode("ai");
+                  saveMode("ai");
+                  window.setTimeout(() => input.current?.focus(), 0);
                 }}
               />
             )}
@@ -1175,7 +1211,7 @@ export default function App() {
                   </button>
                 </section>
 
-                <section className="group">
+                <section className="group" data-tour="availability">
                   <AvailabilitySettings
                     hours={hours}
                     busy={workspaceBusy}
@@ -1361,83 +1397,37 @@ export default function App() {
                 </section>
 
                 <section className="group">
-                  <div className="group__label">Parsing</div>
+                  <div className="group__label">Included AI</div>
                   <div className="inset">
                     <div className="field">
-                      <span className="field__label">{canUseAi ? "Gemini" : "Offline rules"}</span>
+                      <span className="field__label">
+                        {canUseAi ? "Model help ready" : "Offline rules"}
+                      </span>
                       <span className="tag">
-                        {geminiKey.trim()
-                          ? firebaseConfigured
-                            ? "this account"
-                            : "this browser"
-                          : "no key"}
+                        {view?.ai?.tier === "pilot_plus" ? "Plus pilot" : "Free"}
                       </span>
                     </div>
-                    <div className="field field--stacked">
-                      <label className="field__label" htmlFor="gemini-key">
-                        Gemini API key
-                      </label>
-                      <div className="field__secret">
-                        <input
-                          id="gemini-key"
-                          data-tour="gemini-key"
-                          type="password"
-                          autoComplete="off"
-                          maxLength={256}
-                          spellCheck={false}
-                          value={geminiKeyDraft}
-                          aria-describedby="gemini-key-hint"
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setGeminiKeyDraft(value);
-                            setGeminiKeyStatus(null);
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          onClick={saveGeminiKeyFromSettings}
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          disabled={!geminiKeyDraft}
-                          onClick={() => {
-                            setGeminiKey("");
-                            setGeminiKeyDraft("");
-                            saveGeminiKey("", signedInUid);
-                            setGeminiKeyStatus("cleared");
-                            setLoadResolved(false);
-                            void load();
-                          }}
-                        >
-                          Clear
-                        </button>
+                    {view?.ai && (
+                      <div className="field">
+                        <span className="field__label">Included requests remaining</span>
+                        <span>
+                          {view.ai.remaining_units} of {view.ai.limit_units}
+                        </span>
                       </div>
-                    </div>
+                    )}
                   </div>
-                  {geminiKeyStatus === "saved" && (
-                    <p className="hint" role="status">
-                      Saved. Ask is ready to use.
-                    </p>
-                  )}
-                  {geminiKeyStatus === "empty" && (
-                    <p className="hint hint--error" role="alert">
-                      Enter a Gemini API key before saving.
-                    </p>
-                  )}
-                  {geminiKeyStatus === "cleared" && (
-                    <p className="hint" role="status">
-                      Key cleared. Ask is disabled until you save another key.
-                    </p>
-                  )}
-                  <p className="hint" id="gemini-key-hint">
-                    {canUseAi
-                      ? "Your key stays in this browser and is sent only when you use Ask. Form stays offline."
-                      : "Add a Gemini API key to talk to Cooper in Ask. Form stays offline and never needs a key."}
+                  <p className="hint">
+                    {view?.ai?.status === "exhausted"
+                      ? "Your included AI allowance is used up. Planning questions and Form still work."
+                      : canUseAi
+                        ? "Cooper supplies model access within your included allowance. Form never calls a model."
+                        : "Model help is unavailable. Planning questions and Form still work."}
                   </p>
+                  {view?.ai?.reset_at && (
+                    <p className="hint">
+                      Allowance resets {new Date(view.ai.reset_at).toLocaleString()}.
+                    </p>
+                  )}
                 </section>
 
                 <section className="group">
@@ -1484,6 +1474,7 @@ export default function App() {
 
       {workspaceVisible && view && guideVisible && (
         <Onboarding
+          timezone={view.timezone}
           progress={guideProgress}
           tab={tab}
           mode={mode}
@@ -1492,12 +1483,42 @@ export default function App() {
             setMode("manual");
             saveMode("manual");
           }}
+          onOpenAsk={() => {
+            setTab("chat");
+            setMode("ai");
+            saveMode("ai");
+            window.setTimeout(() => input.current?.focus(), 0);
+          }}
           onOpenSettings={() => setTab("settings")}
           onDismiss={dismissGuide}
         />
       )}
 
-      {notice && (
+      {workspaceVisible && retrySubmission && (
+        <div className="notice" role="status" aria-live="polite">
+          <p>
+            {retrySubmission.message}
+            {!retrySubmission.persisted &&
+              " Retry works in this tab; reload recovery is unavailable while browser storage is blocked."}
+          </p>
+          <button
+            type="button"
+            className="btn"
+            disabled={chatPending}
+            onClick={() =>
+              void say(
+                retrySubmission.text,
+                retrySubmission.intent,
+                retrySubmission.logicalRequestId,
+              )
+            }
+          >
+            Retry status
+          </button>
+        </div>
+      )}
+
+      {notice && !retrySubmission && (
         <div
           className={`notice notice--${noticeTone(notice.kind)}`}
           role="status"
@@ -1520,6 +1541,7 @@ export default function App() {
         detail &&
         ("kind" in detail ? (
           <TaskFrame
+            key={detail.id}
             item={detail}
             today={view?.planning?.today ?? view?.today ?? ""}
             busy={workspaceBusy}
@@ -1527,6 +1549,11 @@ export default function App() {
             onComplete={() => void act(() => api.act(detail.id, "complete"))}
             onPin={() => void act(() => api.act(detail.id, "pin"))}
             onDrop={() => void act(() => api.act(detail.id, "drop"))}
+            onEstimate={async (minutes) => {
+              const saved = await act(() => api.edit(detail.id, { minutes }));
+              if (saved) announce("note", "Estimate saved. Today’s capacity has been refreshed.");
+              return saved;
+            }}
             onSchedule={
               view?.planning?.complete
                 ? () => {
@@ -1558,6 +1585,7 @@ export default function App() {
               </label>
               <input
                 id="say"
+                data-tour="ask-composer"
                 ref={input}
                 className="composer__input"
                 placeholder="Tell me what's on your plate…"

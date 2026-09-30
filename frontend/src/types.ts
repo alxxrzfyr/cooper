@@ -154,7 +154,32 @@ export interface PlanningRisk {
   commitment_ids?: string[];
 }
 
+interface CapacityFacts {
+  day: string;
+  generated_at: string;
+  demand_scope: "due_today_unscheduled";
+  scheduling_scope: "all_open_local_tasks_7_days";
+  due_today_ids: string[];
+  overdue_ids: string[];
+  other_backlog_count: number;
+  missed_block_ids: string[];
+  unknown_estimate_ids: string[];
+  unknown_estimate_count: number;
+  assessment_partial: boolean;
+  known_estimated_due_today_minutes: number;
+  candidate_slots: Array<{ item_id: string; start_at: string; end_at: string }>;
+  unplaced: Array<{ item_id: string; reason: "overdue" | "no_feasible_slot" }>;
+}
+
+export type TodayCapacity = CapacityFacts &
+  (
+    | { status: "checked" | "needs_estimates"; open_window_minutes: number }
+    | { status: "source_unavailable"; candidate_slots: []; open_window_minutes?: never }
+  );
+
 export interface PlanningSnapshot {
+  capacity?: TodayCapacity;
+  recommended_start_at?: string | null;
   generated_at: string;
   today: string;
   timezone: string;
@@ -216,6 +241,13 @@ export interface View {
   planning: PlanningSnapshot;
   undo: string | null;
   using_model: boolean;
+  ai?: {
+    status: "ready" | "exhausted" | "unavailable";
+    tier: "free" | "pilot_plus";
+    remaining_units: number;
+    limit_units: number;
+    reset_at: string | null;
+  };
   calendar: { configured: boolean; connected: boolean; email: string | null };
   gmail: GmailHealth;
   icloud: {
@@ -238,9 +270,11 @@ export type ReplyKind =
   | "answered"
   | "question"
   | "note"
-  | "shown";
+  | "shown"
+  | "pending";
 
 export interface Reply {
+  logical_request_id?: string;
   kind: ReplyKind;
   message: string;
   item?: Item;

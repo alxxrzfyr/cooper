@@ -1,5 +1,11 @@
 # Cooper Personality, Guardrails, and Personal Deployment Design
 
+Historical credential policy: the browser-key proposal below describes the earlier
+implementation. The owner superseded it on 2026-10-01 with Cooper-provided Gemini
+and Groq keys and complete BYOK removal. See the
+[current provider decision](../../decisions/2026-09-30-included-ai-providers.md).
+The funded runtime cutover has not been implemented; other guardrails remain in force.
+
 ## Goal
 
 Give Cooper a recognizable joyful and jolly otter personality while making the AI boundary

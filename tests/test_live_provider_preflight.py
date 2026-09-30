@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 from cryptography.fernet import Fernet
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "live_provider_preflight.py"
@@ -11,6 +12,19 @@ SPEC = importlib.util.spec_from_file_location("live_provider_preflight", SCRIPT)
 assert SPEC and SPEC.loader
 preflight = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(preflight)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_shell_environment(monkeypatch) -> None:
+    # The script prefers the process environment over the file, so an exported
+    # (even empty) COOPER_* variable in the developer's shell would mask the test file.
+    for name in (
+        "COOPER_SHARED_KEY",
+        "COOPER_GOOGLE_CLIENT_ID",
+        "COOPER_GOOGLE_CLIENT_SECRET",
+        "COOPER_ENCRYPTION_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_preflight_accepts_valid_local_provider_values(tmp_path, monkeypatch, capsys) -> None:

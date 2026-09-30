@@ -47,9 +47,11 @@ export function PrivacyPage() {
       <section className="legal-page__card">
         <h2>AI and browser storage</h2>
         <p>
-          Cooper works with offline rules. If you add a Gemini key in Settings, it stays in this
-          browser&apos;s local storage and is sent only when you use the AI conversation. The manual
-          form does not call the network for parsing.
+          Cooper works with offline rules and built-in planning answers. When included model help is
+          enabled, Cooper supplies the provider keys on the server. Only your own words and titles
+          go to a model; connected calendar contents and attendees do not. Email bodies are the
+          disclosed exception for supported confirmations. Form never calls a model. Legacy browser
+          model keys are removed from local storage.
         </p>
       </section>
 

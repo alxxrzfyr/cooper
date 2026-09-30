@@ -351,7 +351,7 @@ function ModeSwitch({
           className="modeswitch__opt"
           aria-pressed={mode === "ai"}
           disabled={!canUseAi}
-          title={canUseAi ? undefined : "Add your Gemini API key in Settings to use Ask"}
+          title={canUseAi ? undefined : "Sign in to use Ask"}
           onClick={() => onMode("ai")}
         >
           Ask
@@ -359,10 +359,10 @@ function ModeSwitch({
       </div>
       <span className="modebar__hint">
         {!canUseAi
-          ? "No model key, so Form is the only mode. Add your Gemini key in Settings to use Ask."
+          ? "Sign in to use Ask. Form never calls a model."
           : mode === "manual"
             ? "Offline form. No quota spent."
-            : "Ask about your tasks. Uses your daily quota."}
+            : "Planning questions use no allowance. Model help uses included requests."}
       </span>
     </div>
   );

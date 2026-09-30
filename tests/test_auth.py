@@ -155,8 +155,22 @@ def test_local_mode_requires_a_long_shared_key() -> None:
         Settings(_env_file=None, shared_key="short", auth_mode="local")
 
 
-def test_server_side_gemini_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "server-secret")
+def test_server_side_gemini_key_stays_disabled_until_activation(monkeypatch):
+    monkeypatch.setenv("COOPER_GEMINI_API_KEY", "synthetic-server-secret")
+    settings = Settings(_env_file=None, shared_key="test-key-that-is-long-enough-x")
+    assert settings.included_ai_enabled is False
+    assert settings.gemini_api_key.get_secret_value() == "synthetic-server-secret"
+    assert "synthetic-server-secret" not in repr(settings)
 
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, shared_key="test-key-that-is-long-enough-x")
+
+def test_included_ai_config_errors_do_not_disclose_server_credentials():
+    secret = "synthetic-private-server-credential"
+    with pytest.raises(ValidationError) as error:
+        Settings(
+            _env_file=None,
+            shared_key="test-key-that-is-long-enough-x",
+            included_ai_enabled=True,
+            gemini_api_key=secret,
+        )
+    assert secret not in str(error.value)
+    assert "input_value" not in str(error.value)

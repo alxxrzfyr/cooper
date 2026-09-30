@@ -6,6 +6,27 @@ Today it runs on my machine for me alone. A small public beta can also run with 
 PostgreSQL, and owner-scoped data. That does not make it a team
 tool: there is still no sharing, projects, reports, or collaboration.
 
+Approved product direction, not yet implemented: the
+[2026-09-30 product rethink](docs/designs/cooper-product-rethink.md) defines clearer
+personal planning/recovery, included Gemini with Groq fallback, freemium subscriptions
+and a GCP API migration. The [provider decision](docs/decisions/2026-09-30-included-ai-providers.md)
+records the initial AI order.
+On 2026-10-01 the owner clarified that Cooper supplies both keys and removes BYOK
+from the product, including Settings and onboarding. The approved
+[accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
+and BYOK removal are implemented in the working tree; funded dispatch remains
+disabled until cash budgets, model choices and live provider checks are approved.
+It records planning-answer defects and separates hypotheses from shipped
+features. Execution budgets and commercial schema remain separate decisions; the
+current requirements and trust rules below still apply.
+
+The owner further selected [one web-first product](docs/decisions/2026-09-30-web-first-product-boundary.md).
+No native mobile development or separate app suite is in scope. The
+[reviewed draft](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
+defines bounded assisted workflows, truthful capacity and release order. Its
+[first capacity plan](docs/superpowers/plans/2026-09-30-cooper-today-capacity.md)
+is implemented in the working tree; proposed pricing and included AI remain inactive.
+
 ## The problem
 
 Five things go wrong with my time, and they are the same problem wearing five hats:
@@ -216,6 +237,30 @@ next, and whether a focus block fits are answered from that snapshot without sen
 contents to a model. Creation and scheduling replies are rebuilt from committed state and include
 any overlap, waiting, or unavailable-source warning; a successful-looking reply is never generated
 from intent alone.
+
+Planning answers distinguish an active commitment from the next one and disclose
+unscheduled work separately from today's calendar, without assigning every open task
+a today deadline. A highest-priority task is not a confirmed time slot. Workload
+answers report calendar occupancy, overlaps, estimated unscheduled effort and unknown
+estimates; they do not declare the day manageable from a calendar-only threshold.
+Home assesses known unscheduled due-today demand against candidate slots filtered
+from the full seven-day scheduler. Unknown effort makes the assessment partial;
+unavailable calendars suppress capacity claims. Duration-fit answers respect exact
+placement constraints and local midnight. Manual estimate editing refreshes the
+assessment and supports undo. The pilot uses one configured server timezone for all
+owners. Broader demand analysis, recovery coordination and weekly review remain future work.
+
+The public landing includes FAQs beside proposed Free and Plus choices ($0 and
+$8/month). The beta signup link works; Plus checkout is disabled and explicitly
+coming soon. Included AI allowances and paid planning workflows are proposals, not
+active entitlements. The FAQ explains that no user key is needed and model help is
+unavailable until Cooper-funded AI is enabled.
+Landing chapters remain horizontal from 900px and retain vertical flow below that
+width. Section scrollbars are hidden without disabling scrolling. FAQ answers open
+one at a time in normal flow; centered FAQ/pricing columns share alignment rows and
+stack on narrow screens. Vertical wheel input continues driving horizontal travel
+on desktop. Flexible chapter tracks and content-height cards support resize/zoom
+without fixed minimum columns pushing content outside its chapter.
 
 Home now presents that snapshot as a command center: Now, Next, Today, At Risk, and Upcoming all
 refer to one underlying task or commitment instead of duplicating cards. A recommended task appears

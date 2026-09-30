@@ -1,5 +1,11 @@
 # Firebase Accounts and Public Cloud Deployment Design
 
+Historical credential policy: the browser-key section below describes the earlier
+implementation. The owner superseded that policy on 2026-10-01 with Cooper-provided
+Gemini/Groq keys and BYOK removal. See the
+[current provider decision](../../decisions/2026-09-30-included-ai-providers.md).
+The funded runtime cutover is not implemented; this note does not change authentication.
+
 ## Goal
 
 Make Cooper safe for a small group of authenticated friends and family while preserving the

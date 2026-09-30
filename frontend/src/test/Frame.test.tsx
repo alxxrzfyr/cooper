@@ -1,8 +1,131 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
-import { CalendarEventFrame } from "../Frame";
-import type { CalendarEvent } from "../types";
+import { CalendarEventFrame, TaskFrame } from "../Frame";
+import type { CalendarEvent, Item } from "../types";
+
+const estimateTask: Item = {
+  id: "estimate-task",
+  owner_id: "me",
+  source: "me",
+  source_ref: null,
+  kind: "task",
+  title: "Unknown effort",
+  notes: null,
+  minutes: null,
+  importance: 3,
+  category: "work",
+  due: null,
+  start_at: null,
+  end_at: null,
+  google_event_id: null,
+  status: "open",
+  pinned: false,
+  created_at: "2026-09-30T10:00:00Z",
+};
+
+function estimateFrame(onEstimate: (minutes: number) => Promise<boolean>, item = estimateTask) {
+  const onClose = vi.fn();
+  render(
+    <TaskFrame
+      item={item}
+      today="2026-09-30"
+      busy={false}
+      onClose={onClose}
+      onComplete={vi.fn()}
+      onPin={vi.fn()}
+      onDrop={vi.fn()}
+      onEstimate={onEstimate}
+    />,
+  );
+  return onClose;
+}
+
+describe("task estimates", () => {
+  test("keeps keyboard navigation inside details and restores the launch control", async () => {
+    const user = userEvent.setup();
+    render(<button>Open estimate</button>);
+    const launcher = screen.getByRole("button", { name: "Open estimate" });
+    await user.click(launcher);
+    const close = vi.fn();
+    const frame = render(
+      <TaskFrame
+        item={estimateTask}
+        today="2026-09-30"
+        busy={false}
+        onClose={close}
+        onComplete={vi.fn()}
+        onPin={vi.fn()}
+        onDrop={vi.fn()}
+        onEstimate={async () => true}
+      />,
+    );
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(close).toHaveBeenCalledTimes(1);
+    frame.unmount();
+    expect(launcher).toHaveFocus();
+  });
+  test.each(["0", "1441", "1.5", ""])("rejects invalid estimate %s without saving", (value) => {
+    const save = vi.fn(async () => true);
+    estimateFrame(save);
+    const input = screen.getByLabelText("Estimated minutes");
+    fireEvent.change(input, { target: { value } });
+    fireEvent.submit(input.closest("form")!);
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("whole number");
+  });
+
+  test("retains a failed draft and closes only after successful retry", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const close = estimateFrame(save);
+    await user.type(screen.getByLabelText("Estimated minutes"), "45");
+    await user.click(screen.getByRole("button", { name: "Save estimate" }));
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Estimated minutes")).toHaveValue(45);
+    expect(screen.getByRole("alert")).toHaveTextContent("draft is still here");
+    await user.click(screen.getByRole("button", { name: "Save estimate" }));
+    expect(save).toHaveBeenNthCalledWith(2, 45);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  test("prevents concurrent submissions", async () => {
+    let finish: (saved: boolean) => void = () => {};
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const close = estimateFrame(save);
+    const input = screen.getByLabelText("Estimated minutes");
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form")!);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+    await act(async () => finish(true));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    { source: "gmail" as const },
+    { start_at: "2026-09-30T11:00:00Z" },
+    { status: "done" as const },
+    { kind: "event" as const },
+  ])("restricts editing to open unscheduled local tasks: %j", (overrides) => {
+    estimateFrame(
+      vi.fn(async () => true),
+      { ...estimateTask, ...overrides },
+    );
+    expect(screen.queryByLabelText("Estimated minutes")).not.toBeInTheDocument();
+  });
+});
 
 function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
   return {

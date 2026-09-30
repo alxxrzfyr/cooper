@@ -46,10 +46,23 @@ through verified email/password or Google sign-in, but it is not a team or proje
   the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
 - Answer common focus, remaining-work, next-action, deadline, workload, and fit questions directly
   from current COOPER state; use bounded read tools for longer-tail Ask questions.
+- Distinguish current commitments, unscheduled work, priority and workload uncertainty in
+  deterministic answers; a clear calendar is not proof that all open work fits.
+- Browse landing FAQs beside proposed Free/Plus choices. Plus and included AI are coming soon,
+  not active paid subscriptions. No API key is needed; model help stays off until Cooper-funded
+  AI is enabled, and manual entry plus built-in answers work without it.
+- Keep horizontal landing chapters from 900px regardless of window height. Section scrollbars
+  are hidden without disabling scrolling. Vertical wheel input drives horizontal travel,
+  including over FAQs. Shared FAQ/pricing rows align headers and content, and chapter
+  columns and cards adapt to the available CSS viewport when resizing or zooming.
 - Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
 - Install the frontend as a responsive PWA with light and dark themes.
 
 ## Technology stack
+
+The approved next direction is one responsive web/PWA product, with no native
+mobile app work. Funded Gemini/Groq is built but disabled; subscriptions and GCP are
+planned, not current runtime capabilities. See the reviewed draft and first capacity plan linked below.
 
 | Area                         | Technology                                                             |
 | ---------------------------- | ---------------------------------------------------------------------- |
@@ -59,7 +72,7 @@ through verified email/password or Google sign-in, but it is not a team or proje
 | Frontend                     | React 19, TypeScript, Vite                                             |
 | Authentication               | Firebase Authentication with Google or verified email/password sign-in |
 | Calendar and mail            | Google Calendar/Gmail REST APIs and iCloud CalDAV                      |
-| AI assistance                | Gemini, supplied per browser through Settings                          |
+| AI assistance                | Cooper-supplied Gemini with Groq fallback; disabled until funded       |
 | Delivery                     | Firebase Hosting for the frontend and Render for the API               |
 
 ## Architecture
@@ -144,6 +157,13 @@ responsible for identity, and Supabase Auth and Supabase Storage are not used.
 - Remote failures do not block local capture. If a connected calendar cannot be checked, placement
   waits rather than guessing that its time is free. Local data remains the write source of truth.
 
+Cooper-funded Gemini/Groq replaces the old browser-key flow; users have no API-key
+setup. Accounting and the cutover are implemented, with funded dispatch disabled until
+budgets and live provider checks are approved. See the
+[accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
+and the operator section of the
+[implementation plan](docs/superpowers/plans/2026-10-01-included-ai-implementation.md).
+
 ## Design principles
 
 Cooper follows a small set of product rules:
@@ -159,6 +179,22 @@ Cooper follows a small set of product rules:
 - [`PRD.md`](PRD.md) defines the product requirements and non-goals.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation in detail.
 - [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
+- [`docs/designs/cooper-product-rethink.md`](docs/designs/cooper-product-rethink.md)
+  records the approved product direction, freemium hypotheses and GCP proposal. It is not shipped behavior.
+- [`docs/decisions/2026-09-30-included-ai-providers.md`](docs/decisions/2026-09-30-included-ai-providers.md)
+  records Gemini primary and Groq fallback for initial included AI.
+- [`docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md`](docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md)
+  specifies bounded fallback, shared budgets, privacy and acceptance requirements.
+- [`docs/superpowers/plans/2026-09-30-cooper-planning-trust.md`](docs/superpowers/plans/2026-09-30-cooper-planning-trust.md)
+  records the implemented first planning-answer repair tranche and its verification limits.
+- [`docs/decisions/2026-09-30-web-first-product-boundary.md`](docs/decisions/2026-09-30-web-first-product-boundary.md)
+  records the owner-approved single-product web/PWA scope, without native mobile.
+- [`docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md`](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
+  refines product workflows, architecture, uncertainty and release gates as a draft.
+- [`docs/designs/cooper-web-first-review.md`](docs/designs/cooper-web-first-review.md)
+  records independent reviews, self-grilling, corrections and evidence limits.
+- [`docs/superpowers/plans/2026-09-30-cooper-today-capacity.md`](docs/superpowers/plans/2026-09-30-cooper-today-capacity.md)
+  records the implemented today-capacity tranche and its verification evidence.
 - [`docs/WORKFLOW.md`](docs/WORKFLOW.md) defines the lightweight ticket, branch, PR, release, and
   incident workflow for solo development.
 - [`docs/RECOVERY.md`](docs/RECOVERY.md) documents backup, restore, and deployment recovery steps.
@@ -168,6 +204,37 @@ Cooper follows a small set of product rules:
   manual verification record.
 
 ## License
+
+## Local development without integrations
+
+Use Python 3.12 and Node.js 22, matching CI. Install `uv` and npm dependencies from
+the committed lockfiles. Copy `.env.example` to an untracked `.env` locally, then
+set a new random `COOPER_SHARED_KEY` of at least 24 characters. Leave Google and
+encryption settings empty for the no-provider path. Never commit `.env` or paste
+its values into issues or logs. The shared key is local isolation, not hosted auth.
+
+```bash
+uv sync --frozen
+uv run uvicorn cooper.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open the local Vite URL, configure the same local shared key in Settings when
+requested, and use Manual capture with an estimated task. Set availability, plan
+the task, then undo. `/health` checks database access, not connected calendars or AI.
+No Gemini key, Firebase account, Google account or iCloud credentials are required
+for this local path. Do not bind to `0.0.0.0`.
+
+For verification, run the commands in `AGENTS.md`. HTTP fixture checks, browser
+inspection and connected-provider acceptance are separate gates. A working local
+setup does not prove hosted backup or deployment readiness.
 
 This repository is not currently distributed under an open-source license. All rights reserved.
 

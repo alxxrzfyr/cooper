@@ -190,6 +190,7 @@ export function Frame({
   onClose,
   children,
   footer,
+  fallbackFocusId,
 }: {
   title: string;
   subtitle?: string;
@@ -197,13 +198,39 @@ export function Frame({
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  fallbackFocusId?: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close.current();
+      if (event.key !== "Tab" || !panel.current) return;
+      const controls = Array.from(
+        panel.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), a[href], select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
+        ),
+      );
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first || !last) return;
+      if (
+        event.shiftKey &&
+        (document.activeElement === first || document.activeElement === panel.current)
+      ) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last || document.activeElement === panel.current)
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
     }
+    const launcher = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.addEventListener("keydown", onKey);
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -212,8 +239,14 @@ export function Frame({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
+      if (launcher?.isConnected) launcher.focus();
+      else if (fallbackFocusId)
+        document
+          .getElementById(fallbackFocusId)
+          ?.querySelector<HTMLElement>('button[aria-label^="Open"]')
+          ?.focus();
     };
-  }, [onClose]);
+  }, [fallbackFocusId]);
 
   return createPortal(
     <div className="frame" role="presentation" onClick={onClose}>
@@ -247,7 +280,7 @@ export function Frame({
   );
 }
 
-/** Everything known about one task or event, and the three things you can do to it. */
+/** Task details and manual actions. */
 export function TaskFrame({
   item,
   today,
@@ -257,6 +290,7 @@ export function TaskFrame({
   onPin,
   onDrop,
   onSchedule,
+  onEstimate,
 }: {
   item: Item | Ranked;
   today: string;
@@ -266,7 +300,12 @@ export function TaskFrame({
   onPin: () => void;
   onDrop: () => void;
   onSchedule?: () => void;
+  onEstimate?: (minutes: number) => Promise<boolean>;
 }) {
+  const [estimate, setEstimate] = useState(item.minutes === null ? "" : String(item.minutes));
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [savingEstimate, setSavingEstimate] = useState(false);
+  const submittingEstimate = useRef(false);
   const late = item.due !== null && item.due.slice(0, 10) < today;
   const details = item.notes ? localDetails(item.notes) : null;
 
@@ -302,6 +341,7 @@ export function TaskFrame({
   return (
     <Frame
       title={item.title}
+      fallbackFocusId={`task-${item.id}`}
       onClose={onClose}
       footer={
         item.status === "open" ? (
@@ -355,6 +395,59 @@ export function TaskFrame({
         ))}
       </dl>
 
+      {onEstimate &&
+        item.kind === "task" &&
+        item.source === "me" &&
+        item.status === "open" &&
+        !item.start_at && (
+          <form
+            className="field field--stacked"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (busy || submittingEstimate.current) return;
+              const minutes = Number(estimate);
+              if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+                setEstimateError("Enter a whole number from 1 to 1440 minutes.");
+                return;
+              }
+              submittingEstimate.current = true;
+              setSavingEstimate(true);
+              setEstimateError(null);
+              try {
+                if (await onEstimate(minutes)) onClose();
+                else
+                  setEstimateError("Estimate was not saved. Your draft is still here; try again.");
+              } catch {
+                setEstimateError("Estimate was not saved. Your draft is still here; try again.");
+              } finally {
+                submittingEstimate.current = false;
+                setSavingEstimate(false);
+              }
+            }}
+          >
+            <label htmlFor="task-estimate">Estimated minutes</label>
+            <input
+              id="task-estimate"
+              type="number"
+              min={1}
+              max={1440}
+              step={1}
+              required
+              value={estimate}
+              disabled={busy || savingEstimate}
+              aria-describedby={estimateError ? "task-estimate-error" : undefined}
+              onChange={(event) => setEstimate(event.target.value)}
+            />
+            {estimateError && (
+              <p id="task-estimate-error" role="alert">
+                {estimateError}
+              </p>
+            )}
+            <button className="btn" type="submit" disabled={busy || savingEstimate}>
+              {savingEstimate ? "Saving…" : "Save estimate"}
+            </button>
+          </form>
+        )}
       {details?.notes && <p className="frame__notes">{details.notes}</p>}
     </Frame>
   );

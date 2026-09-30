@@ -21,6 +21,7 @@ import logging
 import re
 import secrets
 import time
+import uuid
 from collections import deque
 from threading import Lock
 from typing import Any, Literal
@@ -30,8 +31,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from cooper import mcp, sources
 from cooper.auth import AuthFailure, AuthIdentity, verify_firebase_token
@@ -47,10 +49,30 @@ from cooper.brain import (
     validate,
 )
 from cooper.config import KEY_MIN, Settings
-from cooper.db import Change, Item, Setting, Store, aware, new_id, now
+from cooper.db import (
+    AiAllowance,
+    AiAttempt,
+    AiRequest,
+    AiSpendEnvelope,
+    Change,
+    Item,
+    Setting,
+    Store,
+    aware,
+    new_id,
+    now,
+)
 from cooper.google import Calendar, CalendarError, Gmail
 from cooper.icloud import ICloudCalDAVProvider
-from cooper.planner import Hours, Slot, accepts_interval, build_planning_snapshot, place, rank
+from cooper.planner import (
+    Hours,
+    Slot,
+    accepts_interval,
+    build_planning_snapshot,
+    place,
+    project_open_tasks,
+    rank,
+)
 from cooper.watcher import EmailProposal, parse_confirmation
 
 SECRET_HEADER = "X-Cooper-Key"
@@ -224,12 +246,613 @@ def request_owner(request: Request) -> AuthIdentity:
 
 
 class Say(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=1000)
     # Manual mode is local and remains the default.
     mode: Literal["manual", "ai"] = "manual"
-    # This key is request-scoped and is never persisted, logged, or returned.
-    gemini_api_key: str | None = Field(default=None, max_length=256)
+    logical_request_id: str | None = Field(default=None, max_length=36)
     intent: AskIntent | None = None
+
+
+AI_SERVICE_OWNER = "cooper-service"
+
+
+def _ai_period() -> str:
+    return now().astimezone(dt.UTC).strftime("%Y-%m")
+
+
+def provision_ai_pilot(
+    owner_id: str,
+    limit_units: int,
+    aggregate_microusd: int,
+    gemini_microusd: int,
+    groq_microusd: int,
+) -> None:
+    """Explicit operator provisioning; never invoked by an HTTP request."""
+    values = (limit_units, aggregate_microusd, gemini_microusd, groq_microusd)
+    if not owner_id or any(type(value) is not int or value < 0 for value in values):
+        raise ValueError("Nonnegative integer allowance and cash limits required")
+    period = _ai_period()
+    with store.session() as session:
+        allowance = session.get(AiAllowance, (owner_id, period))
+        if allowance is None:
+            session.add(AiAllowance(owner_id=owner_id, period=period, limit_units=limit_units))
+        else:
+            allowance.limit_units = limit_units
+        for scope, limit in zip(("aggregate", "gemini", "groq"), values[1:], strict=True):
+            envelope = session.get(AiSpendEnvelope, (AI_SERVICE_OWNER, period, scope))
+            if envelope is None:
+                session.add(
+                    AiSpendEnvelope(
+                        owner_id=AI_SERVICE_OWNER, period=period, scope=scope, limit_microusd=limit
+                    )
+                )
+            else:
+                envelope.limit_microusd = limit
+
+
+def _ai_digest(owner_id: str, body: Say) -> str:
+    payload = (owner_id, " ".join(body.text.split()), body.mode, body.intent)
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
+
+
+def _existing_ai(owner_id: str, body: Say) -> tuple[str, dict[str, Any]] | None:
+    if not body.logical_request_id or not store.ai_schema_available:
+        return None
+    with store.session() as session:
+        row = session.scalar(
+            select(AiRequest).where(
+                AiRequest.owner_id == owner_id,
+                AiRequest.logical_request_id == body.logical_request_id,
+            )
+        )
+        if row is None:
+            return None
+        if row.payload_digest != _ai_digest(owner_id, body):
+            raise HTTPException(409, "Request ID was already used for different input")
+        response = (
+            row.response
+            if row.state in {"completed", "failed"} and row.response
+            else {
+                "kind": "pending",
+                "message": "This request is pending review; retrying cannot dispatch it again.",
+                "logical_request_id": row.logical_request_id,
+            }
+        )
+        return row.id, dict(response)
+
+
+def _reserve_ai_cost(session, period: str, provider: str, amount: int) -> None:
+    for scope in ("aggregate", provider):
+        result = session.execute(
+            update(AiSpendEnvelope)
+            .where(
+                AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                AiSpendEnvelope.period == period,
+                AiSpendEnvelope.scope == scope,
+                AiSpendEnvelope.enabled.is_(True),
+                AiSpendEnvelope.reserved_microusd + AiSpendEnvelope.spent_microusd + amount
+                <= AiSpendEnvelope.limit_microusd,
+            )
+            .values(reserved_microusd=AiSpendEnvelope.reserved_microusd + amount)
+        )
+        if result.rowcount != 1:
+            raise HTTPException(429, "Included AI spending limit reached or unavailable")
+
+
+def _admit_ai(owner_id: str, body: Say, cost: int) -> tuple[str, dict[str, Any] | None]:
+    if not store.ai_schema_available:
+        raise HTTPException(503, "Included AI accounting migration is required")
+    existing = _existing_ai(owner_id, body)
+    if existing:
+        return existing
+    try:
+        logical_id = str(uuid.UUID(body.logical_request_id or ""))
+    except ValueError:
+        raise HTTPException(
+            422, "A UUID logical_request_id is required for assisted requests"
+        ) from None
+    # Canonical IDs avoid alternate UUID spellings bypassing uniqueness.
+    body.logical_request_id = logical_id
+    existing = _existing_ai(owner_id, body)
+    if existing:
+        return existing
+    period = _ai_period()
+    request_id = str(uuid.uuid4())
+    try:
+        with store.session() as session:
+            session.add(
+                AiRequest(
+                    id=request_id,
+                    owner_id=owner_id,
+                    logical_request_id=logical_id,
+                    payload_digest=_ai_digest(owner_id, body),
+                    period=period,
+                )
+            )
+            session.flush()
+            result = session.execute(
+                update(AiAllowance)
+                .where(
+                    AiAllowance.owner_id == owner_id,
+                    AiAllowance.period == period,
+                    AiAllowance.reserved_units + AiAllowance.consumed_units
+                    < AiAllowance.limit_units,
+                )
+                .values(reserved_units=AiAllowance.reserved_units + 1)
+            )
+            if result.rowcount != 1:
+                raise HTTPException(429, "Included AI allowance exhausted or unavailable")
+            _reserve_ai_cost(session, period, "gemini", cost)
+            session.add(
+                AiAttempt(
+                    id=str(uuid.uuid4()),
+                    owner_id=owner_id,
+                    request_id=request_id,
+                    attempt_no=1,
+                    provider="gemini",
+                    model=settings.gemini_model,
+                    price_revision=settings.ai_price_revision,
+                    input_rate_microusd=settings.gemini_input_microusd_per_million,
+                    output_rate_microusd=settings.gemini_output_microusd_per_million,
+                    reserved_microusd=cost,
+                )
+            )
+    except IntegrityError:
+        existing = _existing_ai(owner_id, body)
+        if existing:
+            return existing
+        raise HTTPException(503, "Included AI allowance is not provisioned") from None
+    return request_id, None
+
+
+def _ai_status(owner_id: str) -> dict[str, Any]:
+    at = now().astimezone(dt.UTC)
+    reset = (at.replace(day=28) + dt.timedelta(days=4)).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    result = {
+        "status": "unavailable",
+        "tier": "free",
+        "remaining_units": 0,
+        "limit_units": 0,
+        "reset_at": reset.isoformat(),
+    }
+    if not store.ai_schema_available:
+        return result
+    with store.session() as session:
+        row = session.get(AiAllowance, (owner_id, _ai_period()))
+        if row is None:
+            return result
+        remaining = row.limit_units - row.reserved_units - row.consumed_units
+        result.update(tier=row.tier, remaining_units=remaining, limit_units=row.limit_units)
+        envelopes = [
+            session.get(AiSpendEnvelope, (AI_SERVICE_OWNER, row.period, scope))
+            for scope in ("aggregate", "gemini", "groq")
+        ]
+        if settings.included_ai_enabled and all(
+            env and env.enabled and env.reserved_microusd + env.spent_microusd < env.limit_microusd
+            for env in envelopes
+        ):
+            result["status"] = "ready" if remaining else "exhausted"
+    return result
+
+
+def _ai_cost(provider: str, input_tokens: int, output_tokens: int) -> int:
+    rate_in = getattr(settings, f"{provider}_input_microusd_per_million")
+    rate_out = getattr(settings, f"{provider}_output_microusd_per_million")
+    return (input_tokens * rate_in + output_tokens * rate_out + 999_999) // 1_000_000
+
+
+def _lock_ai_accounting(session, request: AiRequest) -> None:
+    """Portable write-lock order: request, owner allowance, attempt, envelopes."""
+    session.execute(update(AiRequest).where(AiRequest.id == request.id).values(updated_at=now()))
+    result = session.execute(
+        update(AiAllowance)
+        .where(
+            AiAllowance.owner_id == request.owner_id,
+            AiAllowance.period == request.period,
+        )
+        .values(updated_at=now())
+    )
+    if result.rowcount != 1:
+        raise RuntimeError("Request allowance is missing")
+
+
+def _settle_ai_attempt(
+    attempt_id: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    *,
+    freeze_missing: bool = False,
+) -> bool:
+    with store.session() as session:
+        attempt = session.get(AiAttempt, attempt_id)
+        if attempt is None or attempt.state != "dispatching":
+            raise RuntimeError("Provider attempt is not awaiting settlement")
+        request = session.get(AiRequest, attempt.request_id)
+        measured = input_tokens is not None and output_tokens is not None
+        actual = _attempt_cost(attempt, input_tokens, output_tokens) if measured else None
+        oversized = measured and (
+            input_tokens > settings.ai_input_token_bound
+            or output_tokens > settings.ai_output_token_bound
+            or actual > attempt.reserved_microusd
+        )
+        _lock_ai_accounting(session, request)
+        target = "settled" if measured and not oversized else "uncertain"
+        claimed = session.execute(
+            update(AiAttempt)
+            .where(
+                AiAttempt.id == attempt_id,
+                AiAttempt.state == "dispatching",
+            )
+            .values(
+                state=target,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                actual_microusd=actual,
+            )
+        )
+        if claimed.rowcount != 1:
+            raise RuntimeError("Provider attempt was already settled")
+        if target == "uncertain":
+            if oversized or freeze_missing:
+                for scope in ("aggregate", attempt.provider):
+                    session.execute(
+                        update(AiSpendEnvelope)
+                        .where(
+                            AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                            AiSpendEnvelope.period == request.period,
+                            AiSpendEnvelope.scope == scope,
+                        )
+                        .values(enabled=False)
+                    )
+            return not oversized
+        for scope in ("aggregate", attempt.provider):
+            result = session.execute(
+                update(AiSpendEnvelope)
+                .where(
+                    AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                    AiSpendEnvelope.period == request.period,
+                    AiSpendEnvelope.scope == scope,
+                    AiSpendEnvelope.reserved_microusd >= attempt.reserved_microusd,
+                )
+                .values(
+                    reserved_microusd=AiSpendEnvelope.reserved_microusd - attempt.reserved_microusd,
+                    spent_microusd=AiSpendEnvelope.spent_microusd + actual,
+                )
+            )
+            if result.rowcount != 1:
+                raise RuntimeError("Provider cost reservation is inconsistent")
+        return True
+
+
+@dataclasses.dataclass
+class AssistedRequest:
+    owner_id: str
+    request_id: str
+    deadline: float
+    provider: str = "gemini"
+    calls: int = 0
+    stopped: bool = False
+
+    def dispatch(self, body: dict[str, Any]) -> dict[str, Any]:
+        from cooper import providers
+
+        if self.stopped:
+            raise providers.ProviderFailure("refusal")
+        # Reviewed token upper bound includes normalized transport overhead. Reject
+        # oversized bodies rather than truncate safety instructions or tool history.
+        if len(json.dumps(body, ensure_ascii=False).encode()) > settings.ai_input_token_bound:
+            self.stopped = True
+            raise providers.ProviderFailure("invalid_response")
+        config = body.setdefault("generationConfig", {})
+        config["maxOutputTokens"] = min(
+            config.get("maxOutputTokens", 384), settings.ai_output_token_bound
+        )
+        for _ in range(2):
+            if self.calls >= 4 or time.monotonic() >= self.deadline:
+                self.stopped = True
+                raise providers.ProviderFailure("unavailable")
+            provider = self.provider
+            cost = _ai_cost(provider, settings.ai_input_token_bound, settings.ai_output_token_bound)
+            with store.session() as session:
+                request = session.get(AiRequest, self.request_id)
+                if (
+                    request is None
+                    or request.owner_id != self.owner_id
+                    or request.state not in {"admitted", "running"}
+                ):
+                    raise RuntimeError("Provider dispatch outside admitted request")
+                _lock_ai_accounting(session, request)
+                number = self.calls + 1
+                if number == 1:
+                    attempt = session.scalar(
+                        select(AiAttempt).where(
+                            AiAttempt.request_id == self.request_id, AiAttempt.attempt_no == 1
+                        )
+                    )
+                else:
+                    _reserve_ai_cost(session, request.period, provider, cost)
+                    attempt = AiAttempt(
+                        id=str(uuid.uuid4()),
+                        owner_id=self.owner_id,
+                        request_id=self.request_id,
+                        attempt_no=number,
+                        provider=provider,
+                        model=settings.gemini_model
+                        if provider == "gemini"
+                        else settings.groq_model,
+                        price_revision=settings.ai_price_revision,
+                        input_rate_microusd=getattr(
+                            settings, f"{provider}_input_microusd_per_million"
+                        ),
+                        output_rate_microusd=getattr(
+                            settings, f"{provider}_output_microusd_per_million"
+                        ),
+                        state="reserved",
+                        reserved_microusd=cost,
+                    )
+                    session.add(attempt)
+                if attempt is None or attempt.state != "reserved":
+                    raise RuntimeError("Attempt was already dispatched")
+                attempt.state = "dispatching"
+                claimed = session.execute(
+                    update(AiRequest)
+                    .where(
+                        AiRequest.id == self.request_id,
+                        AiRequest.owner_id == self.owner_id,
+                        AiRequest.state.in_(("admitted", "running")),
+                    )
+                    .values(state="running")
+                )
+                if claimed.rowcount != 1:
+                    raise RuntimeError("Provider request was abandoned before dispatch")
+                attempt_id = attempt.id
+            self.calls += 1
+            secret = settings.gemini_api_key if provider == "gemini" else settings.groq_api_key
+            try:
+                reply = providers.generate(
+                    provider,
+                    secret.get_secret_value(),
+                    settings.gemini_model if provider == "gemini" else settings.groq_model,
+                    body,
+                    max(0.001, min(20.0, self.deadline - time.monotonic())),
+                )
+            except providers.ProviderFailure as failure:
+                valid_cost = _settle_ai_attempt(
+                    attempt_id,
+                    failure.input_tokens,
+                    failure.output_tokens,
+                    freeze_missing=failure.kind == "invalid_response",
+                )
+                if (
+                    valid_cost
+                    and provider == "gemini"
+                    and failure.kind in {"timeout", "unavailable"}
+                ):
+                    self.provider = "groq"
+                    continue
+                self.stopped = True
+                raise
+            except Exception:
+                _settle_ai_attempt(attempt_id, None, None)
+                self.stopped = True
+                raise
+            if not _settle_ai_attempt(attempt_id, reply.input_tokens, reply.output_tokens):
+                self.stopped = True
+                raise providers.ProviderFailure("invalid_response")
+            return reply.envelope
+        self.stopped = True
+        raise providers.ProviderFailure("unavailable")
+
+
+def _finish_ai(session, request_id: str, result: dict[str, Any], *, useful: bool) -> None:
+    row = session.get(AiRequest, request_id)
+    if row is None or row.allowance_state != "reserved":
+        raise RuntimeError("Logical request has already settled")
+    _lock_ai_accounting(session, row)
+    if useful and row.state not in {"running", "applying"}:
+        raise RuntimeError("Abandoned request cannot complete")
+    attempts = session.scalars(select(AiAttempt).where(AiAttempt.request_id == request_id)).all()
+    for attempt in attempts:
+        if attempt.state == "reserved":
+            claim = session.execute(
+                update(AiAttempt)
+                .where(
+                    AiAttempt.id == attempt.id,
+                    AiAttempt.state == "reserved",
+                )
+                .values(state="released")
+            )
+            if claim.rowcount != 1:
+                raise RuntimeError("Attempt reservation was already released")
+            for scope in ("aggregate", attempt.provider):
+                session.execute(
+                    update(AiSpendEnvelope)
+                    .where(
+                        AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                        AiSpendEnvelope.period == row.period,
+                        AiSpendEnvelope.scope == scope,
+                    )
+                    .values(
+                        reserved_microusd=AiSpendEnvelope.reserved_microusd
+                        - attempt.reserved_microusd
+                    )
+                )
+            attempt.state = "released"
+    uncertain = any(attempt.state in {"dispatching", "uncertain"} for attempt in attempts)
+    if useful or not uncertain:
+        allowance_state = "consumed" if useful else "released"
+        claim = session.execute(
+            update(AiRequest)
+            .where(
+                AiRequest.id == request_id,
+                AiRequest.allowance_state == "reserved",
+                AiRequest.state.in_(
+                    ("running", "applying")
+                    if useful
+                    else ("admitted", "running", "applying", "uncertain")
+                ),
+            )
+            .values(allowance_state=allowance_state)
+        )
+        if claim.rowcount != 1:
+            raise RuntimeError("Logical request was already finalized")
+        result_update = session.execute(
+            update(AiAllowance)
+            .where(
+                AiAllowance.owner_id == row.owner_id,
+                AiAllowance.period == row.period,
+                AiAllowance.reserved_units > 0,
+            )
+            .values(
+                reserved_units=AiAllowance.reserved_units - 1,
+                consumed_units=AiAllowance.consumed_units + (1 if useful else 0),
+            )
+        )
+        if result_update.rowcount != 1:
+            raise RuntimeError("Allowance reservation is inconsistent")
+        row.allowance_state = allowance_state
+    row.state = "completed" if useful else "uncertain" if uncertain else "failed"
+    # Full snapshot/provider details are read afresh, never stored as service receipt.
+    row.response = {
+        key: value for key, value in result.items() if key != "view" and not key.startswith("_")
+    }
+
+
+def _attempt_cost(attempt: AiAttempt, input_tokens: int, output_tokens: int) -> int:
+    return (
+        input_tokens * attempt.input_rate_microusd
+        + output_tokens * attempt.output_rate_microusd
+        + 999_999
+    ) // 1_000_000
+
+
+def abandon_ai_request(request_id: str) -> None:
+    """Operator-reviewed abandoned worker; no takeover and no repeated mutation."""
+    with store.session() as session:
+        row = session.get(AiRequest, request_id)
+        if row is None or row.state in {"completed", "failed"}:
+            raise ValueError("Only pending requests can be abandoned")
+        previous_state = row.state
+        _lock_ai_accounting(session, row)
+        claim = session.execute(
+            update(AiRequest)
+            .where(
+                AiRequest.id == request_id,
+                AiRequest.state == previous_state,
+                AiRequest.allowance_state == "reserved",
+            )
+            .values(state="uncertain")
+        )
+        if claim.rowcount != 1:
+            raise ValueError("Request state changed during review")
+        session.execute(
+            update(AiAttempt)
+            .where(AiAttempt.request_id == request_id, AiAttempt.state == "dispatching")
+            .values(state="uncertain")
+        )
+        _finish_ai(
+            session,
+            request_id,
+            {
+                "kind": "question",
+                "source": "cooper",
+                "message": (
+                    "This abandoned request was closed without replay. "
+                    "Please submit again or use Form."
+                ),
+            },
+            useful=False,
+        )
+
+
+def reconcile_ai_attempt(
+    attempt_id: str,
+    *,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    proven_not_dispatched: bool = False,
+) -> None:
+    """Operator-only evidence-backed resolution; costs use immutable dispatch prices."""
+    if proven_not_dispatched and (input_tokens is not None or output_tokens is not None):
+        raise ValueError("Choose non-dispatch evidence or measured usage")
+    if not proven_not_dispatched and (input_tokens is None or output_tokens is None):
+        raise ValueError("Provider usage evidence is required")
+    if any(
+        type(value) is not int or value < 0
+        for value in (input_tokens, output_tokens)
+        if value is not None
+    ):
+        raise ValueError("Nonnegative usage is required")
+    with store.session() as session:
+        attempt = session.get(AiAttempt, attempt_id)
+        if attempt is None or attempt.state not in {"uncertain", "dispatching"}:
+            raise ValueError("Only unresolved attempts can be reconciled")
+        request = session.get(AiRequest, attempt.request_id)
+        actual = 0 if proven_not_dispatched else _attempt_cost(attempt, input_tokens, output_tokens)
+        _lock_ai_accounting(session, request)
+        target = "released" if proven_not_dispatched else "settled"
+        claim = session.execute(
+            update(AiAttempt)
+            .where(AiAttempt.id == attempt_id, AiAttempt.state.in_(("uncertain", "dispatching")))
+            .values(state=target)
+        )
+        if claim.rowcount != 1:
+            raise ValueError("Attempt was already reconciled")
+        for scope in ("aggregate", attempt.provider):
+            result = session.execute(
+                update(AiSpendEnvelope)
+                .where(
+                    AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                    AiSpendEnvelope.period == request.period,
+                    AiSpendEnvelope.scope == scope,
+                    AiSpendEnvelope.reserved_microusd >= attempt.reserved_microusd,
+                    AiSpendEnvelope.spent_microusd
+                    + AiSpendEnvelope.reserved_microusd
+                    - attempt.reserved_microusd
+                    + actual
+                    <= AiSpendEnvelope.limit_microusd,
+                )
+                .values(
+                    reserved_microusd=AiSpendEnvelope.reserved_microusd - attempt.reserved_microusd,
+                    spent_microusd=AiSpendEnvelope.spent_microusd + actual,
+                )
+            )
+            if result.rowcount != 1:
+                raise ValueError("Reviewed cash envelope does not cover measured cost")
+        attempt.input_tokens, attempt.output_tokens = input_tokens, output_tokens
+        attempt.actual_microusd = actual
+        session.flush()
+        if request.state == "uncertain" and request.response:
+            unresolved = session.scalar(
+                select(AiAttempt.id).where(
+                    AiAttempt.request_id == request.id,
+                    AiAttempt.state.in_(("uncertain", "dispatching")),
+                )
+            )
+            if unresolved is None and request.allowance_state == "reserved":
+                _finish_ai(session, request.id, request.response, useful=False)
+
+
+def review_ai_envelopes(period: str) -> None:
+    """Explicit operator re-enable after model/price/budget reconciliation review."""
+    with store.session() as session:
+        for scope in ("aggregate", "gemini", "groq"):
+            result = session.execute(
+                update(AiSpendEnvelope)
+                .where(
+                    AiSpendEnvelope.owner_id == AI_SERVICE_OWNER,
+                    AiSpendEnvelope.period == period,
+                    AiSpendEnvelope.scope == scope,
+                    AiSpendEnvelope.reserved_microusd + AiSpendEnvelope.spent_microusd
+                    <= AiSpendEnvelope.limit_microusd,
+                )
+                .values(enabled=True)
+            )
+            if result.rowcount != 1:
+                raise ValueError("Reviewed complete cash envelopes are required")
 
 
 class HoursIn(BaseModel):
@@ -793,9 +1416,12 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
     for entry in planning["tasks"]:
         payload = dict(entry)
         if payload["kind"] == "task" and not payload["start_at"]:
-            payload["waiting_reason"] = _waiting_reason(payload, availability)
+            payload["waiting_reason"] = payload.get("waiting_reason") or _waiting_reason(
+                payload, availability
+            )
         shortlist.append(payload)
     planning["tasks"] = shortlist
+    ai_status = _ai_status(owner_id)
     return {
         "now": at.isoformat(),
         "today": at.astimezone(zone).date().isoformat(),
@@ -807,7 +1433,8 @@ def today_view(owner_id: str, *, using_model: bool | None = None) -> dict[str, A
         "source_health": source_health,
         "planning": planning,
         "undo": undo_label,
-        "using_model": brain.using_model if using_model is None else using_model,
+        "using_model": ai_status["status"] == "ready",
+        "ai": ai_status,
         "calendar": {
             "configured": calendar.configured,
             "connected": calendar.connected,
@@ -993,11 +1620,100 @@ def mcp_endpoint(body: dict[str, Any], request: Request) -> dict[str, Any]:
 
 @app.post("/api/say")
 def say(body: Say, request: Request) -> dict[str, Any]:
-    """The main entry point: one sentence in, one change out."""
+    """One logical assisted request; core work stays usable without providers."""
     owner_id = request_owner(request).uid
+    if body.logical_request_id:
+        try:
+            body.logical_request_id = str(uuid.UUID(body.logical_request_id))
+        except ValueError:
+            raise HTTPException(422, "logical_request_id must be a UUID") from None
+    if body.mode == "ai":
+        existing = _existing_ai(owner_id, body)
+        if existing:
+            return _fresh_ai_response(owner_id, existing[1])
+    intent = body.intent or (classify_ask_intent(body.text) if body.mode == "ai" else None)
+    if body.mode != "ai" or intent is not None:
+        return _say_response(body, owner_id, brain)
+    # Deterministic command verbs use no provider allowance. Questions asking for
+    # explanation still use the read-only answer branch when AI is available.
+    rules = brain.read(body.text, [], use_model=False)
+    if rules.verb in {"complete", "drop", "move", "pin", "schedule", "undo"}:
+        return _say_response(body, owner_id, brain)
+    if not settings.included_ai_enabled or not store.ai_schema_available:
+        if body.logical_request_id or looks_like_a_question(body.text):
+            return {
+                "kind": "question",
+                "source": "cooper",
+                "message": (
+                    "Included AI is unavailable. Basic planning questions and Form still work."
+                ),
+                "view": today_view(owner_id),
+            }
+        return _say_response(body, owner_id, brain)
+    cost = _ai_cost("gemini", settings.ai_input_token_bound, settings.ai_output_token_bound)
+    request_id, replay = _admit_ai(owner_id, body, cost)
+    if replay:
+        return _fresh_ai_response(owner_id, replay)
+    execution = AssistedRequest(
+        owner_id, request_id, time.monotonic() + settings.ai_deadline_seconds
+    )
+    request_brain = Brain(
+        model=settings.gemini_model, timezone=settings.timezone, dispatch=execution.dispatch
+    )
+    try:
+        # Parsing and read-only answers happen before a planning transaction.
+        result = _say_response(body, owner_id, request_brain, request_id=request_id)
+    except HTTPException:
+        with store.session() as session:
+            row = session.get(AiRequest, request_id)
+            if row.allowance_state == "reserved":
+                _finish_ai(
+                    session,
+                    request_id,
+                    {
+                        "kind": "question",
+                        "source": "cooper",
+                        "message": (
+                            "Assistance stopped safely. Use Form or a basic planning question."
+                        ),
+                    },
+                    useful=False,
+                )
+        raise
+    except Exception:
+        # Do not disguise application defects or release ambiguous costs. A
+        # request marked applying stays pending until reviewed, never replays.
+        with store.session() as session:
+            row = session.get(AiRequest, request_id)
+            if (
+                row.state not in {"completed", "failed", "applying"}
+                and row.allowance_state == "reserved"
+            ):
+                _finish_ai(
+                    session,
+                    request_id,
+                    {
+                        "kind": "question",
+                        "source": "cooper",
+                        "message": "Assistance could not complete. Please use Form.",
+                    },
+                    useful=False,
+                )
+        raise
+    return _fresh_ai_response(owner_id, result)
+
+
+def _fresh_ai_response(owner_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    payload = {**result, "view": today_view(owner_id)}
+    if result.get("kind") == "pending":
+        return JSONResponse(payload, status_code=202)
+    return payload
+
+
+def _say_response(
+    body: Say, owner_id: str, request_brain: Brain, *, request_id: str | None = None
+) -> dict[str, Any]:
     ai = body.mode == "ai"
-    browser_key = body.gemini_api_key.strip() if ai and body.gemini_api_key else ""
-    request_brain = brain.with_api_key(browser_key) if browser_key else brain
     intent = body.intent or (classify_ask_intent(body.text) if ai else None)
     if intent is not None:
         view = today_view(owner_id, using_model=request_brain.using_model)
@@ -1027,24 +1743,78 @@ def say(body: Say, request: Request) -> dict[str, Any]:
             summaries,
         )
         if tool_answer:
-            return {
-                "kind": "answered",
-                "message": tool_answer,
-                "source": "gemini",
-                "tools": tool_steps,
-                "view": today_view(owner_id, using_model=request_brain.using_model),
-            }
+            return _finish_ai_answer(
+                request_id,
+                {
+                    "kind": "answered",
+                    "message": tool_answer,
+                    "source": "model",
+                    "tools": tool_steps,
+                    "view": today_view(owner_id, using_model=request_brain.using_model),
+                },
+            )
         answered = request_brain.answer(body.text, summaries, _busy_time_context(owner_id))
         if answered:
-            return {
-                "kind": "answered",
-                "message": answered,
-                "source": "gemini",
-                "view": today_view(owner_id, using_model=request_brain.using_model),
-            }
+            return _finish_ai_answer(
+                request_id,
+                {
+                    "kind": "answered",
+                    "message": answered,
+                    "source": "model",
+                    "view": today_view(owner_id, using_model=request_brain.using_model),
+                },
+            )
 
+    if request_id is not None:
+        if action.is_question or action.verb == "show":
+            result = run(owner_id, action)
+            with store.session() as session:
+                _finish_ai(session, request_id, result, useful=False)
+            return result
+        with store.session() as session:
+            claim = session.execute(
+                update(AiRequest)
+                .where(
+                    AiRequest.id == request_id,
+                    AiRequest.owner_id == owner_id,
+                    AiRequest.state.in_(("admitted", "running")),
+                    AiRequest.allowance_state == "reserved",
+                )
+                .values(state="applying")
+            )
+            if claim.rowcount != 1:
+                raise HTTPException(409, "This request cannot enter the writer again")
+        with store.session() as session, store.join(session):
+            claim = session.execute(
+                update(AiRequest)
+                .where(
+                    AiRequest.id == request_id,
+                    AiRequest.owner_id == owner_id,
+                    AiRequest.state == "applying",
+                    AiRequest.allowance_state == "reserved",
+                )
+                .values(updated_at=now())
+            )
+            if claim.rowcount != 1:
+                raise HTTPException(409, "This request was abandoned before execution")
+            row = session.get(AiRequest, request_id)
+            _lock_ai_accounting(session, row)
+            result = _run_with_receipt(owner_id, action)
+            _finish_ai(session, request_id, result, useful=True)
+        return result
+    return _run_with_receipt(owner_id, action)
+
+
+def _finish_ai_answer(request_id: str | None, result: dict[str, Any]) -> dict[str, Any]:
+    if request_id is not None:
+        with store.session() as session:
+            _finish_ai(session, request_id, result, useful=True)
+    return result
+
+
+def _run_with_receipt(owner_id: str, action: Action) -> dict[str, Any]:
     result = run(owner_id, action)
-    view = today_view(owner_id, using_model=request_brain.using_model)
+    view = today_view(owner_id, using_model=action.source == "model")
     item_ids = result.pop("_item_ids", None)
     if result.get("kind") in {"added", "rescheduled", "scheduled"} and (
         item_ids or isinstance(result.get("item"), dict)
@@ -1082,7 +1852,13 @@ def answer_planning_intent(
         else:
             task = tasks[0]
             reason = _recommendation_reason(task, view["timezone"])
-            message = f"Focus on {task['title']} first{reason}."
+            message = f"Your highest-priority open task is {task['title']}{reason}."
+            if not planning["complete"]:
+                message += (
+                    " I can't confirm safe placement while a connected calendar is unavailable."
+                )
+            else:
+                message += " This is a priority ranking, not a confirmed time slot."
             facts.append(f"{task['title']} · {reason.removeprefix(' because ')}")
     elif intent == "remaining_today":
         remaining = _commitments_on_day(
@@ -1096,13 +1872,27 @@ def answer_planning_intent(
         else:
             facts = [_commitment_fact(entry, view["timezone"]) for entry in remaining]
             message = f"You still have {len(remaining)} today: " + "; ".join(facts) + "."
+        pending = [task for task in tasks if task.get("start_at") is None]
+        if pending:
+            pending_facts = [
+                f"Unscheduled · {task['title']} · "
+                + (
+                    f"{task['minutes']} minutes"
+                    if task.get("minutes") is not None
+                    else "effort unknown"
+                )
+                for task in pending
+            ]
+            message += " Unscheduled work (not all due today): " + "; ".join(pending_facts) + "."
+            facts.extend(pending_facts)
     elif intent == "work_next":
         identity = planning["focus"]["now_id"] or planning["focus"]["next_id"]
         commitment = next((entry for entry in commitments if entry["id"] == identity), None)
         task = next((entry for entry in tasks if entry["id"] == identity), None)
         if commitment:
             fact = _commitment_fact(commitment, view["timezone"])
-            message = f"Your next commitment is {fact}."
+            label = "current" if commitment["id"] == planning["focus"]["now_id"] else "next"
+            message = f"Your {label} commitment is {fact}."
             facts.append(fact)
         elif task:
             reason = _recommendation_reason(task, view["timezone"])
@@ -1115,17 +1905,34 @@ def answer_planning_intent(
         free = planning["metrics"]["largest_free_block_minutes"]
         if not planning["complete"]:
             message = "I can’t confirm a free block while a connected calendar is unavailable."
+        elif not _supports_today_fit(question):
+            message = "Ask for one duration today, for example: Can I fit 30 minutes today?"
         elif requested is None:
-            message = f"Your largest remaining free block today is {free} minutes."
-        elif free >= requested:
-            message = f"Yes. A {requested}-minute session fits in your {free}-minute free block."
-        else:
             message = (
-                f"Not as one block today. You need {requested} minutes, and your largest free "
-                f"block is {free} minutes."
+                f"Your largest remaining calendar gap today is {free} minutes. "
+                "This is a gap metric, not a capacity verdict."
             )
-        if planning["complete"]:
-            facts.append(f"Largest free block · {free} minutes")
+            facts.append(f"Largest calendar gap · {free} minutes")
+        elif not 1 <= requested <= 1440:
+            message = "Use a duration from 1 to 1440 whole minutes today."
+        else:
+            slot = _fit_duration_slot(view, requested)
+            if slot:
+                zone = ZoneInfo(view["timezone"])
+                start = slot.start.astimezone(zone).strftime("%-I:%M %p")
+                end = slot.end.astimezone(zone).strftime("%-I:%M %p")
+                message = (
+                    f"Yes. An unsaved {requested}-minute candidate fits today at "
+                    f"{start}–{end} ({view['timezone']}). It respects availability and "
+                    "daily limits. This standalone check does not reserve time or "
+                    "outrank unscheduled work."
+                )
+                facts.append(f"Unsaved candidate · {start}–{end}")
+            else:
+                message = (
+                    f"No legal {requested}-minute slot remains today under your "
+                    "availability, existing blocks, breaks, lead time, and daily limits."
+                )
     elif intent == "deadline_summary":
         zone = ZoneInfo(view["timezone"])
         today = dt.date.fromisoformat(view["today"])
@@ -1162,13 +1969,16 @@ def answer_planning_intent(
                 "is unavailable."
             )
         else:
-            overloaded = conflicts > 0 or occupied >= 7 * 60
+            pending = [task for task in tasks if task.get("start_at") is None]
+            estimated = sum(task.get("minutes") or 0 for task in pending)
+            unknown = sum(task.get("minutes") is None for task in pending)
             message = (
-                f"{label.title()} looks overloaded: {len(day_commitments)} commitments occupy "
-                f"{occupied} minutes, with {conflicts} conflict{'s' if conflicts != 1 else ''}."
-                if overloaded
-                else f"{label.title()} is not overloaded: {len(day_commitments)} commitments "
-                f"occupy {occupied} minutes."
+                f"Calendar {label}: {len(day_commitments)} commitments occupy {occupied} minutes, "
+                f"with {conflicts} overlapping pair{'s' if conflicts != 1 else ''}. "
+                f"You also have {estimated} estimated minutes of unscheduled work and "
+                f"{unknown} task{'s' if unknown != 1 else ''} with unknown effort. "
+                "That work is not necessarily due on this day. "
+                "Calendar occupancy alone cannot confirm workload fits your configured capacity."
             )
         facts.extend([f"Scheduled · {len(day_commitments)}", f"Occupied · {occupied} minutes"])
 
@@ -1319,6 +2129,66 @@ def _commitment_fact(commitment: dict[str, Any], timezone: str) -> str:
     return f"{commitment['title']} at {starts.strftime('%-I:%M %p')}"
 
 
+def _supports_today_fit(question: str) -> bool:
+    text = question.casefold().replace("’", "'").replace("-", " ").strip().rstrip("?.!")
+    amount = r"(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight)"
+    unit = r"(?:hours?|hrs?|minutes?|mins?)"
+    duration = (
+        rf"(?:a |an )?{amount}\s*{unit}(?: (?:focus |work |study )?(?:block|session|task))? today"
+    )
+    return bool(
+        re.fullmatch(
+            rf"(?:can|could) i fit {duration}|do i have enough time for {duration}"
+            r"|(?:what is|what's) my largest free block today",
+            text,
+        )
+    )
+
+
+def _fit_duration_slot(view: dict[str, Any], minutes: int) -> Slot | None:
+    """Probe one unsaved session against the sampled snapshot, without reads or writes."""
+    planning = view["planning"]
+    at = dt.datetime.fromisoformat(planning["generated_at"])
+    _, end = _day_bounds(view["today"], view["timezone"])
+    scheduled = [
+        Item(
+            id=entry["id"],
+            kind="task",
+            status="open",
+            source="me",
+            start_at=_parse(entry["start_at"]),
+            end_at=_parse(entry["end_at"]),
+        )
+        for entry in planning["tasks"]
+        if entry.get("source", "me") == "me" and entry.get("start_at") and entry.get("end_at")
+    ]
+    busy = [
+        (_parse(entry["start_at"]), _parse(entry["end_at"])) for entry in planning["commitments"]
+    ]
+    candidate = Item(
+        id="fit-probe",
+        kind="task",
+        status="open",
+        source="me",
+        title="Unsaved session",
+        minutes=minutes,
+        importance=3,
+        pinned=0,
+        created_at=at,
+        due=end,
+    )
+    slots = place(
+        rank([candidate], at=at),
+        busy=busy,
+        hours=Hours.from_setting(view["hours"]),
+        at=at,
+        days=1,
+        until=end,
+        scheduled=scheduled,
+    )
+    return slots[0] if slots else None
+
+
 def _requested_minutes(question: str) -> int | None:
     lowered = question.casefold().replace("-", " ")
     words = {
@@ -1340,7 +2210,8 @@ def _requested_minutes(question: str) -> int | None:
         return None
     raw = match.group("amount")
     amount = float(words.get(raw, raw))
-    return round(amount * 60) if match.group("unit").startswith(("h", "hr")) else round(amount)
+    minutes = amount * 60 if match.group("unit").startswith("h") else amount
+    return int(minutes) if minutes.is_integer() else 0
 
 
 def _conflict_count(commitments: list[dict[str, Any]]) -> int:
@@ -2052,14 +2923,14 @@ def _plan_in_session(
 ) -> list[Slot]:
     at = now()
     items = store.open_items(session, owner_id)
-    local = [item for item in items if _is_local_item(item, owner_id)]
-    selected = set(item_ids or [])
-    ranked = rank([item for item in local if not selected or item.id in selected], at=at)
-    busy = [
-        *availability["busy"],
-        *((item.start_at, item.end_at) for item in items if item.start_at and item.end_at),
-    ]
-    return place(ranked, busy=busy, hours=hours, at=at, days=days, scheduled=local)
+    return project_open_tasks(
+        items=items,
+        remote_busy=availability["busy"],
+        hours=hours,
+        at=at,
+        days=days,
+        item_ids=item_ids,
+    )
 
 
 def apply_slots(owner_id: str, slots: list[Slot] | None, *, days: int = 7) -> list[Slot]:
