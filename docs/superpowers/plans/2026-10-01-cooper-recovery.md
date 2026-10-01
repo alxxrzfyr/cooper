@@ -835,7 +835,7 @@ Expected: PASS.
 ### Task 6: Acceptance, docs and PR
 
 - [x] Run `uv run pytest`, `uv run ruff check . && uv run ruff format --check .`, frontend tests, format and build, and `git diff --check`.
-- [ ] Run the app locally with a missed block. Check the At Risk button, the preview's old → new times in the right timezone, Dismiss, Apply, undo via Ask ("undo"), and the no-connected-calendar path. Record owner confirmation.
+- [x] Run the app locally with a missed block. Check the At Risk button, the preview's old → new times in the right timezone, Dismiss, Apply, undo via Ask ("undo"), and the no-connected-calendar path. Record owner confirmation.
 - [x] Update `docs/designs/cooper-product-rethink.md` (Guided recovery row), `PRD.md`/`ARCHITECTURE.md` ("recovery remains future" lines) and the spec's L279 note to say it's implemented, ungated in the beta, with the all-or-nothing undo policy.
 - [x] Implement on this stacked branch (PR #15) with Conventional Commits; fill in the PR template.
 
@@ -859,5 +859,5 @@ one backend commit. Deviations from the plan:
 
 Evidence: backend 501 pytest pass, including 11 recovery HTTP tests and 4 pure preview
 tests; Ruff check and format clean; frontend 245 tests pass, including 4 recovery UI
-tests; `npm run format:check` and build pass. Browser acceptance is open until the
-owner confirms it, because the agent environment cannot launch dev servers.
+tests; `npm run format:check` and build pass. Owner browser acceptance confirmed on
+2026-10-01 (local, no connected providers); the agent environment cannot launch dev servers.
