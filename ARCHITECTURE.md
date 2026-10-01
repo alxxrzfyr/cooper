@@ -4,21 +4,37 @@ The small set of files below does everything that exists today. Read them in thi
 will understand the whole app in about twenty minutes. Future integrations are marked explicitly;
 nothing below describes code that is not there.
 
+The [approved product direction](docs/designs/cooper-product-rethink.md) selects Cloud Run,
+server-funded Gemini with Groq fallback, and freemium subscriptions.
+The [provider ADR](docs/decisions/2026-09-30-included-ai-providers.md) records the order
+and the [fallback specification](docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md)
+sets its boundaries. Accounting and BYOK removal are implemented (see AI below); funded
+dispatch is disabled and hosting is still Render. Any new commercial
+schema or hosted cutover needs its own reviewed implementation and release gates.
+
+The [web-first boundary](docs/decisions/2026-09-30-web-first-product-boundary.md)
+keeps one responsive web/PWA and one backend, without native clients or separate
+agent services. The [draft architecture refinement](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
+specifies capacity, recovery, AI admission and cutover boundaries. Only capacity
+has an implemented first tranche in this working tree; recovery, AI admission and
+cutover remain future contracts. Review findings and evidence limits are in the
+[review record](docs/designs/cooper-web-first-review.md).
+
 ## Backend, today
 
 ```
 cooper/
-  auth.py      ~90 lines   Firebase ID-token verification for hosted mode
-  config.py   ~140 lines   local/shared-key and hosted/Firebase settings
-  db.py       ~340 lines   three owner-scoped tables, a session helper, the UTC column type
-  brain.py    ~380 lines   sentence → validated Action (Gemini, then regex)
-  planner.py  ~215 lines   rank() and place(); pure, no I/O, no model
-  google.py   ~390 lines   Calendar and Gmail over REST; no SDK
-  icloud.py   ~120 lines   Read-only iCloud calendars over CalDAV
-  mcp.py      ~90 lines    Bounded tool schemas and MCP result shapes
-  sources.py  ~100 lines   one busy-time pipe for every commitment source
-  watcher.py  ~250 lines   one fixed Gmail sync timer
-  app.py      ~1,450 lines every route; the only thing that writes to the database
+  auth.py      Firebase ID-token verification for hosted mode
+  config.py    local/shared-key and hosted/Firebase settings
+  db.py        three owner-scoped tables, session helper and UTC column type
+  brain.py     sentence to validated Action, model transport and rule fallback
+  planner.py   ranking, placement and planning snapshot; pure, no I/O or model
+  google.py    Calendar and Gmail over REST; no SDK
+  icloud.py    read-only iCloud calendars over CalDAV
+  mcp.py       bounded tool schemas and MCP result shapes
+  sources.py   one normalization/busy-time pipe for every commitment source
+  watcher.py   one fixed Gmail sync timer
+  app.py       routes, orchestration and every database write
 ```
 
 ## Backend, future
@@ -68,7 +84,7 @@ frontend/src/
   AvailabilitySettings.tsx weekday windows, overnight hours, breaks, and daily limits
   Chat.tsx          the conversation, grouped into runs like a messages app
   Calendar.tsx      day, week and month, coloured by category
-  Nav.tsx           top bar, bottom tabs, and the wide-screen rail
+  Nav.tsx           top bar, bottom tabs, and the wide-screen rail; owns collapse preference
   Row.tsx           a task or event, with its score breakdown
   Mascot.tsx        Cooper, one name per file in public/assets/mascot
   api.ts            the only place that calls the backend
@@ -186,6 +202,48 @@ after commit and generate a receipt from the state found there. If the item cann
 route reports an error instead of fabricating confirmation; overlap, waiting, and source-health
 warnings remain attached to the receipt.
 
+`answer_planning_intent` labels current and upcoming commitments separately,
+includes unscheduled tasks in remaining-work answers, and distinguishes priority
+from safe placement. Workload answers merge overlapping calendar intervals and
+report estimated and unknown unscheduled effort without treating those tasks as
+all due today. Calendar occupancy alone is not an overall capacity verdict. These
+renderer changes introduce no schema, model call, provider read or mutation path.
+
+`project_open_tasks()` supplies both the seven-day scheduler and the planning
+snapshot. Home recommends an unsaved task only when that projection places it at
+the earliest legal start (15 minutes after the snapshot). Active commitments still
+take precedence. Candidate task rows say an unsaved slot is available; absence of
+a saved block alone does not mean placement failed.
+
+`planning.capacity` reports unscheduled local tasks with deadlines between the
+sampled time and next local midnight. Candidates come from the full seven-day
+projection, so pinned future work can consume today's slots. Overdue work, missed
+blocks and other backlog are separate cohorts. Unknown estimates have an explicit
+count and partial-assessment warning. Source failure returns no candidates or
+open-window metric. Gap minutes are descriptive, not a feasibility verdict.
+
+Duration-fit answers use a pure synthetic `place()` call against the snapshot's
+commitments, scheduled tasks and hours, bounded by local midnight with `until`.
+The answer is an unsaved standalone candidate, not a reservation or backlog
+priority guarantee. Narrower, future and mixed horizons ask for a supported today
+question. Assessment and probes call no model and write no planning data. The
+existing owner-checked PATCH saves estimates and records undo; the UI refreshes
+the snapshot and retains failed drafts. Setup displays the server timezone;
+owner-selectable timezone persistence remains unimplemented.
+
+The landing's `plans` chapter pairs native FAQ disclosures with Free/Plus proposal
+cards. Horizontal chapter navigation retains the original 900px width breakpoint,
+independent of window height; narrower windows retain vertical flow. Section
+scrollbars are hidden without disabling overflow access, and the native named FAQ group
+allows one expanded answer. Shared subgrid rows align the FAQ/pricing headings and
+content edges; flex auto margins center the group without losing its top when it
+outgrows a short viewport. Flexible chapter columns and content-sized cards replace
+fixed desktop minimums. Vertical wheel gestures continue driving horizontal Lenis
+travel over disclosures, without nested-scroll bypass; the original RAF and entry
+effects remain unchanged. Narrow layouts stack through the existing width breakpoint.
+The beta CTA routes to `/signup`; the Plus button is disabled. There is
+no billing endpoint, entitlement enforcement or included-AI activation behind it.
+
 Local rescheduling uses the same rule: `brain.py` can propose a validated `move` action but cannot
 write it. `app.py` resolves the target across visible local and provider commitments, preserves a
 409 for ambiguity (including a local/provider title collision), rejects unknown direct ids, and
@@ -286,8 +344,19 @@ attach a bearer token to Google's redirect.
 Hosted requests have a short in-process abuse limit per verified UID: 120 requests per minute,
 with five Google sync or iCloud connection attempts per minute. A limit returns 429 with
 `Retry-After`. This protects the current single-worker API, not multiple replicas; a scaled
-deployment needs a shared edge limit. Gemini remains bring-your-own-key, with usage charged and
-limited by the Google project behind each person's key. Cooper keeps no spending ledger.
+deployment needs a shared edge limit.
+
+BYOK is removed: the API rejects `gemini_api_key` without echoing it, and Settings and
+onboarding have no key setup. Cooper supplies server-side Gemini (primary) and Groq
+(fallback) keys through `cooper/providers.py`, a urllib transport with no storage access.
+The [accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
+is implemented as four tables (`ai_allowance`, `ai_spend_envelope`, `ai_request`,
+`ai_attempt`, migration `0002`). `app.py` admits a logical request with a conditional
+allowance update, reserves cash before each dispatch, settles or freezes on usage, and
+commits a mutation with its replay receipt in one transaction. Funded dispatch is disabled
+by default; operator functions `provision_ai_pilot`, `abandon_ai_request`,
+`reconcile_ai_attempt` and `review_ai_envelopes` are never exposed over HTTP.
+Concurrency evidence is SQLite-only.
 
 **Gmail is a restricted scope.** Reading mail is among the heaviest permissions Google grants.
 Free in testing mode for a single developer; a published multi-user app requires a paid annual

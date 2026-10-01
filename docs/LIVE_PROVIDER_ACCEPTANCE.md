@@ -12,6 +12,15 @@ names, event names, credentials, and other private test details are intentionall
 here. Repeat this checklist after changes to provider authentication, normalization, scheduling,
 or read-only guarantees.
 
+### Current capacity release gate, 2026-10-01
+
+The new shared scheduling/capacity projection has automated and isolated-browser
+evidence, but has not repeated connected-provider acceptance. The non-secret local
+preflight reports Google client ID and client secret missing; the local shared key
+and encryption configuration are ready. No connected-account test or deployment
+is recorded for this change. The September acceptance applies to that earlier build.
+Configure the missing OAuth values privately and repeat the checklist before release.
+
 ## Safe Setup
 
 1. Copy `.env.example` to `.env` if needed. Keep `.env` local: it is gitignored.
