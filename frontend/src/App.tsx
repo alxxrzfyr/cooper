@@ -1122,6 +1122,18 @@ export default function App() {
                   }
                 }}
                 onApplyRecovery={(fingerprint) => act(() => api.applyRecovery(fingerprint))}
+                onLoadWeeklyReview={async () => {
+                  try {
+                    return await api.weeklyReview();
+                  } catch (error) {
+                    if (error instanceof ApiError && handleApiAuthFailure(error)) return null;
+                    announce(
+                      "note",
+                      error instanceof Error ? error.message : "Something went wrong.",
+                    );
+                    return null;
+                  }
+                }}
                 onGoToChat={() => {
                   setTab("chat");
                   setMode("ai");

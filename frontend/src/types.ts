@@ -330,3 +330,23 @@ export interface RecoveryPreview {
   kept: RecoveryRow[];
   unplaced: RecoveryRow[];
 }
+
+/** Read-only summary from GET /api/review/week; dates are local to the owner. */
+export interface WeeklyReview {
+  timezone: string;
+  complete: boolean;
+  past: {
+    start: string;
+    end: string;
+    completed: Array<{ item_id: string; title: string; done_at: string }>;
+  };
+  unfinished: Array<{ item_id: string; title: string; state: "overdue" | "missed_block" }>;
+  upcoming: Array<{
+    date: string;
+    fixed_minutes: number;
+    planned_minutes: number;
+    deadlines: Array<{ item_id: string; title: string }>;
+  }>;
+  deadline_risks: Array<{ item_id: string; title: string; due: string; reason: string }>;
+  uncertainty: { unscheduled_count: number; unknown_estimate_count: number };
+}

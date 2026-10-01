@@ -11,6 +11,7 @@ import {
   type Reply,
   type SyncSummary,
   type View,
+  type WeeklyReview,
 } from "./types";
 import { auth, clientAuthMode } from "./firebase";
 import { getRuntimeConfig } from "./runtime-config";
@@ -113,6 +114,7 @@ export const api = {
     call<{ placed: unknown[]; receipt?: MutationReceipt; view: View }>("/api/schedule", post()),
   undo: () => call<Reply>("/api/undo", post()),
   recoveryPreview: () => call<RecoveryPreview>("/api/recovery/preview", post()),
+  weeklyReview: () => call<WeeklyReview>("/api/review/week"),
   applyRecovery: (fingerprint: string) => call<Reply>("/api/recovery/apply", post({ fingerprint })),
   act: (id: string, verb: "complete" | "drop" | "pin" | "schedule") =>
     call<Reply>(`/api/items/${id}/${verb}`, post()),

@@ -74,6 +74,7 @@ from cooper.planner import (
     preview_recovery,
     project_open_tasks,
     rank,
+    weekly_review,
 )
 from cooper.watcher import EmailProposal, parse_confirmation
 
@@ -3439,6 +3440,31 @@ def do_schedule(request: Request) -> dict[str, Any]:
         )
         response["receipt"] = receipt
     return response
+
+
+@app.get("/api/review/week")
+def do_weekly_review(request: Request) -> dict[str, Any]:
+    """Read-only: what got done, what slipped, and the coming week's load."""
+    owner_id = request_owner(request).uid
+    availability = _external_availability(owner_id, days=8)
+    hours = current_hours(owner_id)
+    since = now() - dt.timedelta(days=8)  # covers seven local dates in any timezone
+    with store.session() as session:
+        completed = list(
+            session.scalars(
+                select(Item).where(
+                    Item.owner_id == owner_id, Item.status == "done", Item.done_at >= since
+                )
+            )
+        )
+        return weekly_review(
+            items=store.open_items(session, owner_id),
+            completed=completed,
+            remote_busy=list(availability["busy"]),
+            hours=hours,
+            at=now(),
+            complete=bool(availability["complete"]),
+        )
 
 
 @app.post("/api/recovery/preview")

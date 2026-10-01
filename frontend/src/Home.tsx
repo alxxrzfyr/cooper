@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Mascot } from "./Mascot";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { Row } from "./Row";
+import { WeeklyReview } from "./WeeklyReview";
 import type {
   CalendarEvent,
   Item,
@@ -10,6 +11,7 @@ import type {
   Ranked,
   RecoveryPreview,
   View,
+  WeeklyReview as WeeklyReviewData,
 } from "./types";
 
 /** Dashboard backed exclusively by the resolved planning snapshot. */
@@ -314,6 +316,7 @@ export function Home({
   onGoToChat,
   onPreviewRecovery,
   onApplyRecovery,
+  onLoadWeeklyReview,
 }: {
   view: View;
   busy: boolean;
@@ -324,6 +327,7 @@ export function Home({
   onGoToChat: () => void;
   onPreviewRecovery: () => Promise<RecoveryPreview | null>;
   onApplyRecovery: (fingerprint: string) => Promise<boolean>;
+  onLoadWeeklyReview: () => Promise<WeeklyReviewData | null>;
 }) {
   const { planning } = view;
   const now = new Date(planning.generated_at);
@@ -610,6 +614,13 @@ export function Home({
           </div>
         </section>
       )}
+
+      <section className="group home-week" aria-label="This week">
+        <div className="group__label">This week</div>
+        <div className="inset">
+          <WeeklyReview onLoad={onLoadWeeklyReview} />
+        </div>
+      </section>
 
       {(visibleFutureCommitments.length > 0 || visibleUpcomingTasks.length > 0) && (
         <section className="group" aria-label="Upcoming">

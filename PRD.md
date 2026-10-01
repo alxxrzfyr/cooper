@@ -249,7 +249,8 @@ unavailable calendars suppress capacity claims. Duration-fit answers respect exa
 placement constraints and local midnight. Manual estimate editing refreshes the
 assessment and supports undo. The pilot uses one configured server timezone for all
 owners. Guided recovery of missed blocks (preview, then explicit apply, one undo) is
-implemented and ungated in the beta. Broader demand analysis and weekly review remain future work.
+implemented and ungated in the beta. A read-only weekly review (`GET /api/review/week`, Home's
+This week panel) is implemented. Broader demand analysis and reusable routines remain future work.
 
 The public landing includes FAQs beside proposed Free and Plus choices ($0 and
 $8/month). The beta signup link works; Plus checkout is disabled and explicitly

@@ -375,6 +375,152 @@ def preview_recovery(
     return RecoveryPlan(moves=moves, kept=kept, unplaced=unplaced)
 
 
+REVIEW_DAYS = 7
+
+
+def weekly_review(
+    *,
+    items: Sequence[Item],
+    completed: Sequence[Item],
+    remote_busy: Sequence[tuple[dt.datetime, dt.datetime]],
+    hours: Hours,
+    at: dt.datetime,
+    complete: bool,
+) -> dict[str, Any]:
+    """Read-only week summary. Past and upcoming windows are seven local dates each.
+
+    `items` are the owner's open items; `completed` are done items (any age). Remote busy
+    contributes durations only, so no other person's titles or attendees appear.
+    """
+    zone = ZoneInfo(hours.timezone)
+    today = at.astimezone(zone).date()
+
+    def midnight(day: dt.date) -> dt.datetime:
+        return dt.datetime.combine(day, dt.time(), tzinfo=zone).astimezone(dt.UTC)
+
+    past_start, upcoming_end = (
+        today - dt.timedelta(days=REVIEW_DAYS - 1),
+        today + dt.timedelta(days=REVIEW_DAYS),
+    )
+    local = [item for item in items if (item.source or "me") == "me"]
+    tasks = [item for item in local if item.kind == "task" and item.status == "open"]
+
+    past_from, past_until = midnight(past_start), midnight(today + dt.timedelta(days=1))
+    done = sorted(
+        (
+            item
+            for item in completed
+            if (item.source or "me") == "me"
+            and item.kind == "task"
+            and item.done_at
+            and past_from <= aware(item.done_at) < past_until
+        ),
+        key=lambda item: aware(item.done_at),
+    )
+
+    unfinished = []
+    for item in tasks:
+        if item.due and aware(item.due) < at:
+            unfinished.append({"item_id": item.id, "title": item.title, "state": "overdue"})
+        elif item.end_at and aware(item.end_at) <= at:
+            unfinished.append({"item_id": item.id, "title": item.title, "state": "missed_block"})
+
+    fixed = merge_intervals(
+        [
+            *((aware(start), aware(end)) for start, end in remote_busy),
+            *(
+                (aware(item.start_at), aware(item.end_at))
+                for item in items
+                if item.kind == "event" and item.start_at and item.end_at
+            ),
+        ]
+    )
+    fixed_by_day: dict[dt.date, float] = {}
+    for start, end in fixed:
+        for day, minutes in _day_minutes(start, end, zone).items():
+            fixed_by_day[day] = fixed_by_day.get(day, 0) + minutes
+    planned_by_day: dict[dt.date, float] = {}
+    for item in tasks:
+        if item.start_at and item.end_at:
+            span = _day_minutes(aware(item.start_at), aware(item.end_at), zone)
+            for day, minutes in span.items():
+                planned_by_day[day] = planned_by_day.get(day, 0) + minutes
+
+    upcoming_due = [
+        item for item in tasks if item.due and at <= aware(item.due) < midnight(upcoming_end)
+    ]
+    upcoming = []
+    for offset in range(REVIEW_DAYS):
+        day = today + dt.timedelta(days=offset)
+        upcoming.append(
+            {
+                "date": day.isoformat(),
+                "fixed_minutes": round(fixed_by_day.get(day, 0)),
+                "planned_minutes": round(planned_by_day.get(day, 0)),
+                "deadlines": [
+                    {"item_id": item.id, "title": item.title}
+                    for item in sorted(upcoming_due, key=lambda entry: aware(entry.due))
+                    if aware(item.due).astimezone(zone).date() == day
+                ],
+            }
+        )
+
+    projected = (
+        {
+            slot.item_id
+            for slot in project_open_tasks(
+                items=items, remote_busy=remote_busy, hours=hours, at=at, days=REVIEW_DAYS
+            )
+        }
+        if complete
+        else set()
+    )
+    risks = []
+    for item in sorted(upcoming_due, key=lambda entry: aware(entry.due)):
+        if item.end_at and aware(item.end_at) <= aware(item.due):
+            continue  # already has a block that ends by the deadline
+        if not item.minutes:
+            reason = "unknown_estimate"
+        elif not complete:
+            reason = "calendar_unchecked"
+        elif item.id in projected:
+            continue
+        else:
+            reason = "no_feasible_slot"
+        risks.append(
+            {
+                "item_id": item.id,
+                "title": item.title,
+                "due": aware(item.due).isoformat(),
+                "reason": reason,
+            }
+        )
+
+    return {
+        "timezone": hours.timezone,
+        "complete": complete,
+        "past": {
+            "start": past_start.isoformat(),
+            "end": today.isoformat(),
+            "completed": [
+                {
+                    "item_id": item.id,
+                    "title": item.title,
+                    "done_at": aware(item.done_at).isoformat(),
+                }
+                for item in done
+            ],
+        },
+        "unfinished": unfinished,
+        "upcoming": upcoming,
+        "deadline_risks": risks,
+        "uncertainty": {
+            "unscheduled_count": sum(1 for item in tasks if not item.start_at),
+            "unknown_estimate_count": sum(1 for item in tasks if not item.minutes),
+        },
+    }
+
+
 def assess_today_capacity(
     *,
     items: Sequence[Item],

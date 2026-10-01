@@ -2842,3 +2842,112 @@ class TestRecoveryPreview:
         remote = self.block("remote", start=self.AT - dt.timedelta(hours=1), source="google")
 
         assert self.preview([done, remote]) == RecoveryPlan(moves=[], kept=[], unplaced=[])
+
+
+class TestWeeklyReview:
+    """Read-only week summary with explicit local-date boundaries."""
+
+    AT = dt.datetime(2026, 10, 5, 2, 0, tzinfo=dt.UTC)  # Monday 10:00 Asia/Singapore
+
+    def local(self, day: int, hour: int, minute: int = 0) -> dt.datetime:
+        return dt.datetime(2026, 10, day, hour, minute, tzinfo=ZONE).astimezone(dt.UTC)
+
+    def review(self, *, items=(), completed=(), busy=(), complete=True):
+        from cooper.planner import weekly_review
+
+        return weekly_review(
+            items=list(items),
+            completed=list(completed),
+            remote_busy=list(busy),
+            hours=Hours(),
+            at=self.AT,
+            complete=complete,
+        )
+
+    def test_windows_are_local_dates(self) -> None:
+        body = self.review()
+        assert body["past"]["start"] == "2026-09-29"
+        assert body["past"]["end"] == "2026-10-05"
+        assert [day["date"] for day in body["upcoming"]] == [
+            "2026-10-05",
+            "2026-10-06",
+            "2026-10-07",
+            "2026-10-08",
+            "2026-10-09",
+            "2026-10-10",
+            "2026-10-11",
+        ]
+
+    def test_completed_only_counts_the_past_seven_local_dates(self) -> None:
+        def september(day: int, hour: int, minute: int) -> dt.datetime:
+            return dt.datetime(2026, 9, day, hour, minute, tzinfo=ZONE).astimezone(dt.UTC)
+
+        inside = task(id="in", source="me", status="done", done_at=september(29, 0, 30))
+        before = task(id="old", source="me", status="done", done_at=september(28, 23, 30))
+        body = self.review(completed=[inside, before])
+        assert [row["item_id"] for row in body["past"]["completed"]] == ["in"]
+
+    def test_unfinished_lists_overdue_and_missed_blocks(self) -> None:
+        overdue = task(id="late", source="me", due=self.AT - dt.timedelta(hours=1))
+        missed = task(
+            id="missed",
+            source="me",
+            start_at=self.AT - dt.timedelta(hours=2),
+            end_at=self.AT - dt.timedelta(hours=1),
+        )
+        body = self.review(items=[overdue, missed])
+        assert {(row["item_id"], row["state"]) for row in body["unfinished"]} == {
+            ("late", "overdue"),
+            ("missed", "missed_block"),
+        }
+
+    def test_fixed_minutes_merge_overlapping_busy_and_events(self) -> None:
+        event = task(
+            id="ev",
+            kind="event",
+            source="me",
+            start_at=self.local(6, 9),
+            end_at=self.local(6, 11),
+        )
+        busy = [(self.local(6, 10), self.local(6, 12))]
+        body = self.review(items=[event], busy=busy)
+        tuesday = body["upcoming"][1]
+        assert tuesday["fixed_minutes"] == 180
+        assert "ev" not in json.dumps(body["upcoming"])  # durations only, no titles or ids
+
+    def test_planned_minutes_and_deadlines_per_day(self) -> None:
+        block = task(
+            id="b",
+            source="me",
+            minutes=60,
+            start_at=self.local(7, 9),
+            end_at=self.local(7, 10),
+        )
+        due = task(id="d", source="me", title="Report", due=self.local(8, 17), minutes=30)
+        body = self.review(items=[block, due])
+        assert body["upcoming"][2]["planned_minutes"] == 60
+        assert body["upcoming"][3]["deadlines"] == [{"item_id": "d", "title": "Report"}]
+
+    def test_deadline_risks_have_reasons(self) -> None:
+        fits = task(id="fits", source="me", minutes=30, due=self.local(9, 17))
+        unknown = task(id="unknown", source="me", minutes=None, due=self.local(9, 17))
+        huge = task(id="huge", source="me", minutes=60 * 40, due=self.local(6, 17))
+        body = self.review(items=[fits, unknown, huge])
+        assert {(row["item_id"], row["reason"]) for row in body["deadline_risks"]} == {
+            ("unknown", "unknown_estimate"),
+            ("huge", "no_feasible_slot"),
+        }
+        assert body["uncertainty"]["unknown_estimate_count"] == 1
+
+    def test_unchecked_calendar_never_claims_a_deadline_fits(self) -> None:
+        fits = task(id="fits", source="me", minutes=30, due=self.local(9, 17))
+        body = self.review(items=[fits], complete=False)
+        assert body["complete"] is False
+        assert body["deadline_risks"] == [
+            {
+                "item_id": "fits",
+                "title": fits.title,
+                "due": fits.due.isoformat(),
+                "reason": "calendar_unchecked",
+            }
+        ]
