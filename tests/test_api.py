@@ -4400,3 +4400,63 @@ class TestRecovery:
             session.get(module.Item, "missed-1").owner_id = "someone-else"
 
         assert _preview(client)["moves"] == []
+
+
+class TestWeeklyReviewApi:
+    def test_review_reports_the_week_without_writing(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        monkeypatch.setattr(module, "now", lambda: RECOVERY_AT)
+        monkeypatch.setattr(module, "_external_availability", _availability())
+        with module.store.session() as session:
+            session.add_all(
+                [
+                    module.Item(
+                        id="done-1",
+                        owner_id="local",
+                        source="me",
+                        kind="task",
+                        title="Shipped memo",
+                        minutes=30,
+                        importance=3,
+                        category="work",
+                        status="done",
+                        done_at=RECOVERY_AT - dt.timedelta(days=2),
+                        created_at=RECOVERY_AT - dt.timedelta(days=3),
+                    ),
+                    module.Item(
+                        id="other-owner",
+                        owner_id="someone-else",
+                        source="me",
+                        kind="task",
+                        title="Not mine",
+                        minutes=30,
+                        importance=3,
+                        category="work",
+                        status="done",
+                        done_at=RECOVERY_AT - dt.timedelta(days=1),
+                        created_at=RECOVERY_AT - dt.timedelta(days=3),
+                    ),
+                ]
+            )
+
+        response = client.get("/api/review/week", headers=HEADERS)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [row["item_id"] for row in body["past"]["completed"]] == ["done-1"]
+        assert len(body["upcoming"]) == 7
+        assert body["complete"] is True
+        with module.store.session() as session:
+            assert module.store.last_change(session, "local") is None
+
+    def test_review_flags_an_unchecked_calendar(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        monkeypatch.setattr(module, "now", lambda: RECOVERY_AT)
+        monkeypatch.setattr(module, "_external_availability", _availability(complete=False))
+
+        assert client.get("/api/review/week", headers=HEADERS).json()["complete"] is False
+
+    def test_review_requires_the_local_key(self, client: TestClient) -> None:
+        assert client.get("/api/review/week").status_code == 403
