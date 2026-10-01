@@ -15,9 +15,10 @@ schema or hosted cutover needs its own reviewed implementation and release gates
 The [web-first boundary](docs/decisions/2026-09-30-web-first-product-boundary.md)
 keeps one responsive web/PWA and one backend, without native clients or separate
 agent services. The [draft architecture refinement](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
-specifies capacity, recovery, AI admission and cutover boundaries. Only capacity
-has an implemented first tranche in this working tree; recovery, AI admission and
-cutover remain future contracts. Review findings and evidence limits are in the
+specifies capacity, recovery, AI admission and cutover boundaries. Capacity, guided
+recovery (`/api/recovery/preview` and `/apply`, fingerprint stale rejection, one-Change
+batch undo that refuses on conflict) and funded-AI accounting are implemented; funded
+dispatch and hosted cutover remain gated. Review findings and evidence limits are in the
 [review record](docs/designs/cooper-web-first-review.md).
 
 ## Backend, today

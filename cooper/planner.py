@@ -270,6 +270,7 @@ def project_open_tasks(
     at: dt.datetime,
     days: int = 7,
     item_ids: Sequence[str] | None = None,
+    released: frozenset[str] = frozenset(),
 ) -> list[Slot]:
     """Share one ranked cohort and placement algorithm across assessment and scheduling."""
     local = [item for item in items if (item.source or "me") == "me"]
@@ -279,7 +280,7 @@ def project_open_tasks(
         *(
             (aware(item.start_at), aware(item.end_at))
             for item in items
-            if item.start_at and item.end_at
+            if item.start_at and item.end_at and item.id not in released
         ),
     ]
     return place(
@@ -289,7 +290,89 @@ def project_open_tasks(
         at=at,
         days=days,
         scheduled=local,
+        released=released,
     )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RecoveryMove:
+    item_id: str
+    title: str
+    old_start: dt.datetime
+    old_end: dt.datetime
+    start: dt.datetime
+    end: dt.datetime
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RecoveryPlan:
+    moves: list[RecoveryMove]
+    kept: list[tuple[str, str]]
+    unplaced: list[tuple[str, str]]
+
+
+def preview_recovery(
+    *,
+    items: Sequence[Item],
+    remote_busy: Sequence[tuple[dt.datetime, dt.datetime]],
+    hours: Hours,
+    at: dt.datetime,
+    days: int = 7,
+) -> RecoveryPlan:
+    """Re-place missed local blocks without mutating inputs; pinned blocks stay put."""
+    missed = sorted(
+        (
+            item
+            for item in items
+            if (item.source or "me") == "me"
+            and item.kind == "task"
+            and item.status == "open"
+            and item.start_at
+            and item.end_at
+            and aware(item.end_at) <= at
+        ),
+        key=lambda item: aware(item.start_at),
+    )
+    kept = [(item.id, "pinned") for item in missed if item.pinned]
+    released = frozenset(item.id for item in missed if not item.pinned)
+    if not released:
+        return RecoveryPlan(moves=[], kept=kept, unplaced=[])
+    slots = {
+        slot.item_id: slot
+        for slot in project_open_tasks(
+            items=items,
+            remote_busy=remote_busy,
+            hours=hours,
+            at=at,
+            days=days,
+            item_ids=sorted(released),
+            released=released,
+        )
+    }
+    moves: list[RecoveryMove] = []
+    unplaced: list[tuple[str, str]] = []
+    for item in missed:
+        if item.id not in released:
+            continue
+        slot = slots.get(item.id)
+        if slot is not None:
+            moves.append(
+                RecoveryMove(
+                    item_id=item.id,
+                    title=item.title,
+                    old_start=aware(item.start_at),
+                    old_end=aware(item.end_at),
+                    start=slot.start,
+                    end=slot.end,
+                )
+            )
+        elif item.due and aware(item.due) < at:
+            unplaced.append((item.id, "overdue"))
+        elif not item.minutes:
+            unplaced.append((item.id, "unknown_estimate"))
+        else:
+            unplaced.append((item.id, "no_feasible_slot"))
+    return RecoveryPlan(moves=moves, kept=kept, unplaced=unplaced)
 
 
 def assess_today_capacity(
@@ -502,8 +585,13 @@ def place(
     days: int = 7,
     scheduled: list[Item] | None = None,
     until: dt.datetime | None = None,
+    released: frozenset[str] = frozenset(),
 ) -> list[Slot]:
-    """Place exact continuous sessions within availability and before deadlines."""
+    """Place exact continuous sessions within availability and before deadlines.
+
+    `released` items keep their stored slot but are treated as unscheduled: their old
+    time is neither reserved nor counted, and they may be placed again.
+    """
     zone = ZoneInfo(hours.timezone)
     earliest = at.astimezone(dt.UTC) + dt.timedelta(minutes=LEAD)
     taken = [(a.astimezone(dt.UTC), b.astimezone(dt.UTC)) for a, b in busy]
@@ -511,7 +599,12 @@ def place(
     minutes: dict[dt.date, float] = {}
     gap = dt.timedelta(minutes=hours.break_minutes)
     for item in scheduled or []:
-        if item.status != "open" or item.kind != "task" or not item.scheduled:
+        if (
+            item.id in released
+            or item.status != "open"
+            or item.kind != "task"
+            or not item.scheduled
+        ):
             continue
         start, end = aware(item.start_at), aware(item.end_at)
         if start is None or end is None:
@@ -526,7 +619,11 @@ def place(
     slots: list[Slot] = []
     for entry in ranked:
         item = entry.item
-        if item.scheduled or item.minutes is None or item.minutes <= 0:
+        if (
+            (item.scheduled and item.id not in released)
+            or item.minutes is None
+            or item.minutes <= 0
+        ):
             continue
         duration = dt.timedelta(minutes=item.minutes)
         deadline = aware(item.due)

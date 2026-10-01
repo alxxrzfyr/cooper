@@ -1,8 +1,16 @@
 import { useState } from "react";
 
 import { Mascot } from "./Mascot";
+import { RecoveryPanel } from "./RecoveryPanel";
 import { Row } from "./Row";
-import type { CalendarEvent, Item, PlanningCommitment, Ranked, View } from "./types";
+import type {
+  CalendarEvent,
+  Item,
+  PlanningCommitment,
+  Ranked,
+  RecoveryPreview,
+  View,
+} from "./types";
 
 /** Dashboard backed exclusively by the resolved planning snapshot. */
 
@@ -304,6 +312,8 @@ export function Home({
   onSchedule,
   onMove,
   onGoToChat,
+  onPreviewRecovery,
+  onApplyRecovery,
 }: {
   view: View;
   busy: boolean;
@@ -312,6 +322,8 @@ export function Home({
   onSchedule: () => void;
   onMove: (id: string, start: string, minutes: number) => Promise<boolean>;
   onGoToChat: () => void;
+  onPreviewRecovery: () => Promise<RecoveryPreview | null>;
+  onApplyRecovery: (fingerprint: string) => Promise<boolean>;
 }) {
   const { planning } = view;
   const now = new Date(planning.generated_at);
@@ -587,6 +599,14 @@ export function Home({
                 <span>View item</span>
               </a>
             ))}
+            {planning.risks.some((risk) => risk.kind === "missed_block") && (
+              <RecoveryPanel
+                timeZone={zone}
+                busy={busy}
+                onPreview={onPreviewRecovery}
+                onApply={onApplyRecovery}
+              />
+            )}
           </div>
         </section>
       )}

@@ -88,8 +88,10 @@ def test_backend_env_example_documents_local_and_hosted_values() -> None:
         "COOPER_GOOGLE_REDIRECT_URI=",
     ):
         assert expected in hosted
-    assert "COOPER_GEMINI_API_KEY" not in local
-    assert "COOPER_GEMINI_API_KEY" not in hosted
+    # Cooper-supplied keys are documented, but both examples ship with included AI off.
+    assert "COOPER_INCLUDED_AI_ENABLED=false" in local
+    assert "COOPER_INCLUDED_AI_ENABLED=false" in hosted
+    assert "COOPER_GEMINI_API_KEY=\n" in local  # no real-looking key in the local example
     assert "COOPER_ALLOWED_EMAILS" not in hosted
     assert "render.env.example" in local
 

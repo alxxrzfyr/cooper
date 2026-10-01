@@ -1109,6 +1109,19 @@ export default function App() {
                 onMove={(itemId, start, minutes) =>
                   act(() => api.reschedule(itemId, start, minutes))
                 }
+                onPreviewRecovery={async () => {
+                  try {
+                    return await api.recoveryPreview();
+                  } catch (error) {
+                    if (error instanceof ApiError && handleApiAuthFailure(error)) return null;
+                    announce(
+                      "note",
+                      error instanceof Error ? error.message : "Something went wrong.",
+                    );
+                    return null;
+                  }
+                }}
+                onApplyRecovery={(fingerprint) => act(() => api.applyRecovery(fingerprint))}
                 onGoToChat={() => {
                   setTab("chat");
                   setMode("ai");

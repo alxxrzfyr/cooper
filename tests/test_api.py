@@ -4198,3 +4198,205 @@ def test_existing_local_database_without_ai_migration_keeps_core_working(monkeyp
         )
         assert asked.status_code == 200
         assert asked.json()["source"] == "cooper"
+
+
+RECOVERY_AT = dt.datetime(2026, 10, 5, 2, 0, tzinfo=dt.UTC)  # Monday 10:00 Asia/Singapore
+RECOVERY_OLD_END = RECOVERY_AT - dt.timedelta(minutes=45)
+
+
+def _availability(*, busy=(), complete=True):
+    def fake(_owner_id: str, **_kwargs: object) -> dict[str, object]:
+        health = [] if complete else [{"source": "google", "status": "unavailable"}]
+        return {
+            "busy": list(busy),
+            "source_health": health,
+            "checked_at": RECOVERY_AT.isoformat(),
+            "range_start": RECOVERY_AT.isoformat(),
+            "range_end": (RECOVERY_AT + dt.timedelta(days=8)).isoformat(),
+            "complete": complete,
+        }
+
+    return fake
+
+
+def _recovery_setup(module, monkeypatch: pytest.MonkeyPatch, **availability: object) -> None:
+    monkeypatch.setattr(module, "now", lambda: RECOVERY_AT)
+    monkeypatch.setattr(module, "_external_availability", _availability(**availability))
+    with module.store.session() as session:
+        session.add(
+            module.Item(
+                id="missed-1",
+                owner_id="local",
+                source="me",
+                kind="task",
+                title="Draft memo",
+                minutes=45,
+                importance=3,
+                category="work",
+                status="open",
+                start_at=RECOVERY_AT - dt.timedelta(minutes=90),
+                end_at=RECOVERY_OLD_END,
+                created_at=RECOVERY_AT - dt.timedelta(days=1),
+            )
+        )
+
+
+def _preview(client: TestClient) -> dict[str, Any]:
+    response = client.post("/api/recovery/preview", headers=HEADERS)
+    assert response.status_code == 200
+    return response.json()
+
+
+def _apply(client: TestClient, fingerprint: str):
+    return client.post("/api/recovery/apply", headers=HEADERS, json={"fingerprint": fingerprint})
+
+
+def _stored_end(module) -> dt.datetime:
+    with module.store.session() as session:
+        return module.aware(module.store.get_item(session, "local", "missed-1").end_at)
+
+
+class TestRecovery:
+    def test_preview_is_read_only(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        body = _preview(client)
+
+        assert body["complete"] is True
+        assert [move["item_id"] for move in body["moves"]] == ["missed-1"]
+        assert body["moves"][0]["title"] == "Draft memo"
+        assert len(body["fingerprint"]) == 64
+        with module.store.session() as session:
+            assert module.store.last_change(session, "local") is None
+        assert _stored_end(module) == RECOVERY_OLD_END
+
+    def test_preview_proposes_nothing_when_a_calendar_failed(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch, complete=False)
+        body = _preview(client)
+
+        assert body["complete"] is False
+        assert body["moves"] == []
+
+    def test_apply_moves_the_batch_with_one_change(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        preview = _preview(client)
+        response = _apply(client, preview["fingerprint"])
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["kind"] == "rescheduled"
+        assert body["receipt"]["operation"] == "reschedule"
+        with module.store.session() as session:
+            item = module.store.get_item(session, "local", "missed-1")
+            assert module.aware(item.start_at).isoformat() == preview["moves"][0]["start"]
+            assert module.store.last_change(session, "local").label == "Recovered 1 missed block"
+
+    def test_apply_rejects_a_calendar_change_since_preview(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        preview = _preview(client)
+        move = preview["moves"][0]
+        new_event = (
+            dt.datetime.fromisoformat(move["start"]),
+            dt.datetime.fromisoformat(move["end"]),
+        )
+        monkeypatch.setattr(module, "_external_availability", _availability(busy=[new_event]))
+
+        response = _apply(client, preview["fingerprint"])
+
+        assert response.status_code == 409
+        assert "changed since this preview" in response.json()["detail"]
+        with module.store.session() as session:
+            assert module.store.last_change(session, "local") is None
+        assert _stored_end(module) == RECOVERY_OLD_END
+
+    def test_apply_rejects_a_local_edit_since_preview(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        preview = _preview(client)
+        with module.store.session() as session:
+            module.store.get_item(session, "local", "missed-1").minutes = 90
+
+        assert _apply(client, preview["fingerprint"]).status_code == 409
+        assert _stored_end(module) == RECOVERY_OLD_END
+
+    def test_apply_refuses_when_a_calendar_failed(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        preview = _preview(client)
+        monkeypatch.setattr(module, "_external_availability", _availability(complete=False))
+
+        response = _apply(client, preview["fingerprint"])
+
+        assert response.status_code == 409
+        assert "won’t move anything" in response.json()["detail"]
+        assert _stored_end(module) == RECOVERY_OLD_END
+
+    def test_apply_with_nothing_to_recover_is_rejected(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        import cooper.app as module
+
+        monkeypatch.setattr(module, "now", lambda: RECOVERY_AT)
+        monkeypatch.setattr(module, "_external_availability", _availability())
+        preview = _preview(client)
+
+        assert preview["moves"] == []
+        assert _apply(client, preview["fingerprint"]).status_code == 422
+
+    def test_apply_rejects_a_malformed_fingerprint(self, client: TestClient) -> None:
+        assert _apply(client, "short").status_code == 422
+
+    def test_undo_restores_every_old_slot(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        _apply(client, _preview(client)["fingerprint"])
+
+        body = client.post("/api/undo", headers=HEADERS).json()
+
+        assert body["kind"] == "undone"
+        assert _stored_end(module) == RECOVERY_OLD_END
+
+    def test_undo_refuses_when_an_item_diverged(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        _apply(client, _preview(client)["fingerprint"])
+        with module.store.session() as session:  # an unrecorded write by another path
+            item = module.store.get_item(session, "local", "missed-1")
+            moved_to = module.aware(item.start_at) + dt.timedelta(hours=1)
+            item.start_at, item.end_at = moved_to, moved_to + dt.timedelta(minutes=45)
+
+        body = client.post("/api/undo", headers=HEADERS).json()
+
+        assert body["kind"] == "note"
+        assert "Draft memo" in body["message"]
+        with module.store.session() as session:
+            item = module.store.get_item(session, "local", "missed-1")
+            assert module.aware(item.start_at) == moved_to
+            change = module.store.last_change(session, "local")
+            assert change is not None and change.label.startswith("Recovered")
+
+    def test_recovery_is_owner_scoped(self, client: TestClient, monkeypatch) -> None:
+        import cooper.app as module
+
+        _recovery_setup(module, monkeypatch)
+        with module.store.session() as session:
+            session.get(module.Item, "missed-1").owner_id = "someone-else"
+
+        assert _preview(client)["moves"] == []

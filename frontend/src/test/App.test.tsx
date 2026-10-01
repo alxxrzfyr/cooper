@@ -249,6 +249,8 @@ async function openAi(user = userEvent.setup()) {
 
 interface Routes {
   itemError?: string;
+  recoveryPreview?: unknown;
+  recoveryApply?: Reply | { status: number; detail: string };
   view?: View;
   todayView?: View;
   today?: View | { status: number; detail: string };
@@ -324,6 +326,15 @@ function stub(routes: Routes) {
       }
       if (url.includes("/api/icloud/")) {
         return json({ view: currentView });
+      }
+      if (url.includes("/api/recovery/preview")) {
+        return json(routes.recoveryPreview ?? {});
+      }
+      if (url.includes("/api/recovery/apply")) {
+        const configured = routes.recoveryApply ?? reply({ kind: "rescheduled" });
+        return "status" in configured
+          ? json({ detail: configured.detail }, configured.status)
+          : json(withView(configured));
       }
       if (url.includes("/api/undo")) {
         return json(withView(reply({ kind: "undone", message: "Undid: Added." })));
@@ -2806,6 +2817,121 @@ describe("the dashboard", () => {
     const catchUp = (await screen.findByText("Catch up")).closest("section") as HTMLElement;
     expect(within(catchUp).getByText("Yesterday standup")).toBeInTheDocument();
     expect(document.querySelector("#agenda-cooper\\:missed")).toBeTruthy();
+  });
+
+  function missedView() {
+    const missed = block({
+      id: "missed",
+      title: "Yesterday standup",
+      start_at: atLocal("2026-08-30", 9),
+    });
+    return snapshotView({
+      commitments: [
+        {
+          id: "cooper:missed",
+          source: "cooper",
+          source_id: missed.id,
+          aliases: ["cooper:missed"],
+          title: missed.title,
+          kind: "task",
+          start_at: missed.start_at!,
+          end_at: missed.end_at!,
+          all_day: false,
+          category: "work",
+          editable: true,
+          local_item_id: missed.id,
+          conflict: false,
+          item: { ...missed, source: "me" as const },
+        },
+      ],
+      focus: { now_id: null, next_id: null },
+      risks: [{ kind: "missed_block", item_id: missed.id }],
+    });
+  }
+
+  const recoveryPreview = {
+    fingerprint: "a".repeat(64),
+    complete: true,
+    moves: [
+      {
+        item_id: "missed",
+        title: "Yesterday standup",
+        old_start: "2026-08-30T01:00:00+00:00",
+        old_end: "2026-08-30T02:00:00+00:00",
+        start: "2026-08-31T03:00:00+00:00",
+        end: "2026-08-31T04:00:00+00:00",
+      },
+    ],
+    kept: [{ item_id: "pinned", title: "Pinned review", reason: "pinned" }],
+    unplaced: [{ item_id: "later", title: "Unsized essay", reason: "unknown_estimate" }],
+  };
+
+  test("recovery previews old and new times, then applies from At Risk", async () => {
+    const user = userEvent.setup();
+    const calls = stub({ view: missedView(), recoveryPreview });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review recovery" }));
+    const panel = await screen.findByRole("region", { name: "Recovery preview" });
+    expect(within(panel).getByText("Yesterday standup")).toBeInTheDocument();
+    expect(within(panel).getByText(/stays \(pinned\)/)).toBeInTheDocument();
+    expect(within(panel).getByText(/needs an estimate/)).toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "Apply recovery" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Recovery preview" })).toBeNull(),
+    );
+    const apply = calls.find((call) => call.url.includes("/api/recovery/apply"));
+    expect(apply?.body).toEqual({ fingerprint: "a".repeat(64) });
+  });
+
+  test("recovery dismiss sends no apply request", async () => {
+    const user = userEvent.setup();
+    const calls = stub({ view: missedView(), recoveryPreview });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review recovery" }));
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByRole("region", { name: "Recovery preview" })).toBeNull();
+    expect(calls.some((call) => call.url.includes("/api/recovery/apply"))).toBe(false);
+  });
+
+  test("recovery cannot apply when a calendar could not be checked", async () => {
+    const user = userEvent.setup();
+    stub({
+      view: missedView(),
+      recoveryPreview: { ...recoveryPreview, complete: false, moves: [] },
+    });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review recovery" }));
+
+    expect(await screen.findByRole("button", { name: "Apply recovery" })).toBeDisabled();
+    expect(screen.getByText(/couldn’t be checked, so nothing will move/)).toBeInTheDocument();
+  });
+
+  test("a stale recovery reloads the preview instead of applying", async () => {
+    const user = userEvent.setup();
+    const calls = stub({
+      view: missedView(),
+      recoveryPreview,
+      recoveryApply: {
+        status: 409,
+        detail: "Your plan changed since this preview. Review the updated preview.",
+      },
+    });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review recovery" }));
+    await user.click(await screen.findByRole("button", { name: "Apply recovery" }));
+
+    const panel = await screen.findByRole("region", { name: "Recovery preview" });
+    expect(
+      await within(panel).findByText("Your plan changed. Here’s the updated preview."),
+    ).toBeInTheDocument();
+    expect(calls.filter((call) => call.url.includes("/api/recovery/preview"))).toHaveLength(2);
   });
 
   test("Home renders a focused task ranked below the fifth upcoming slot", async () => {
