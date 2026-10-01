@@ -4937,6 +4937,57 @@ button.slot:active {
   gap: 8px;
 }
 
+.home-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 16px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.home-review h3 {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-review__note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.home-review__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-review__days {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-review__days th,
+.home-review__days td {
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid var(--hair);
+  text-align: left;
+  vertical-align: top;
+}
+
+.home-review__days thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 @media (max-width: 520px) {
   .home-focus__body {
     align-items: stretch;

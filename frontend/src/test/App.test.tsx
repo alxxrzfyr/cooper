@@ -250,6 +250,7 @@ async function openAi(user = userEvent.setup()) {
 interface Routes {
   itemError?: string;
   recoveryPreview?: unknown;
+  weeklyReview?: unknown;
   recoveryApply?: Reply | { status: number; detail: string };
   view?: View;
   todayView?: View;
@@ -326,6 +327,9 @@ function stub(routes: Routes) {
       }
       if (url.includes("/api/icloud/")) {
         return json({ view: currentView });
+      }
+      if (url.includes("/api/review/week")) {
+        return json(routes.weeklyReview ?? {});
       }
       if (url.includes("/api/recovery/preview")) {
         return json(routes.recoveryPreview ?? {});
@@ -2932,6 +2936,63 @@ describe("the dashboard", () => {
       await within(panel).findByText("Your plan changed. Here’s the updated preview."),
     ).toBeInTheDocument();
     expect(calls.filter((call) => call.url.includes("/api/recovery/preview"))).toHaveLength(2);
+  });
+
+  const weeklyReview = {
+    timezone: "Asia/Singapore",
+    complete: true,
+    past: {
+      start: "2026-08-25",
+      end: "2026-08-31",
+      completed: [{ item_id: "d1", title: "Shipped memo", done_at: "2026-08-29T03:00:00+00:00" }],
+    },
+    unfinished: [{ item_id: "m1", title: "Yesterday standup", state: "missed_block" }],
+    upcoming: Array.from({ length: 7 }, (_, index) => ({
+      date: `2026-09-0${index + 1}`,
+      fixed_minutes: index === 0 ? 90 : 0,
+      planned_minutes: index === 0 ? 60 : 0,
+      deadlines: index === 1 ? [{ item_id: "r1", title: "Quarterly report" }] : [],
+    })),
+    deadline_risks: [
+      {
+        item_id: "r1",
+        title: "Quarterly report",
+        due: "2026-09-02T09:00:00+00:00",
+        reason: "unknown_estimate",
+      },
+    ],
+    uncertainty: { unscheduled_count: 3, unknown_estimate_count: 1 },
+  };
+
+  test("weekly review is read-only and shows done, unfinished, load and risks", async () => {
+    const user = userEvent.setup();
+    const calls = stub({ view: snapshotView({}), weeklyReview });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review the week" }));
+    const panel = await screen.findByRole("region", { name: "Weekly review" });
+
+    expect(within(panel).getByText("Shipped memo")).toBeInTheDocument();
+    expect(within(panel).getByText(/Yesterday standup: scheduled time passed/)).toBeInTheDocument();
+    expect(within(panel).getByText("1h 30m")).toBeInTheDocument();
+    expect(within(panel).getByText(/Quarterly report: needs an estimate/)).toBeInTheDocument();
+    expect(within(panel).getByText(/3 unscheduled · 1 without an estimate/)).toBeInTheDocument();
+    const review = calls.filter((call) => call.url.includes("/api/review/week"));
+    expect(review).toHaveLength(1);
+    expect(review[0].method).toBe("GET");
+
+    await user.click(within(panel).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("region", { name: "Weekly review" })).toBeNull();
+  });
+
+  test("weekly review warns when a calendar could not be checked", async () => {
+    const user = userEvent.setup();
+    stub({ view: snapshotView({}), weeklyReview: { ...weeklyReview, complete: false } });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Review the week" }));
+
+    expect(await screen.findByText(/deadline fit may be incomplete/)).toBeInTheDocument();
   });
 
   test("Home renders a focused task ranked below the fifth upcoming slot", async () => {
