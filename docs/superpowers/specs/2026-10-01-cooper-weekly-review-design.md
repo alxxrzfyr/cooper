@@ -38,4 +38,8 @@ controls; existing Home actions (recovery, scheduling) remain the way to act.
 
 ## Execution record
 
-Filled in at implementation time.
+2026-10-01: implemented test-first. `planner.weekly_review()` (7 pure tests),
+`GET /api/review/week` (3 HTTP tests: read-only and owner-scoped, unchecked calendar,
+local key required), and `frontend/src/WeeklyReview.tsx` (2 UI tests: GET-only, Close,
+unchecked-calendar warning). Backend 511 pytest pass, Ruff clean; frontend 247 tests
+pass, `format:check` and build pass. Browser acceptance pending owner confirmation.

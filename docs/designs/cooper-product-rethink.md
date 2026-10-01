@@ -30,7 +30,7 @@ inspection and review findings describe the earlier proposal unless stated other
 | Planning-answer repairs and today capacity | Implemented locally; 443 backend and 230 frontend tests passed                                                      | Finish native browser zoom and connected-provider acceptance before release                                            |
 | Sidebar performance                        | Implemented and measured locally                                                                                    | No additional sidebar scope proposed                                                                                   |
 | Guided recovery                            | Implemented: At Risk preview, stale-safe apply, all-or-nothing batch undo; ungated in beta                          | Owner browser acceptance done; decide Plus gating once billing exists                                                  |
-| Weekly review and reusable routines        | Proposed; not implemented                                                                                           | Complete recovery, define review periods and capture semantics, then plan the implementation                           |
+| Weekly review and reusable routines        | Weekly review implemented (read-only, Free); routines not implemented                                               | Routines: approve a persistence and duplicate-submission design (likely a new table), then plan                        |
 | Included Gemini/Groq                       | Accounting, provider adapters, atomic receipts and BYOK removal implemented (uncommitted); funded dispatch disabled | Owner browser acceptance done; approve cash envelopes, model IDs and prices; live provider acceptance; then activate   |
 | GCP migration                              | Approved direction; no cutover executed by this work                                                                | Measure latency; prepare restore, ownership, callback and rollback acceptance                                          |
 | Free/Plus subscriptions                    | Pricing and quotas are hypotheses; checkout disabled                                                                | Demonstrate repeated planning/recovery value, approve funding and merchant/lifecycle contracts, then implement billing |
@@ -85,17 +85,17 @@ Working assumptions for this draft:
 
 Verified in the current repository:
 
-| Area        | What exists                                                                    | What is missing or uncertain                                                   |
-| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| Capture     | Sentence and manual entry; additive batch creation                             | Estimation/decomposition guidance is not a complete workflow                   |
-| Planning    | Explainable ranking, exact placement, configured windows and limits            | Workload-versus-capacity answers are incomplete                                |
-| Trust       | One writer, undo, source health, read-only providers; four answer repairs      | Full capacity and general model-answer fidelity still need verification        |
-| Daily use   | Home Now/Next/Today/At Risk, local rescheduling, guided recovery               | No weekly review experience located                                            |
-| Sources     | Google, iCloud, supported Gmail confirmations                                  | Teams/Classroom remain future; public Gmail readiness is not established       |
-| AI          | Rule fallback, read-only tools; BYOK removed, funded ledger built (2026-10-01) | Funded dispatch disabled pending budgets, models and live acceptance           |
-| Commercial  | Public pages, FAQ and proposed Free/Plus choices                               | No subscription, checkout, webhook, or usage-ledger implementation located     |
-| Delivery    | Firebase Hosting/Auth, Render API, hosted PostgreSQL                           | Current DB provider/region/plan, Render plan and production latency unverified |
-| Reliability | Health route and recovery documentation                                        | Hosted backup/restore acceptance is not established by local restore tests     |
+| Area        | What exists                                                                     | What is missing or uncertain                                                   |
+| ----------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Capture     | Sentence and manual entry; additive batch creation                              | Estimation/decomposition guidance is not a complete workflow                   |
+| Planning    | Explainable ranking, exact placement, configured windows and limits             | Workload-versus-capacity answers are incomplete                                |
+| Trust       | One writer, undo, source health, read-only providers; four answer repairs       | Full capacity and general model-answer fidelity still need verification        |
+| Daily use   | Home Now/Next/Today/At Risk, local rescheduling, guided recovery, weekly review | Reusable routines not built                                                    |
+| Sources     | Google, iCloud, supported Gmail confirmations                                   | Teams/Classroom remain future; public Gmail readiness is not established       |
+| AI          | Rule fallback, read-only tools; BYOK removed, funded ledger built (2026-10-01)  | Funded dispatch disabled pending budgets, models and live acceptance           |
+| Commercial  | Public pages, FAQ and proposed Free/Plus choices                                | No subscription, checkout, webhook, or usage-ledger implementation located     |
+| Delivery    | Firebase Hosting/Auth, Render API, hosted PostgreSQL                            | Current DB provider/region/plan, Render plan and production latency unverified |
+| Reliability | Health route and recovery documentation                                         | Hosted backup/restore acceptance is not established by local restore tests     |
 
 These are source-inspection findings, not an exhaustive security or legal audit.
 The latest recorded owner Google/iCloud acceptance is 2026-09-14 in
