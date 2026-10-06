@@ -248,8 +248,9 @@ The answer is an unsaved standalone candidate, not a reservation or backlog
 priority guarantee. Narrower, future and mixed horizons ask for a supported today
 question. Assessment and probes call no model and write no planning data. The
 existing owner-checked PATCH saves estimates and records undo; the UI refreshes
-the snapshot and retains failed drafts. Setup displays the server timezone;
-owner-selectable timezone persistence remains unimplemented.
+the snapshot and retains failed drafts. Setup displays the server timezone. The pilot
+intentionally uses that configured server timezone for every owner; owner-selectable
+timezone persistence is outside the current scope.
 
 The landing's `plans` chapter pairs native FAQ disclosures with Free/Plus proposal
 cards. Horizontal chapter navigation retains the original 900px width breakpoint,

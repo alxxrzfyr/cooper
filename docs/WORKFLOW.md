@@ -41,7 +41,7 @@ Keep at most one item In progress. Move an item to Blocked when progress depends
 
 ## Create the branch and commits
 
-`main` is the production branch. Create a branch from `main` for meaningful work. Start the branch name with `feat/`, `fix/`, `chore/`, `refactor/`, or `hotfix/`, followed by a short description. Keep each branch focused on one Issue or one closely related fix.
+`main` is the production branch. Create a branch from `main` for meaningful work. Start the branch name with `feat/`, `fix/`, `docs/`, `test/`, `chore/`, `refactor/`, or `hotfix/`, followed by a short description. Keep each branch focused on one Issue or one closely related fix.
 
 Use a Conventional Commit subject, such as `fix: prevent duplicate scheduling`. Explain why in the body when the reason is not obvious from the diff. Do not commit secrets, `.env` files, database files, provider tokens, or generated build output.
 
