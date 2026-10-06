@@ -29,7 +29,7 @@ site is installable. Keep current product rules until each deliberate change is
 reviewed. This decision does not approve pricing, commercial tables, recurring
 tasks, infrastructure spend or deployment.
 
-The [web-first design](../superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
-and [review record](../designs/cooper-web-first-review.md) contain recommended
-contracts. The [capacity implementation plan](../superpowers/plans/2026-09-30-cooper-today-capacity.md)
-is draft, not implemented by this ADR.
+[`PRD.md`](../../PRD.md) defines current product coverage and
+[`ARCHITECTURE.md`](../../ARCHITECTURE.md) defines the implemented system. Neither this boundary
+nor those current documents imply approval for pricing, recurring tasks, commercial schema,
+infrastructure spend, or deployment.

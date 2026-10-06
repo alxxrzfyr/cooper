@@ -45,6 +45,7 @@ frontend/vite.config.d.ts
 .cache/
 .firebase/
 *.log
+.worktrees/
 
 # TypeScript build info
 frontend/.tsbuild/

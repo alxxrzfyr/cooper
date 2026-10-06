@@ -1,0 +1,44 @@
+name: Change
+description: Propose a feature, improvement, maintenance change, or technical debt fix.
+title: ""
+labels: []
+projects:
+  - alxxrzfyr/1
+body:
+  - type: markdown
+    attributes:
+      value: Never include credentials, tokens, prompts, email bodies, message IDs, or private user content.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: State the current user or engineering problem, not the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Required outcome
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and risks
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: Name the runtime path and checks that must prove the outcome.
+    validations:
+      required: true

@@ -6,26 +6,21 @@ Today it runs on my machine for me alone. A small public beta can also run with 
 PostgreSQL, and owner-scoped data. That does not make it a team
 tool: there is still no sharing, projects, reports, or collaboration.
 
-Approved product direction, not yet implemented: the
-[2026-09-30 product rethink](docs/designs/cooper-product-rethink.md) defines clearer
-personal planning/recovery, included Gemini with Groq fallback, freemium subscriptions
-and a GCP API migration. The [provider decision](docs/decisions/2026-09-30-included-ai-providers.md)
-records the initial AI order.
-On 2026-10-01 the owner clarified that Cooper supplies both keys and removes BYOK
-from the product, including Settings and onboarding. The approved
-[accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
-and BYOK removal are implemented in the working tree; funded dispatch remains
-disabled until cash budgets, model choices and live provider checks are approved.
-It records planning-answer defects and separates hypotheses from shipped
-features. Execution budgets and commercial schema remain separate decisions; the
-current requirements and trust rules below still apply.
+The accepted product boundary is [one responsive web/PWA](docs/decisions/2026-09-30-web-first-product-boundary.md),
+not a native mobile or separate app suite. Shared seven-day projection, scoped today capacity,
+legal duration probes, manual estimate editing, guided recovery, and a read-only weekly review are
+implemented.
 
-The owner further selected [one web-first product](docs/decisions/2026-09-30-web-first-product-boundary.md).
-No native mobile development or separate app suite is in scope. The
-[reviewed draft](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
-defines bounded assisted workflows, truthful capacity and release order. Its
-[first capacity plan](docs/superpowers/plans/2026-09-30-cooper-today-capacity.md)
-is implemented in the working tree; proposed pricing and included AI remain inactive.
+The [included-AI decision](docs/decisions/2026-09-30-included-ai-providers.md) selects Gemini
+primary and Groq fallback. Cooper supplies both keys; BYOK has been removed from Settings,
+onboarding, and request payloads. Provider adapters and the four-table accounting ledger are
+implemented, but funded dispatch remains disabled until cash, evaluated model IDs, prices, and
+live-provider acceptance are approved.
+
+Subscriptions, Teams, Google Classroom, reusable routines, funded AI, and the GCP cutover remain
+inactive. Execution budgets and commercial schema require separate decisions. Active work,
+priority, and release gates live in the
+[Cooper Project](https://github.com/users/alxxrzfyr/projects/1), not in this requirements document.
 
 ## The problem
 

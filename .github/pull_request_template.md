@@ -1,6 +1,6 @@
-## Related ticket
+## Related issue
 
-`COOP-___` or `N/A` for a small maintenance change.
+Closes #N. Use `N/A` only for mechanical maintenance that does not need tracking.
 
 ## What changed
 
@@ -8,7 +8,7 @@
 
 ## Why
 
-<!-- Link this to the ticket or product requirement. -->
+<!-- Link this to the Issue or product requirement. -->
 
 ## Implementation notes
 
@@ -16,6 +16,7 @@
 
 ## Testing performed
 
+- [ ] The linked Issue acceptance criteria are satisfied.
 - [ ] `uv run pytest`
 - [ ] `uv run ruff check . && uv run ruff format --check .`
 - [ ] `npm test -- --no-file-parallelism`

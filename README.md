@@ -48,6 +48,8 @@ through verified email/password or Google sign-in, but it is not a team or proje
   from current COOPER state; use bounded read tools for longer-tail Ask questions.
 - Distinguish current commitments, unscheduled work, priority and workload uncertainty in
   deterministic answers; a clear calendar is not proof that all open work fits.
+- Recover missed local blocks through a preview-first, stale-safe batch flow with one conflict-safe undo.
+- Review the next seven days in a read-only Home panel that writes no planning state.
 - Browse landing FAQs beside proposed Free/Plus choices. Plus and included AI are coming soon,
   not active paid subscriptions. No API key is needed; model help stays off until Cooper-funded
   AI is enabled, and manual entry plus built-in answers work without it.
@@ -60,9 +62,9 @@ through verified email/password or Google sign-in, but it is not a team or proje
 
 ## Technology stack
 
-The approved next direction is one responsive web/PWA product, with no native
-mobile app work. Funded Gemini/Groq is built but disabled; subscriptions and GCP are
-planned, not current runtime capabilities. See the reviewed draft and first capacity plan linked below.
+The approved boundary is one responsive web/PWA product with no native mobile app suite.
+Funded Gemini/Groq adapters and accounting are built but disabled; subscriptions and a GCP
+cutover are not current runtime capabilities.
 
 | Area                         | Technology                                                             |
 | ---------------------------- | ---------------------------------------------------------------------- |
@@ -135,11 +137,14 @@ The React frontend is organized around the four primary product areas:
 
 ### Data model
 
-Cooper uses three owner-scoped tables:
+Cooper uses three planning tables plus four funded-AI accounting tables:
 
 - `item` stores tasks and events. A fixed time distinguishes an event from a task.
 - `setting` stores working hours, provider state, encrypted tokens, and watcher health.
 - `change` stores the snapshots required to undo the latest mutation.
+- `ai_allowance`, `ai_spend_envelope`, `ai_request`, and `ai_attempt` provide durable
+  admission, cash reservation, settlement or freeze, and replay receipts. Funded dispatch
+  remains disabled.
 
 SQLite is the local default. Hosted deployments use PostgreSQL through the same SQLAlchemy model.
 Supabase Postgres is the recommended beta database; Cloud SQL remains the single-provider alternative.
@@ -152,17 +157,15 @@ responsible for identity, and Supabase Auth and Supabase Storage are not used.
 - Google refresh tokens are encrypted before storage.
 - iCloud app-specific passwords are encrypted server-side and never returned to the browser or model.
 - Manual mode never calls a model; placement may read connected calendars to avoid conflicts.
-- A Gemini key entered in Settings stays in that browser and is sent only with AI requests.
+- Provider credentials stay server-side; users have no API-key setup.
 - Titles are sanitized before they reach a model.
 - Remote failures do not block local capture. If a connected calendar cannot be checked, placement
   waits rather than guessing that its time is free. Local data remains the write source of truth.
 
-Cooper-funded Gemini/Groq replaces the old browser-key flow; users have no API-key
-setup. Accounting and the cutover are implemented, with funded dispatch disabled until
-budgets and live provider checks are approved. See the
-[accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
-and the operator section of the
-[implementation plan](docs/superpowers/plans/2026-10-01-included-ai-implementation.md).
+Cooper-funded Gemini/Groq replaces the old browser-key flow. Gemini is primary and Groq is
+fallback only for eligible availability failures within one logical allowance, call ceiling,
+and cost envelope. Accounting and provider adapters are implemented, but funded dispatch stays
+disabled until cash, model, price, and live-provider gates close.
 
 ## Design principles
 
@@ -176,32 +179,22 @@ Cooper follows a small set of product rules:
 
 ## Project documentation
 
-- [`PRD.md`](PRD.md) defines the product requirements and non-goals.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation in detail.
-- [`AGENTS.md`](AGENTS.md) records the contribution and engineering constraints.
-- [`docs/designs/cooper-product-rethink.md`](docs/designs/cooper-product-rethink.md)
-  records the approved product direction, freemium hypotheses and GCP proposal. It is not shipped behavior.
+Active work, priority, and release gates live in the private
+[Cooper Project](https://github.com/users/alxxrzfyr/projects/1). Durable product and engineering
+contracts remain in Git:
+
+- [`PRD.md`](PRD.md) defines the product requirements, current coverage, and non-goals.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation and invariants.
+- [`AGENTS.md`](AGENTS.md) records contribution and engineering constraints.
+- [`docs/WORKFLOW.md`](docs/WORKFLOW.md) defines Issue, branch, pull request, release, and incident flow.
+- [`docs/RECOVERY.md`](docs/RECOVERY.md) documents backup, restore, and deployment recovery.
+- [`docs/DESIGN.md`](docs/DESIGN.md) defines the visual system and interaction rules.
+- [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) contains the repeatable
+  Google, Gmail, iCloud, and Cooper-local live acceptance record.
 - [`docs/decisions/2026-09-30-included-ai-providers.md`](docs/decisions/2026-09-30-included-ai-providers.md)
-  records Gemini primary and Groq fallback for initial included AI.
-- [`docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md`](docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md)
-  specifies bounded fallback, shared budgets, privacy and acceptance requirements.
-- [`docs/superpowers/plans/2026-09-30-cooper-planning-trust.md`](docs/superpowers/plans/2026-09-30-cooper-planning-trust.md)
-  records the implemented first planning-answer repair tranche and its verification limits.
+  records included-AI provider order, fallback, accounting, and activation gates.
 - [`docs/decisions/2026-09-30-web-first-product-boundary.md`](docs/decisions/2026-09-30-web-first-product-boundary.md)
-  records the owner-approved single-product web/PWA scope, without native mobile.
-- [`docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md`](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
-  refines product workflows, architecture, uncertainty and release gates as a draft.
-- [`docs/designs/cooper-web-first-review.md`](docs/designs/cooper-web-first-review.md)
-  records independent reviews, self-grilling, corrections and evidence limits.
-- [`docs/superpowers/plans/2026-09-30-cooper-today-capacity.md`](docs/superpowers/plans/2026-09-30-cooper-today-capacity.md)
-  records the implemented today-capacity tranche and its verification evidence.
-- [`docs/WORKFLOW.md`](docs/WORKFLOW.md) defines the lightweight ticket, branch, PR, release, and
-  incident workflow for solo development.
-- [`docs/RECOVERY.md`](docs/RECOVERY.md) documents backup, restore, and deployment recovery steps.
-- [`docs/DESIGN.md`](docs/DESIGN.md) describes the visual system and interaction rules.
-- [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) provides the local
-  Google, Gmail, iCloud, and Cooper-local scheduling acceptance checklist, including the latest
-  manual verification record.
+  records the single responsive web/PWA boundary.
 
 ## License
 

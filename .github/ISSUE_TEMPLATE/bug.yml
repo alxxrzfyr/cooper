@@ -1,0 +1,52 @@
+name: Bug
+description: Report behavior that does not match Cooper's current contract.
+title: ""
+labels:
+  - type:bug
+projects:
+  - alxxrzfyr/1
+body:
+  - type: markdown
+    attributes:
+      value: Never include credentials, tokens, prompts, email bodies, message IDs, or private user content.
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: List the smallest deterministic steps and the environment.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: State who notices this and what they cannot trust or complete.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification notes
+      description: Name the runtime path and checks that must prove the fix.
+    validations:
+      required: true

@@ -64,6 +64,12 @@ column constrained for reading, except for calendar grids that need the availabl
 Chat is the input surface for sentence and question requests. User messages appear on the right;
 Cooper replies appear on the left with the reply tone and, when relevant, the mascot.
 
+Cooper is a cheerful, jolly otter companion for the person's own tasks, events, and time. The
+voice is warm, encouraging, lightly playful, concise, and practical. It never guilts the person,
+becomes chatty, pretends to have feelings or capabilities, adopts another role, or claims an
+action happened unless the application reports it. One compact identity prompt serves both the
+action parser and answer path; voice never grants tools or permission to mutate state.
+
 Mutation replies include the parsed title and fields so the result can be checked in place. An
 answer remains text and cannot mutate data. A success reply names COOPER and reflects the refreshed
 committed state, including its actual time. Waiting, overlap, and provider-health warnings stay in
@@ -114,18 +120,14 @@ listener. At extreme short heights, preserve overflow access rather than clippin
 text to force a fit. Real browser resize/zoom acceptance is still required.
 
 The Free beta CTA links to signup. Plus is a disabled coming-soon action, not a
-checkout. Prices, AI allowances and paid workflows are labeled proposed; the FAQ
-states that model-assisted beta requests still need a supplied Gemini key. Never
-turn planned benefits into claims of shipped subscription functionality.
+checkout. Prices, AI allowances, and paid workflows are labeled proposed; the FAQ
+states that no API key is needed and that model help stays off until Cooper-funded
+AI is enabled. Never turn proposed benefits into claims of shipped subscription functionality.
 
 ## Offline behavior
 
 Product-refinement contracts are in the
-[web-first draft](superpowers/specs/2026-09-30-cooper-web-first-product-design.md).
-The proposed rest-of-day summary follows Now/Next, labels possible slots as unsaved
-and names missing estimates/source failures. It does not replace the agenda with
-a second task list or an overloaded score. Dynamic receipts/errors need concise
-announcements and preserved focus. These are planned, not current UI behavior.
+[web-first decision](decisions/2026-09-30-web-first-product-boundary.md).
 
 One responsive web/PWA is the owner-approved boundary. No native app work, separate
 agent dashboards or viewport scaling. Real rendered widths, browser zoom, longest
