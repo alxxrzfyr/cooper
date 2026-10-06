@@ -61,6 +61,20 @@ one undo that refuses when later edits conflict. It never creates a second write
 `GET /api/review/week` and Home's This week panel derive a seven-day review from current planning
 state. The review is read-only: it records no plan, task mutation, or review state.
 
+Every weekly boundary is a local date in the configured timezone. The past window is today minus
+six days through today and includes local task completions by `done_at`; dropped work has no
+completion timestamp and is excluded. Unfinished facts include overdue open tasks (`due < at`) and
+missed blocks (`end_at <= at`). The upcoming window is today through today plus six days and
+reports, per day, merged fixed minutes from local and connected calendars, scheduled open-task
+minutes, and open-task deadlines. Remote titles and attendees never appear.
+
+Deadline risks are upcoming open tasks that have neither a block ending by their deadline nor a
+slot in the shared seven-day projection. Reasons are `unknown_estimate`, `no_feasible_slot`, or
+`calendar_unchecked`; a failed connected calendar never becomes a fit claim. The response also
+reports unscheduled and unknown-estimate counts and whether source data is complete. It exposes no
+streak, score, or time-saved metric. Home opens the four-part review inline with no mutation
+controls; existing recovery and scheduling actions remain the only way to change planning state.
+
 ## Operational verification
 
 The owner manually verified the Google Calendar and iCloud Calendar acceptance flows on

@@ -61,8 +61,6 @@ def test_ci_verifies_pull_requests_but_deploys_only_main_runs() -> None:
     assert "npm audit --omit=dev --audit-level=high" in workflow
 
 
-
-
 def test_backend_env_example_documents_local_and_hosted_values() -> None:
     local = (ROOT / ".env.example").read_text()
     hosted = (ROOT / "render.env.example").read_text()
