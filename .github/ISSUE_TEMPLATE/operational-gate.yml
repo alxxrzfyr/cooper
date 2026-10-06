@@ -1,0 +1,39 @@
+name: Operational gate
+description: Track release, provider, backup, deployment, or acceptance evidence.
+title: ""
+labels:
+  - type:operations
+  - release-gate
+projects:
+  - alxxrzfyr/1
+body:
+  - type: markdown
+    attributes:
+      value: Never include credentials, tokens, prompts, email bodies, message IDs, or private user content.
+  - type: textarea
+    id: procedure
+    attributes:
+      label: Procedure or decision
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required evidence
+      description: Separate automated, browser, deployment, and live-provider evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure and rollback handling
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+    validations:
+      required: true

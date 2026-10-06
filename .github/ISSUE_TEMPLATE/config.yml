@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Cooper Project
+    url: https://github.com/users/alxxrzfyr/projects/1
+    about: View active work, priorities, and release gates.
+  - name: Report a private security vulnerability
+    url: https://github.com/alxxrzfyr/cooper/security/advisories/new
+    about: Use a private advisory for exploit details or sensitive evidence.

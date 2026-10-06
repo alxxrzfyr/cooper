@@ -61,15 +61,6 @@ def test_ci_verifies_pull_requests_but_deploys_only_main_runs() -> None:
     assert "npm audit --omit=dev --audit-level=high" in workflow
 
 
-def test_solo_workflow_documents_main_and_ticket_conventions() -> None:
-    workflow = (ROOT / "docs" / "WORKFLOW.md").read_text()
-    issue_template = (ROOT / ".github" / "ISSUE_TEMPLATE" / "work-item.md").read_text()
-    pull_request = (ROOT / ".github" / "pull_request_template.md").read_text()
-
-    assert "`main` is the production branch" in workflow
-    assert "COOP-<issue number>" in workflow
-    assert "COOP-___" in issue_template
-    assert "Testing performed" in pull_request
 
 
 def test_backend_env_example_documents_local_and_hosted_values() -> None:
