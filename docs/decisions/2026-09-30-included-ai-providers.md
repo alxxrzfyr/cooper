@@ -2,17 +2,15 @@
 
 Date: 2026-09-30.
 
-Status: Accepted for the initial product direction. Not implemented or deployed.
-The owner approved the product proposal and requested Gemini plus Groq fallback.
-This decision does not approve a specific model, spend amount or database schema.
+Status: Accepted. Provider order, BYOK removal, adapters, and durable accounting are implemented.
+Funded dispatch is disabled and has not passed live provider acceptance. This decision does not
+approve a specific model or spend amount.
 
 ## Context
 
-The current implementation uses a browser-supplied Gemini key. On 2026-10-01 the
-owner explicitly clarified that Cooper supplies both provider keys and removes
-BYOK from the target product. This applies to Settings, onboarding and request
-payloads: there is no optional user-key route, provider selector or key-setup step.
-Local/manual use must remain independent of both providers.
+Cooper supplies both provider keys and has removed BYOK from Settings, onboarding, and request
+payloads. There is no optional user-key route, provider selector, or key-setup step. Local and
+manual use remain independent of both providers.
 
 ## Decision
 
@@ -29,16 +27,15 @@ Keep both credentials server-side. Both providers receive only permitted sanitiz
 user words/titles and anonymous availability data. Switching does not authorize
 sharing calendar contents, adding write tools, widening OAuth scopes or logging prompts.
 
-Free and Plus receive bounded included assistance through server-authoritative
-allowances. Users never configure an API key. Quotas do not fund the service:
-Cooper pays provider charges, subject to separately approved cash envelopes.
-Removing BYOK does not authorize an unspecified spend or database migration.
+Free and Plus may receive bounded included assistance only through server-authoritative
+allowances. Users never configure an API key. Cooper pays provider charges, so funded dispatch
+requires separately approved cash envelopes, evaluated model IDs, prices, and live acceptance.
 
-Retire the existing browser-key implementation in the same release that enables
-verified accounting and server-managed providers. Remove the key field, key-storage
-helpers and `gemini_api_key` request property; purge only Cooper's legacy Gemini
-storage entries. Do not transmit stored user keys to migrate them. Existing runtime
-disclosures stay accurate until that cutover; the final product has no BYOK mode.
+`cooper/providers.py` contains the two explicit adapters. `ai_allowance`,
+`ai_spend_envelope`, `ai_request`, and `ai_attempt` provide durable admission, cash
+reservation, settlement or freeze, and replay receipts. A mutation commit and its receipt share
+one transaction. The adapters and ledger are implemented, but
+`COOPER_INCLUDED_AI_ENABLED=false` keeps funded dispatch off.
 
 ## Alternatives considered
 
@@ -51,17 +48,15 @@ disclosures stay accurate until that cutover; the final product has no BYOK mode
 
 ## Consequences
 
-Normalize typed failures, usage and responses from two APIs. Account for every
-attempt, even if only one successful logical request uses a user allowance unit.
-Privacy disclosures must cover both providers before automatic fallback is enabled.
-Test model/tool/schema compatibility rather than infer it from API resemblance.
+Normalize typed failures, usage, and responses from two APIs. Account for every attempt even
+when one successful logical request consumes one allowance unit. Both attempts share that
+logical allowance, call ceiling, and cost envelope.
 
-The [fallback specification](../superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md)
-defines the execution contract and acceptance cases. Durable metering, model
-evaluation, provider-account controls and approved spend remain deployment gates.
-No server-funded provider is enabled by this ADR.
+Safety refusals, invalid actions, ambiguity, invalid credentials, exhausted allowance, and
+exhausted spend never trigger fallback. A committed mutation is never replayed. Both providers
+receive only permitted sanitized user words or titles and anonymous availability data; fallback
+does not widen model input, OAuth scope, tools, or logging.
 
-The [accounting design](../superpowers/specs/2026-10-01-included-ai-accounting-design.md)
-defines the four-table schema, transaction boundaries and cutover checks. The
-owner approved that schema on 2026-10-01. Implementation may proceed; model,
-allowance and cash-budget approval still precede funded activation.
+Funded activation remains gated on an approved cash envelope, evaluated and pinned Gemini/Groq
+model IDs and prices, and live provider acceptance. Privacy disclosures and model/tool/schema
+compatibility must cover both providers before the flag can be enabled.

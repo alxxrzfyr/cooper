@@ -4,22 +4,16 @@ The small set of files below does everything that exists today. Read them in thi
 will understand the whole app in about twenty minutes. Future integrations are marked explicitly;
 nothing below describes code that is not there.
 
-The [approved product direction](docs/designs/cooper-product-rethink.md) selects Cloud Run,
-server-funded Gemini with Groq fallback, and freemium subscriptions.
-The [provider ADR](docs/decisions/2026-09-30-included-ai-providers.md) records the order
-and the [fallback specification](docs/superpowers/specs/2026-09-30-included-ai-provider-fallback-design.md)
-sets its boundaries. Accounting and BYOK removal are implemented (see AI below); funded
-dispatch is disabled and hosting is still Render. Any new commercial
-schema or hosted cutover needs its own reviewed implementation and release gates.
+The [included-AI provider ADR](docs/decisions/2026-09-30-included-ai-providers.md) selects
+server-funded Gemini primary and Groq fallback. BYOK removal, provider adapters, and durable
+accounting are implemented; funded dispatch remains disabled and hosting remains Render.
+Cash, evaluated model IDs, prices, and live-provider acceptance are activation gates. Any
+commercial schema or hosted cutover needs its own reviewed implementation and release evidence.
 
-The [web-first boundary](docs/decisions/2026-09-30-web-first-product-boundary.md)
-keeps one responsive web/PWA and one backend, without native clients or separate
-agent services. The [draft architecture refinement](docs/superpowers/specs/2026-09-30-cooper-web-first-product-design.md)
-specifies capacity, recovery, AI admission and cutover boundaries. Capacity, guided
-recovery (`/api/recovery/preview` and `/apply`, fingerprint stale rejection, one-Change
-batch undo that refuses on conflict) and funded-AI accounting are implemented; funded
-dispatch and hosted cutover remain gated. Review findings and evidence limits are in the
-[review record](docs/designs/cooper-web-first-review.md).
+The [web-first boundary](docs/decisions/2026-09-30-web-first-product-boundary.md) keeps one
+responsive web/PWA and one backend, without native clients or separate agent services. Capacity,
+guided recovery, weekly review, and funded-AI accounting are implemented. Subscriptions,
+reusable routines, Teams, Classroom, funded dispatch, and the GCP cutover remain inactive.
 
 ## Backend, today
 
@@ -27,7 +21,7 @@ dispatch and hosted cutover remain gated. Review findings and evidence limits ar
 cooper/
   auth.py      Firebase ID-token verification for hosted mode
   config.py    local/shared-key and hosted/Firebase settings
-  db.py        three owner-scoped tables, session helper and UTC column type
+  db.py        planning tables, AI accounting ledger, session helper and UTC column type
   brain.py     sentence to validated Action, model transport and rule fallback
   planner.py   ranking, placement and planning snapshot; pure, no I/O or model
   google.py    Calendar and Gmail over REST; no SDK
@@ -59,6 +53,13 @@ projection instead of independently reconstructing the user's day.
 `watcher.py` reads Gmail on one fixed interval and reports its last check through the dashboard;
 it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
 second writer.
+
+Guided recovery uses `POST /api/recovery/preview` before `POST /api/recovery/apply`. The preview
+fingerprint rejects stale state; apply records one `Change`, commits all-or-nothing, and exposes
+one undo that refuses when later edits conflict. It never creates a second write path.
+
+`GET /api/review/week` and Home's This week panel derive a seven-day review from current planning
+state. The review is read-only: it records no plan, task mutation, or review state.
 
 ## Operational verification
 
@@ -125,7 +126,7 @@ in committed state. No frontend-only move state becomes authoritative.
 
 ## Data
 
-Three tables today, all owner-scoped.
+Three planning tables hold product state; four additional tables hold funded-AI accounting.
 
 **`item`** — a task _or_ an event. The only difference is whether the time is fixed, so they
 share a table. Splitting them into `task` and `scheduled_block` is what made the previous
@@ -156,6 +157,10 @@ nonce, Gmail watcher health, and the watcher's last-checked marker.
 
 **`change`** — `owner_id`, `label`, `item_id`, `before`. Enough to undo the last thing, pruned to
 twenty rows per owner. Not an audit log.
+
+**`ai_allowance`**, **`ai_spend_envelope`**, **`ai_request`**, and **`ai_attempt`** provide
+durable admission, cash reservation, settlement or freeze, and replay receipts. They do not
+enable dispatch by themselves.
 
 ### Databases
 
@@ -348,16 +353,20 @@ with five Google sync or iCloud connection attempts per minute. A limit returns 
 deployment needs a shared edge limit.
 
 BYOK is removed: the API rejects `gemini_api_key` without echoing it, and Settings and
-onboarding have no key setup. Cooper supplies server-side Gemini (primary) and Groq
-(fallback) keys through `cooper/providers.py`, a urllib transport with no storage access.
-The [accounting design](docs/superpowers/specs/2026-10-01-included-ai-accounting-design.md)
-is implemented as four tables (`ai_allowance`, `ai_spend_envelope`, `ai_request`,
-`ai_attempt`, migration `0002`). `app.py` admits a logical request with a conditional
-allowance update, reserves cash before each dispatch, settles or freezes on usage, and
-commits a mutation with its replay receipt in one transaction. Funded dispatch is disabled
-by default; operator functions `provision_ai_pilot`, `abandon_ai_request`,
-`reconcile_ai_attempt` and `review_ai_envelopes` are never exposed over HTTP.
-Concurrency evidence is SQLite-only.
+onboarding have no key setup. Cooper supplies server-side Gemini primary and Groq fallback
+credentials through `cooper/providers.py`, a urllib transport with no storage access.
+
+Fallback is limited to eligible availability failures. Both attempts share one logical
+allowance, call ceiling, and cost envelope. Safety refusals, invalid actions, ambiguity,
+invalid credentials, exhausted allowance, and exhausted spend never trigger fallback. A
+committed mutation is never replayed.
+
+The four accounting tables admit a logical request with a conditional allowance update,
+reserve cash before each dispatch, settle or freeze from provider usage, and commit a mutation
+with its replay receipt in one transaction. Funded dispatch is disabled by default until cash,
+evaluated model IDs, prices, and live-provider acceptance are approved. Operator functions
+`provision_ai_pilot`, `abandon_ai_request`, `reconcile_ai_attempt`, and
+`review_ai_envelopes` are never exposed over HTTP. Concurrency evidence is SQLite-only.
 
 **Gmail is a restricted scope.** Reading mail is among the heaviest permissions Google grants.
 Free in testing mode for a single developer; a published multi-user app requires a paid annual
