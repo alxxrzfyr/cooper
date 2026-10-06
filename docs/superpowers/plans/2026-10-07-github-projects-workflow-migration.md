@@ -224,7 +224,7 @@ Use the Project UI because built-in workflow and user-owned view support can cha
 | ------------- | ------- | ------------------------------------------------ | --------------------------------------- |
 | Current work  | Board   | `status:Ready,"In progress","In review",Blocked` | Columns by Status                       |
 | Backlog       | Table   | `status:Inbox,Backlog,Ready`                     | Group by Priority; sort Area, then Size |
-| Roadmap       | Roadmap | `has:"target date"`                              | Group by Milestone                      |
+| Roadmap       | Roadmap | `has:target-date`                                | Group by Milestone                      |
 | Release gates | Table   | `label:release-gate`                             | Group by Status                         |
 | Security      | Table   | `area:"Platform/Security"`                       | Group by Priority                       |
 | Recently done | Table   | `status:Done`                                    | Sort by most recently updated           |
@@ -239,7 +239,7 @@ In Project **Workflows**, configure:
 2. Item added to Project → Status `Inbox`.
 3. Issue closed → Status `Done`.
 4. Issue reopened → Status `Ready`.
-5. Auto-archive items with Status `Done` after 30 days.
+5. Auto-archive closed items after 30 days with `is:closed updated:<@today-30d`. The close workflow moves them to Done. GitHub normalizes the item-type filter to `is:issue,pr`; an open item manually moved to Done remains until closed or manually archived because this built-in workflow cannot filter Project Status.
 
 Do not auto-add pull requests. The Free plan has one auto-add workflow; reserve it for repository Issues.
 

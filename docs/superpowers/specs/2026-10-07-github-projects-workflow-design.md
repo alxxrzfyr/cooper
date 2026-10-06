@@ -85,7 +85,7 @@ Size means:
 
 1. **Current work** uses a board grouped by Status. It shows Ready, In progress, In review, and Blocked. The working agreement allows at most one In progress item.
 2. **Backlog** uses a table grouped by Priority and sorted by Area, then Size.
-3. **Roadmap** uses the roadmap layout grouped by Milestone. Only items with a real Target date appear on the timeline.
+3. **Roadmap** uses the roadmap layout, filters with `has:target-date`, and groups by Milestone. Only items with a real Target date appear on the timeline.
 4. **Release gates** uses a table filtered to the `release-gate` label.
 5. **Security** uses a table filtered to Area = Platform/Security.
 6. **Recently done** uses a table of Done items retained before archival.
@@ -96,7 +96,7 @@ Size means:
 - Set newly added Issues to Inbox.
 - Set closed Issues to Done.
 - Set reopened Issues to Ready.
-- Archive Done items after 30 days.
+- Archive closed items after 30 days. The close workflow moves them to Done; an open item manually moved to Done remains until it is closed or manually archived because GitHub's built-in archive filter cannot read Project Status.
 - Keep pull requests off the board as separate cards. A pull request links to and closes its Issue.
 
 GitHub Free permits one auto-add workflow. Use it for `is:issue` in this repository. The remaining state changes use built-in workflows.
