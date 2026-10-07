@@ -103,7 +103,8 @@ def configured_client(
         module.settings.auth_mode = "firebase"
         if shared_key is None:
             module.settings.shared_key = None
-    with TestClient(module.app) as open_client:
+    base_url = "https://testserver" if auth_mode == "firebase" else "http://testserver"
+    with TestClient(module.app, base_url=base_url) as open_client:
         yield module, open_client
 
 
@@ -2925,6 +2926,7 @@ class TestGoogle:
     ) -> None:
         import cooper.app as module
 
+        browser_secret = "callback-browser-secret"
         expires_at = module.now() + dt.timedelta(minutes=5)
         owner_state = module.OAuthState(
             owner_id=module.settings.owner_id, nonce="valid-nonce", expires_at=expires_at
@@ -2933,7 +2935,16 @@ class TestGoogle:
         module.store.set_setting(
             module.settings.owner_id,
             module.GOOGLE_OAUTH_NONCE_SETTING,
-            {"nonce": "valid-nonce", "expires_at": expires_at.isoformat()},
+            {
+                "nonce": "valid-nonce",
+                "expires_at": expires_at.isoformat(),
+                "browser_binding": module._oauth_browser_digest(browser_secret),
+            },
+        )
+        client.cookies.set(
+            module.GOOGLE_OAUTH_BROWSER_COOKIE,
+            browser_secret,
+            path="/api/google/callback",
         )
         sealed: list[str] = []
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import threading
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from fastapi.testclient import TestClient
 
 from tests.test_api import allow_firebase, configured_client
 
@@ -80,6 +83,106 @@ def test_oauth_callback_consumes_owner_nonce_before_token_exchange(
     assert token == {"token": "sealed:alice-refresh"}
     assert connected["email"] == "friend@example.com"
     assert nonce == {}
+
+
+def test_oauth_callback_rejects_consent_url_transferred_to_another_browser(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with configured_client(
+        monkeypatch,
+        f"sqlite:///{tmp_path / 'firebase.db'}",
+        auth_mode="firebase",
+        shared_key=None,
+    ) as (module, initiating_browser):
+        auth_headers = allow_firebase(
+            module, monkeypatch, uid="alice", email="firebase-owner@example.com"
+        )
+        exchanges: list[str] = []
+
+        class OwnerCalendar:
+            def consent_url(self, state: str) -> str:
+                return f"https://accounts.example.test/oauth?state={urllib.parse.quote(state)}"
+
+            def exchange(self, code: str) -> tuple[str, str | None]:
+                exchanges.append(code)
+                return ("alice-refresh", "google-account@example.com")
+
+            def seal_token(self, token: str) -> str:
+                return f"sealed:{token}"
+
+        monkeypatch.setattr(module, "google_calendar", lambda owner_id: OwnerCalendar())
+
+        connect = initiating_browser.post("/api/google/connect", headers=auth_headers)
+        set_cookie = connect.headers["set-cookie"]
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=lax" in set_cookie
+        assert "Secure" in set_cookie
+        browser_secret = initiating_browser.cookies.get(module.GOOGLE_OAUTH_BROWSER_COOKIE)
+        attempt = module.store.get_setting("alice", module.GOOGLE_OAUTH_NONCE_SETTING)
+        assert browser_secret
+        assert browser_secret not in connect.json()["url"]
+        assert attempt["browser_binding"] != browser_secret
+        state = urllib.parse.parse_qs(urllib.parse.urlparse(connect.json()["url"]).query)["state"][
+            0
+        ]
+        with TestClient(module.app) as transferred_browser:
+            transferred = transferred_browser.get(
+                "/api/google/callback", params={"code": "stolen", "state": state}
+            )
+        completed = initiating_browser.get(
+            "/api/google/callback", params={"code": "legitimate", "state": state}
+        )
+        replay = initiating_browser.get(
+            "/api/google/callback", params={"code": "replay", "state": state}
+        )
+        connected = module.store.get_setting("alice", module.GOOGLE_CONNECTED_SETTING)
+
+    assert "did not come from Cooper" in transferred.text
+    assert "Calendar connected" in completed.text
+    assert "did not come from Cooper" in replay.text
+    assert exchanges == ["legitimate"]
+    assert connected["email"] == "google-account@example.com"
+
+
+def test_oauth_nonce_is_consumed_once_across_concurrent_callbacks(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with configured_client(
+        monkeypatch,
+        f"sqlite:///{tmp_path / 'firebase.db'}",
+        auth_mode="firebase",
+        shared_key=None,
+    ) as (module, _client):
+        browser_secret = "callback-browser-secret"
+        expires_at = module.now() + dt.timedelta(minutes=5)
+        state = module.OAuthState(owner_id="alice", nonce="valid-nonce", expires_at=expires_at)
+        module.store.set_setting(
+            "alice",
+            module.GOOGLE_OAUTH_NONCE_SETTING,
+            {
+                "nonce": state.nonce,
+                "expires_at": expires_at.isoformat(),
+                "browser_binding": module._oauth_browser_digest(browser_secret),
+            },
+        )
+        original_get = module.store.get_setting
+        concurrent_reads = threading.Barrier(2)
+
+        def synchronized_get(owner_id: str, key: str, default=None):
+            value = original_get(owner_id, key, default)
+            concurrent_reads.wait()
+            return value
+
+        monkeypatch.setattr(module.store, "get_setting", synchronized_get)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(
+                    lambda _: module._consume_oauth_nonce(state, browser_secret),
+                    range(2),
+                )
+            )
+
+    assert sorted(results) == [False, True]
 
 
 def test_oauth_callback_rejects_state_without_matching_owner_nonce(
