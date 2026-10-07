@@ -16,6 +16,7 @@ import dataclasses
 import datetime as dt
 import hashlib
 import hmac
+import html
 import json
 import logging
 import re
@@ -3794,5 +3795,5 @@ background:#F5F5F7;color:#1D1D1F;display:grid;place-items:center;height:100vh;ma
 main{{max-width:30rem;background:#fff;padding:2rem;border-radius:20px;
 box-shadow:0 12px 40px rgba(0,0,0,.08);text-align:center}}
 h1{{font-size:1.35rem;margin:0 0 .5rem}}p{{color:#6E6E73;margin:0;line-height:1.5}}
-</style></head><body><main><h1>{title}</h1><p>{message}</p></main></body></html>"""
+</style></head><body><main><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p></main></body></html>"""
     )
