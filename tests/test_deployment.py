@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,6 +60,32 @@ def test_ci_verifies_pull_requests_but_deploys_only_main_runs() -> None:
     assert "uv lock --check" in workflow
     assert "uv pip check" in workflow
     assert "npm audit --omit=dev --audit-level=high" in workflow
+
+
+def test_deployment_actions_use_reviewed_immutable_commits() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
+
+    uses = re.findall(r"^\s+uses:\s+(.+)$", workflow, re.MULTILINE)
+    expected = {
+        "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
+        "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+        "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+        "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+        "FirebaseExtended/action-hosting-deploy": "500ac625ca2dd40cbd15f7659af953801858032a",
+    }
+
+    assert uses
+    pinned = {}
+    for action in uses:
+        match = re.fullmatch(
+            r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}\s+#\s+v\d+(?:\.\d+){0,2}",
+            action,
+        )
+        assert match
+        name, sha = action.split("@", 1)[0], action.split("@", 1)[1].split()[0]
+        pinned[name] = sha
+    assert pinned == expected
 
 
 def test_backend_env_example_documents_local_and_hosted_values() -> None:
