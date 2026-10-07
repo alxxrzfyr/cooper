@@ -2921,6 +2921,33 @@ class TestGoogle:
 
         assert "access_denied" in response.text
 
+    def test_callback_error_markup_is_rendered_as_text(self, client: TestClient) -> None:
+        markup = "<script>window.pwned=1</script>"
+
+        response = client.get("/api/google/callback", params={"error": markup})
+
+        assert "Google said: &lt;script&gt;window.pwned=1&lt;/script&gt;" in response.text
+        assert markup not in response.text
+
+    def test_callback_validates_state_before_rendering_error(self, client: TestClient) -> None:
+        markup = "<script>window.pwned=1</script>"
+
+        response = client.get(
+            "/api/google/callback",
+            params={"error": markup, "state": "forged"},
+        )
+
+        assert "did not come from Cooper" in response.text
+        assert markup not in response.text
+
+    def test_callback_page_renders_title_and_message_as_text(self) -> None:
+        import cooper.app as module
+
+        response = module._page("<strong>Title</strong>", "<em>Message</em>")
+
+        assert "<h1>&lt;strong&gt;Title&lt;/strong&gt;</h1>" in response.body.decode()
+        assert "<p>&lt;em&gt;Message&lt;/em&gt;</p>" in response.body.decode()
+
     def test_callback_seals_and_saves_the_owner_token(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

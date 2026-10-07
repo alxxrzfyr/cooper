@@ -362,6 +362,8 @@ owner-bound Google OAuth grant supplies Calendar and Gmail access. Signed state 
 server origin and owner, while an HttpOnly browser cookie binds completion to the browser that began
 the flow. The durable one-use nonce preserves replay rejection across server instances because
 Firebase cannot attach a bearer token to Google's redirect.
+The public callback renders status values as escaped text; output encoding stays separate from
+signed-state and nonce validation.
 
 Hosted requests have a short in-process abuse limit per verified UID: 120 requests per minute,
 with five Google sync or iCloud connection attempts per minute. A limit returns 429 with
