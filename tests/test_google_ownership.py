@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import threading
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
@@ -140,6 +142,47 @@ def test_oauth_callback_rejects_consent_url_transferred_to_another_browser(
     assert "did not come from Cooper" in replay.text
     assert exchanges == ["legitimate"]
     assert connected["email"] == "google-account@example.com"
+
+
+def test_oauth_nonce_is_consumed_once_across_concurrent_callbacks(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with configured_client(
+        monkeypatch,
+        f"sqlite:///{tmp_path / 'firebase.db'}",
+        auth_mode="firebase",
+        shared_key=None,
+    ) as (module, _client):
+        browser_secret = "callback-browser-secret"
+        expires_at = module.now() + dt.timedelta(minutes=5)
+        state = module.OAuthState(owner_id="alice", nonce="valid-nonce", expires_at=expires_at)
+        module.store.set_setting(
+            "alice",
+            module.GOOGLE_OAUTH_NONCE_SETTING,
+            {
+                "nonce": state.nonce,
+                "expires_at": expires_at.isoformat(),
+                "browser_binding": module._oauth_browser_digest(browser_secret),
+            },
+        )
+        original_get = module.store.get_setting
+        concurrent_reads = threading.Barrier(2)
+
+        def synchronized_get(owner_id: str, key: str, default=None):
+            value = original_get(owner_id, key, default)
+            concurrent_reads.wait()
+            return value
+
+        monkeypatch.setattr(module.store, "get_setting", synchronized_get)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(
+                    lambda _: module._consume_oauth_nonce(state, browser_secret),
+                    range(2),
+                )
+            )
+
+    assert sorted(results) == [False, True]
 
 
 def test_oauth_callback_rejects_state_without_matching_owner_nonce(
