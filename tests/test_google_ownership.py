@@ -82,6 +82,7 @@ def test_oauth_callback_consumes_owner_nonce_before_token_exchange(
     assert connected["email"] == "friend@example.com"
     assert nonce == {}
 
+
 def test_oauth_callback_rejects_consent_url_transferred_to_another_browser(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -110,9 +111,18 @@ def test_oauth_callback_rejects_consent_url_transferred_to_another_browser(
         monkeypatch.setattr(module, "google_calendar", lambda owner_id: OwnerCalendar())
 
         connect = initiating_browser.post("/api/google/connect", headers=auth_headers)
-        state = urllib.parse.parse_qs(
-            urllib.parse.urlparse(connect.json()["url"]).query
-        )["state"][0]
+        set_cookie = connect.headers["set-cookie"]
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=lax" in set_cookie
+        assert "Secure" in set_cookie
+        browser_secret = initiating_browser.cookies.get(module.GOOGLE_OAUTH_BROWSER_COOKIE)
+        attempt = module.store.get_setting("alice", module.GOOGLE_OAUTH_NONCE_SETTING)
+        assert browser_secret
+        assert browser_secret not in connect.json()["url"]
+        assert attempt["browser_binding"] != browser_secret
+        state = urllib.parse.parse_qs(urllib.parse.urlparse(connect.json()["url"]).query)["state"][
+            0
+        ]
         with TestClient(module.app) as transferred_browser:
             transferred = transferred_browser.get(
                 "/api/google/callback", params={"code": "stolen", "state": state}
