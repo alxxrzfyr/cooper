@@ -3587,23 +3587,19 @@ def _oauth_browser_digest(secret: str) -> str:
 
 
 def _consume_oauth_nonce(state: OAuthState, browser_secret: str | None) -> bool:
-    saved = store.get_setting(state.owner_id, GOOGLE_OAUTH_NONCE_SETTING) or {}
-    if (
-        not isinstance(saved, dict)
-        or saved.get("nonce") != state.nonce
-        or not browser_secret
-        or not hmac.compare_digest(
-            str(saved.get("browser_binding")),
-            _oauth_browser_digest(browser_secret),
-        )
-    ):
+    if not browser_secret:
         return False
-    try:
-        expires_at = dt.datetime.fromisoformat(str(saved.get("expires_at"))).astimezone(dt.UTC)
-    except ValueError:
-        expires_at = dt.datetime.fromtimestamp(0, tz=dt.UTC)
-    store.set_setting(state.owner_id, GOOGLE_OAUTH_NONCE_SETTING, {})
-    return expires_at > now()
+    consumed = update(Setting).where(
+        Setting.owner_id == state.owner_id,
+        Setting.key == GOOGLE_OAUTH_NONCE_SETTING,
+        Setting.value["nonce"].as_string() == state.nonce,
+        Setting.value["browser_binding"].as_string() == _oauth_browser_digest(browser_secret),
+    )
+    with store.session() as session:
+        result = session.execute(
+            consumed.values(value={}).execution_options(synchronize_session=False)
+        )
+        return result.rowcount == 1
 
 
 def _b64(raw: bytes) -> str:
