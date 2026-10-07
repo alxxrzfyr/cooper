@@ -358,9 +358,10 @@ version of one.
 Hosted mode uses Firebase Authentication with open email/password registration or Google sign-in.
 The browser sends `Authorization: Bearer <Firebase ID token>`, `auth.py` verifies it lazily with
 Firebase Admin, and `app.py` scopes every query and change by the verified UID. A separate
-owner-bound Google OAuth grant supplies Calendar and Gmail
-access. The OAuth callback is protected by signed, durable, one-use state because Firebase cannot
-attach a bearer token to Google's redirect.
+owner-bound Google OAuth grant supplies Calendar and Gmail access. Signed state proves the callback's
+server origin and owner, while an HttpOnly browser cookie binds completion to the browser that began
+the flow. The durable one-use nonce preserves replay rejection across server instances because
+Firebase cannot attach a bearer token to Google's redirect.
 
 Hosted requests have a short in-process abuse limit per verified UID: 120 requests per minute,
 with five Google sync or iCloud connection attempts per minute. A limit returns 429 with

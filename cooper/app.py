@@ -27,7 +27,7 @@ from threading import Lock
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -83,6 +83,7 @@ HOURS_SETTING = "hours"
 GOOGLE_SETTING = "google_token"
 GOOGLE_CONNECTED_SETTING = "google_connected"
 GOOGLE_OAUTH_NONCE_SETTING = "google_oauth_nonce"
+GOOGLE_OAUTH_BROWSER_COOKIE = "cooper_google_oauth"
 GMAIL_SETTING = "gmail"
 ICLOUD_SETTING = "icloud_credentials"
 ICLOUD_STATUS_SETTING = "icloud_status"
@@ -3581,9 +3582,21 @@ def _verify_oauth_state(raw: str | None) -> OAuthState:
     return OAuthState(owner_id=owner_id, nonce=nonce, expires_at=expires_at)
 
 
-def _consume_oauth_nonce(state: OAuthState) -> bool:
+def _oauth_browser_digest(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def _consume_oauth_nonce(state: OAuthState, browser_secret: str | None) -> bool:
     saved = store.get_setting(state.owner_id, GOOGLE_OAUTH_NONCE_SETTING) or {}
-    if not isinstance(saved, dict) or saved.get("nonce") != state.nonce:
+    if (
+        not isinstance(saved, dict)
+        or saved.get("nonce") != state.nonce
+        or not browser_secret
+        or not hmac.compare_digest(
+            str(saved.get("browser_binding")),
+            _oauth_browser_digest(browser_secret),
+        )
+    ):
         return False
     try:
         expires_at = dt.datetime.fromisoformat(str(saved.get("expires_at"))).astimezone(dt.UTC)
@@ -3605,9 +3618,10 @@ def _unb64(raw: str) -> bytes:
 
 
 @app.post("/api/google/connect")
-def connect(request: Request) -> dict[str, str]:
+def connect(request: Request, response: Response) -> dict[str, str]:
     owner_id = request_owner(request).uid
     nonce = secrets.token_urlsafe(24)
+    browser_secret = secrets.token_urlsafe(32)
     expires_at = now() + dt.timedelta(seconds=OAUTH_STATE_SECONDS)
     state = _sign_oauth_state(OAuthState(owner_id=owner_id, nonce=nonce, expires_at=expires_at))
     calendar = google_calendar(owner_id)
@@ -3618,7 +3632,20 @@ def connect(request: Request) -> dict[str, str]:
     store.set_setting(
         owner_id,
         GOOGLE_OAUTH_NONCE_SETTING,
-        {"nonce": nonce, "expires_at": expires_at.isoformat()},
+        {
+            "nonce": nonce,
+            "expires_at": expires_at.isoformat(),
+            "browser_binding": _oauth_browser_digest(browser_secret),
+        },
+    )
+    response.set_cookie(
+        GOOGLE_OAUTH_BROWSER_COOKIE,
+        browser_secret,
+        expires=expires_at,
+        httponly=True,
+        samesite="lax",
+        secure=settings.auth_mode == "firebase",
+        path="/api/google/callback",
     )
     return {"url": url}
 
@@ -3651,34 +3678,44 @@ def disconnect_icloud(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/google/callback")
-def callback(code: str | None = None, state: str | None = None, error: str | None = None):
-    if error:
+def callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> HTMLResponse:
+    if error and not state:
         return _page("Not connected", f"Google said: {error}")
-    if not code:
+    if not code and not error:
         return _page("Nothing to do", "Google sent no authorization code.")
     try:
         owner_state = _verify_oauth_state(state)
     except ValueError:
         return _page("Wrong origin", "That callback did not come from Cooper.")
-    if not _consume_oauth_nonce(owner_state):
+    if not _consume_oauth_nonce(owner_state, request.cookies.get(GOOGLE_OAUTH_BROWSER_COOKIE)):
         return _page("Wrong origin", "That callback did not come from Cooper.")
 
-    calendar = google_calendar(owner_state.owner_id)
-    try:
-        token, email = calendar.exchange(code)
-        sealed = calendar.seal_token(token)
-        store.set_setting(owner_state.owner_id, GOOGLE_SETTING, {"token": sealed})
-        store.set_setting(
-            owner_state.owner_id,
-            GOOGLE_CONNECTED_SETTING,
-            {"connected": True, "email": email, "connected_at": now().isoformat()},
-        )
-    except CalendarError as failure:
-        return _page("Could not connect", str(failure))
-    return _page(
-        "Calendar connected · Gmail connected",
-        f"Cooper can now use {email or 'your Google Calendar and Gmail'}.",
-    )
+    if error:
+        response = _page("Not connected", f"Google said: {error}")
+    else:
+        calendar = google_calendar(owner_state.owner_id)
+        try:
+            token, email = calendar.exchange(code)
+            sealed = calendar.seal_token(token)
+            store.set_setting(owner_state.owner_id, GOOGLE_SETTING, {"token": sealed})
+            store.set_setting(
+                owner_state.owner_id,
+                GOOGLE_CONNECTED_SETTING,
+                {"connected": True, "email": email, "connected_at": now().isoformat()},
+            )
+            response = _page(
+                "Calendar connected · Gmail connected",
+                f"Cooper can now use {email or 'your Google Calendar and Gmail'}.",
+            )
+        except CalendarError as failure:
+            response = _page("Could not connect", str(failure))
+    response.delete_cookie(GOOGLE_OAUTH_BROWSER_COOKIE, path="/api/google/callback")
+    return response
 
 
 @app.post("/api/google/disconnect")
