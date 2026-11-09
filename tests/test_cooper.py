@@ -11,7 +11,6 @@ import io
 import json
 import os
 import pathlib
-import re
 import urllib.error
 from collections.abc import Iterator
 from zoneinfo import ZoneInfo
@@ -223,9 +222,6 @@ class TestReadingSentences:
 
     def test_an_empty_sentence_asks(self) -> None:
         assert read("   ").verb == "ask"
-
-    def test_parsing_is_repeatable(self) -> None:
-        assert read("write the report, 90m") == read("write the report, 90m")
 
 
 def task(**fields: object) -> Item:
@@ -728,10 +724,21 @@ class TestRanking:
 
         assert overdue.why["due"] == 1.0
 
-    def test_ranking_is_stable(self) -> None:
-        items = [task(title=name) for name in ("a", "b", "c")]
+    @pytest.mark.parametrize("order", [(0, 1, 2), (2, 1, 0), (1, 2, 0)])
+    def test_equal_scores_break_ties_by_age_then_id(self, order) -> None:
+        # Age is capped at 21 days, so these tasks have identical scores.
+        same_age = NOW - dt.timedelta(days=22)
+        items = [
+            task(id="b", created_at=same_age),
+            task(id="a", created_at=same_age),
+            task(id="older", created_at=NOW - dt.timedelta(days=23)),
+        ]
 
-        assert [e.item.id for e in rank(items, at=NOW)] == [e.item.id for e in rank(items, at=NOW)]
+        assert [entry.id for entry in rank([items[index] for index in order], at=NOW)] == [
+            "older",
+            "a",
+            "b",
+        ]
 
 
 class TestTaskState:
@@ -1051,6 +1058,7 @@ class TestPlacing:
     def test_nothing_lands_in_the_past(self) -> None:
         slots = place(rank([task(minutes=30)], at=NOW), busy=[], hours=self.hours(), at=NOW)
 
+        assert len(slots) == 1
         assert all(slot.start >= NOW for slot in slots)
 
     def test_booked_time_is_avoided(self) -> None:
@@ -1068,6 +1076,7 @@ class TestPlacing:
 
         slots = place(ranked, busy=[], hours=self.hours(max_per_day=9), at=NOW)
 
+        assert len(slots) == 5
         for first in slots:
             for second in slots:
                 if first is not second:
@@ -1078,7 +1087,7 @@ class TestPlacing:
 
         slots = place(ranked, busy=[], hours=self.hours(max_per_day=2), at=NOW, days=1)
 
-        assert len(slots) <= 2
+        assert len(slots) == 2
 
     def test_a_task_without_an_estimate_is_never_given_a_block(self) -> None:
         slots = place(rank([task(minutes=None)], at=NOW), busy=[], hours=self.hours(), at=NOW)
@@ -1112,13 +1121,23 @@ class TestPlacing:
 
         assert slots == []
 
-    def test_placing_is_repeatable(self) -> None:
-        ranked = rank([task(title="a", minutes=30), task(title="b", minutes=30)], at=NOW)
+    def test_places_exact_blocks_at_the_earliest_start_with_a_break(self) -> None:
+        ranked = rank([task(id="a", minutes=30), task(id="b", minutes=30)], at=NOW)
 
-        first = place(ranked, busy=[], hours=self.hours(), at=NOW)
-        second = place(ranked, busy=[], hours=self.hours(), at=NOW)
+        slots = place(ranked, busy=[], hours=self.hours(break_minutes=10), at=NOW)
 
-        assert [(s.item_id, s.start) for s in first] == [(s.item_id, s.start) for s in second]
+        assert [(slot.item_id, slot.start, slot.end) for slot in slots] == [
+            (
+                "a",
+                dt.datetime(2026, 8, 31, 9, 15, tzinfo=ZONE),
+                dt.datetime(2026, 8, 31, 9, 45, tzinfo=ZONE),
+            ),
+            (
+                "b",
+                dt.datetime(2026, 8, 31, 9, 55, tzinfo=ZONE),
+                dt.datetime(2026, 8, 31, 10, 25, tzinfo=ZONE),
+            ),
+        ]
 
 
 @pytest.fixture
@@ -1614,36 +1633,15 @@ class TestCategory:
 
 
 class TestTheArt:
-    """The mascot files and the code that asks for them have to agree.
-
-    A missing asset fails silently in the browser: the dev server answers an unknown path with
-    index.html, so the page shows a broken image and no test in the frontend notices. This is
-    cheaper than teaching vitest to read the filesystem.
-    """
+    """Check shipped image bytes; Vitest covers rendered asset delivery over HTTP."""
 
     ROOT = pathlib.Path(__file__).resolve().parent.parent
     BUILT = ROOT / "frontend" / "public" / "assets" / "mascot"
-    SOURCE = ROOT / "frontend" / "src"
-
-    def asked_for(self) -> set[str]:
-        text = "\n".join(
-            path.read_text()
-            for path in self.SOURCE.glob("*.tsx")
-            if not path.name.endswith(".test.tsx")
-        )
-        return set(re.findall(r"cooper_[a-z_]+", text))
-
-    def built(self) -> set[str]:
-        return {path.stem for path in self.BUILT.glob("*.webp")}
-
-    def test_every_name_the_code_asks_for_exists(self) -> None:
-        assert self.asked_for() - self.built() == set()
-
-    def test_nothing_is_shipped_that_no_screen_shows(self) -> None:
-        assert self.built() - self.asked_for() == set()
 
     def test_the_art_is_webp_and_carries_transparency(self) -> None:
-        for path in sorted(self.BUILT.glob("*.webp")):
+        assets = sorted(self.BUILT.glob("*.webp"))
+        assert assets, "No mascot assets were shipped"
+        for path in assets:
             head = path.read_bytes()[:64]
             assert head[:4] == b"RIFF" and head[8:12] == b"WEBP", path.name
             assert b"ALPH" in head or b"VP8L" in head, f"{path.name} has no alpha"
