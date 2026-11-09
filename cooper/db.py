@@ -1,8 +1,7 @@
 """Everything Cooper stores.
 
-Three tables. An item is a task or an event; the difference is whether the time is fixed.
-Settings hold your working hours and Google tokens. Changes exist only so the last action can
-be undone.
+Three planning tables hold items, settings, and undo snapshots. Four accounting tables
+hold funded-AI allowances, spend envelopes, requests, and attempts; they do not enable dispatch.
 
 Deliberately no separate blocks table: a task with a start time *is* scheduled. Splitting
 those apart was the first thing that made the old version complicated.
