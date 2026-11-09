@@ -1,47 +1,58 @@
 # Backup and recovery
 
-Cooper's items, settings, encrypted provider credentials, and undo history live in one database.
-Keep the database backup and `COOPER_ENCRYPTION_KEY` separately; a database restore without the
-matching encryption key cannot read saved Google or iCloud credentials. Never put database URLs,
-keys, backup contents, or provider tokens in a ticket or application log.
+Use this runbook for database backups, restore tests, and data incidents. Deployment rollback is in
+[WORKFLOW.md](WORKFLOW.md#rollback-and-incidents).
+
+## Protect the recovery material
+
+The database holds planning data, settings, encrypted provider credentials, undo, and AI accounting.
+Keep backups in restricted encrypted storage away from the API. Store the matching
+`COOPER_ENCRYPTION_KEY` separately. Without it, restored Google and iCloud credentials cannot be
+read. Never put keys, database URLs, backup contents, or provider tokens in logs or tickets.
 
 ## Hosted PostgreSQL
 
-Before public launch, verify the database provider's backup schedule, retention, and restore
-permissions in its dashboard. Record the latest successful backup time and perform a restore into
-a **separate disposable database**. The repository and Render environment template do not create
-or prove that a hosted backup exists.
+### Verify and back up
 
-For a manual backup using the database provider's direct PostgreSQL connection, set the standard
-libpq connection variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`) in a secure
-shell session, then run:
+Before public launch, confirm the provider dashboard's backup schedule, retention, restore
+permissions, and latest successful backup. The repository and Render template do not create or
+prove hosted backups.
+
+For a manual backup, set libpq variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`)
+privately for the provider's direct PostgreSQL connection, then run:
 
 ```bash
 pg_dump --format=custom --no-owner --file=cooper-backup.dump
 ```
 
-Store the dump in restricted, encrypted storage away from the running API. Use a newly created,
-empty database for the restoration test, with its own libpq connection variables:
+### Test a restore
 
-```bash
-pg_restore --no-owner --exit-on-error --dbname="$PGDATABASE" cooper-backup.dump
-```
+1. Create a **separate disposable empty database**. Change the libpq variables to that destination.
+   Never test against production. In a Bash-compatible shell, run:
 
-Start the same Cooper build against the restored database. Confirm `/health` returns `200`, sign
-in with a test account, check that expected items and settings appear, and verify that
-the latest migrations match the build. Do not run the restore against the live database during a
-test. Record the backup timestamp, restore date, result, and time taken without user data or
-secrets. Recheck after schema changes and periodically thereafter.
+   ```bash
+   pg_restore --no-owner --exit-on-error --dbname="$PGDATABASE" cooper-backup.dump
+   ```
 
-For an incident, stop API writes and the Gmail sync timer first. Determine the last known good
-backup and the amount of data that would be lost. Restore into a new database, validate it as
-above, then switch the server-side `COOPER_DATABASE_URL` to that database and restart the API.
-Keep the old database isolated until reconciliation is complete. Reconnect provider accounts if
-their saved credentials cannot be decrypted with the restored key.
+2. Start the same Cooper build against the restored database with the matching encryption key.
+   Confirm `/health` returns 200, test-account sign-in works, expected items and settings appear,
+   and migrations match the build.
+3. Record backup timestamp, restore date, result, and elapsed time without secrets or user data.
+   Repeat after schema changes and periodically thereafter.
+
+### Recover an incident
+
+1. Stop API writes and the Gmail timer.
+2. Identify the last known good backup and expected data loss.
+3. Restore into a new database and validate using the restore checklist above.
+4. After approval, change server-side `COOPER_DATABASE_URL` and restart. Isolate the old database
+   until reconciliation is complete. Reconnect accounts if saved credentials cannot be decrypted.
 
 ## Local SQLite
 
-Use SQLite's online backup API while the application may be running; do not copy an active
-`cooper.db` file directly. The local backup and disposable restore were exercised on 2026-09-17
-with `sqlite3.Connection.backup()`, `PRAGMA integrity_check`, and matching row counts for all
-three tables. This does not validate hosted PostgreSQL backups.
+Use `sqlite3.Connection.backup()` for an online backup. Do not copy an active `cooper.db` directly.
+Restore into a disposable database first and check integrity and expected data before using it.
+
+**Historical evidence, 2026-09-17:** local backup and restore used the online API,
+`PRAGMA integrity_check`, and matching row counts for the three planning tables present then. This
+is not evidence for the later AI tables or hosted PostgreSQL backups.
