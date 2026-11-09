@@ -1,10 +1,8 @@
 """What to do first, and when to do it.
 
-Two small pure functions with no model and no I/O.
-
-`rank` scores open tasks. `place` drops the top of that ranking into your working hours,
-skipping anything already on the calendar. Working hours replace the old focus-window system:
-same protection, one setting instead of a screen.
+Pure ranking, placement, planning snapshots, recovery previews, and weekly review.
+`rank` scores open tasks; `place` fits exact-length blocks inside configured availability.
+Every projection shares that scheduling logic. No model, network, or database I/O.
 """
 
 from __future__ import annotations

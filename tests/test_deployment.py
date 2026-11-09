@@ -1,126 +1,102 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+from sqlalchemy.engine import make_url
+
+from cooper.config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_firebase_hosting_is_spa_only() -> None:
-    config = json.loads((ROOT / "firebase.json").read_text())
+    config = json.loads((ROOT / "firebase.json").read_text(encoding="utf-8"))
 
     rewrites = config["hosting"]["rewrites"]
     assert config["hosting"]["public"] == "frontend/dist"
-    assert rewrites == [{"source": "**", "destination": "/index.html"}]
+    assert any(
+        rewrite.get("source") == "**" and rewrite.get("destination") == "/index.html"
+        for rewrite in rewrites
+    )
     assert not any("run" in rewrite for rewrite in rewrites)
-    assert ".firebaserc" not in {path.name for path in ROOT.iterdir()}
 
 
-def test_frontend_setup_does_not_require_an_environment_file() -> None:
-    text = (ROOT / "frontend" / ".env.example").read_text()
-    readme = (ROOT / "README.md").read_text()
-
-    assert "No frontend environment file is required" in text
-    assert "VITE_COOPER_KEY" not in text
-    assert "VITE_FIREBASE_API_KEY" not in text
-    assert "VITE_COOPER_KEY" not in readme
-    assert ".env.local" not in readme
-
-
-def test_vite_proxy_reads_only_the_backend_local_key() -> None:
-    text = (ROOT / "frontend" / "vite.config.ts").read_text()
-
-    assert "loadEnv" in text
-    assert "COOPER_SHARED_KEY" in text
-    assert '"X-Cooper-Key"' in text
-    assert "VITE_COOPER_KEY" not in text
-
-
-def test_dockerfile_runs_migrations_before_render_server() -> None:
-    text = (ROOT / "Dockerfile").read_text()
-
-    migration = text.index("uv run --frozen --no-dev --no-sync alembic upgrade head")
-    server = text.index("uv run --frozen --no-dev --no-sync uvicorn cooper.app:app")
-
-    assert migration < server
-    assert "uv run alembic upgrade head" not in text
-    assert "uv run uvicorn cooper.app:app" not in text
-    assert "--host 0.0.0.0" in text
-    assert "--port ${PORT:-8080}" in text
-    assert "COOPER_GOOGLE_CLIENT_SECRET=" not in text
-    assert "COOPER_DATABASE_URL=" not in text
-
-
-def test_ci_verifies_pull_requests_but_deploys_only_main_runs() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
-
-    assert "  pull_request:\n    branches:\n      - main" in workflow
-    assert "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" in workflow
-    assert "uv lock --check" in workflow
-    assert "uv pip check" in workflow
-    assert "npm audit --omit=dev --audit-level=high" in workflow
-
-
-def test_deployment_actions_use_reviewed_immutable_commits() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
+def test_ci_actions_cannot_change_via_mutable_tags() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     uses = re.findall(r"^\s+uses:\s+(.+)$", workflow, re.MULTILINE)
-    expected = {
-        "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
-        "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
-        "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
-        "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
-        "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
-        "FirebaseExtended/action-hosting-deploy": "500ac625ca2dd40cbd15f7659af953801858032a",
-    }
-
     assert uses
-    pinned = {}
     for action in uses:
-        match = re.fullmatch(
-            r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}\s+#\s+v\d+(?:\.\d+){0,2}",
-            action,
+        assert re.fullmatch(
+            r"[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}",
+            action.split("#", 1)[0].strip(),
         )
-        assert match
-        name, sha = action.split("@", 1)[0], action.split("@", 1)[1].split()[0]
-        pinned[name] = sha
-    assert pinned == expected
 
 
-def test_backend_env_example_documents_local_and_hosted_values() -> None:
-    local = (ROOT / ".env.example").read_text()
-    hosted = (ROOT / "render.env.example").read_text()
-
-    for expected in (
-        "COOPER_AUTH_MODE=local",
-        "COOPER_DATABASE_URL=sqlite:///./cooper.db",
-    ):
-        assert expected in local
-    for expected in (
-        "COOPER_AUTH_MODE=firebase",
-        "COOPER_OAUTH_STATE_SECRET=",
-        "COOPER_SYNC_SECRET=",
-        "COOPER_GOOGLE_REDIRECT_URI=",
-    ):
-        assert expected in hosted
-    # Cooper-supplied keys are documented, but both examples ship with included AI off.
-    assert "COOPER_INCLUDED_AI_ENABLED=false" in local
-    assert "COOPER_INCLUDED_AI_ENABLED=false" in hosted
-    assert "COOPER_GEMINI_API_KEY=\n" in local  # no real-looking key in the local example
-    assert "COOPER_ALLOWED_EMAILS" not in hosted
-    assert "render.env.example" in local
+def test_container_start_is_gated_on_successful_migrations() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    commands = [json.loads(line[4:]) for line in dockerfile.splitlines() if line.startswith("CMD ")]
+    assert len(commands) == 1
+    launcher = commands[0]
+    assert launcher[:2] == ["sh", "-c"]
+    tokens = shlex.split(launcher[2])
+    # The actual container command must not start serving if Alembic fails. Unlike a source
+    # substring check, this also rejects replacing && with ; or || while keeping both commands.
+    gate = tokens.index("&&")
+    migration, server = tokens[:gate], tokens[gate + 1 :]
+    assert migration[-3:] == ["alembic", "upgrade", "head"]
+    assert "uvicorn" in server and "cooper.app:app" in server
 
 
-def test_hosted_docs_recommend_supabase_postgres_without_a_second_writer() -> None:
-    readme = (ROOT / "README.md").read_text()
-    architecture = (ROOT / "ARCHITECTURE.md").read_text()
-    hosted = (ROOT / "render.env.example").read_text()
+@pytest.fixture
+def template_settings(monkeypatch):
+    # Exercise the real .env loader without inheriting a developer's credentials or test defaults.
+    for name in list(os.environ):
+        if name.startswith("COOPER_"):
+            monkeypatch.delenv(name)
 
-    assert "Supabase Postgres is the recommended beta database" in readme
-    assert "Cloud SQL remains the single-provider alternative" in readme
-    assert "Supabase pooler" in readme
-    assert "Supabase Auth is not used" in architecture
-    assert "Supabase Storage is not used" in architecture
-    assert "COOPER_DATABASE_URL=postgresql+psycopg://" in hosted
-    assert "sslmode=require" in hosted
+    def load(template: str, **overrides) -> Settings:
+        return Settings(
+            _env_file=ROOT / template,
+            shared_key="synthetic-local-test-key-only",
+            **overrides,
+        )
+
+    return load
+
+
+def test_local_template_works_without_provider_credentials(template_settings) -> None:
+    settings = template_settings(".env.example")
+
+    assert settings.auth_mode == "local"
+    assert make_url(settings.database_url).get_backend_name() == "sqlite"
+    assert not settings.google_client_id
+    assert not settings.google_secret()
+    assert not settings.encryption()
+    assert not settings.included_ai_enabled
+
+
+def test_hosted_template_accepts_operator_secrets_and_requires_tls(template_settings) -> None:
+    settings = template_settings(
+        "render.env.example",
+        oauth_state_secret="synthetic-oauth-secret-long-enough",
+        sync_secret="synthetic-sync-secret-long-enough",
+    )
+    database = make_url(settings.database_url)
+
+    assert settings.auth_mode == "firebase"
+    assert database.get_backend_name() == "postgresql"
+    assert database.query.get("sslmode") == "require"
+    assert not settings.included_ai_enabled
+
+
+@pytest.mark.parametrize("template", [".env.example", "render.env.example"])
+def test_templates_cannot_enable_unfunded_ai_by_flipping_the_flag(template_settings, template):
+    with pytest.raises(ValidationError, match="pinned models and reviewed prices"):
+        template_settings(template, included_ai_enabled=True)

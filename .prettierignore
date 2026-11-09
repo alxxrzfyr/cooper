@@ -2,5 +2,4 @@
 .venv/
 frontend/node_modules/
 frontend/dist/
-frontend/.impeccable/
 frontend/public/sw.js

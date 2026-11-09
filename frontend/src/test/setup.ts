@@ -7,5 +7,5 @@ import { afterEach } from "vitest";
 // the DOM accumulates between tests and every query finds duplicates.
 afterEach(() => {
   cleanup();
-  window.history.replaceState({}, "", "/");
+  if (typeof window !== "undefined") window.history.replaceState({}, "", "/");
 });

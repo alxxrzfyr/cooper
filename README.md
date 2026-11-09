@@ -1,236 +1,186 @@
-<p align="center">
-  <img src="frontend/public/assets/mascot/cooper_avatar.webp" alt="Cooper mascot" width="128" />
-</p>
+<div align="center">
 
-<h1 align="center">Cooper</h1>
+<img src="frontend/public/assets/mascot/cooper_avatar.webp" alt="Cooper mascot" width="128" />
 
-<p align="center">A conversational planning workspace for tasks, events, and everyday commitments.</p>
+# Cooper
 
-<p align="center">
-  <img src="https://img.shields.io/badge/status-public%20beta-405536?style=flat-square" alt="Public beta" />
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/FastAPI-0.141-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
-  <img src="https://img.shields.io/badge/TypeScript-7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Firebase-Auth-FFCA28?style=flat-square&logo=firebase&logoColor=111827" alt="Firebase Authentication" />
-</p>
+**One place for everything that takes your time, and you can talk to it.**
 
-## Overview
+A personal planner for tasks, events, and errands.
+It shows you what matters next and fits that work around time already promised.
 
-Cooper is a personal planning workspace that turns plain-language input into organized tasks,
-events, and time-aware plans. It gives each item a priority, explains the ranking, and schedules
-estimated work around the commitments already on the calendar.
+[What is Cooper?](#what-is-cooper) · [Quick Start](#quick-start) · [Features](#features) · [Documentation](#documentation)
 
-The product is designed for one person at a time. The hosted public beta supports private accounts
-through verified email/password or Google sign-in, but it is not a team or project-management tool.
+[![Status: public beta](https://img.shields.io/badge/status-public%20beta-405536?style=flat)](#quick-start)
+[![Web and PWA](https://img.shields.io/badge/Web_%2F_PWA-installable-0A84FF?style=flat&logo=pwa&logoColor=white)](#features)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=111827)](https://react.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&logo=opensourceinitiative&logoColor=white)](LICENSE)
 
-## Product capabilities
+</div>
 
-- Capture tasks and events through a structured form or conversational input.
-- Rank work by deadline, importance, age, and estimated effort.
-- Schedule estimated tasks inside configured working hours.
-- Display the day, ranked work, fixed events, and scheduled blocks in one workspace.
-- Undo the latest change, including a complete scheduling run.
-- Connect Google Calendar and Gmail as read-only commitment sources. Cooper stores new calendar
-  items locally.
-- Read iCloud calendars through CalDAV so those commitments also block scheduling.
-- Normalize local, Google, iCloud, and Gmail commitments into one deduplicated planning snapshot
-  used by calendar cells, navigation counts, task state, workload facts, and common Ask questions.
-- Use that snapshot on Home for Now, Next, Today, At Risk, and Upcoming without duplicating the
-  underlying task or commitment; incomplete provider data never becomes a free-time claim.
-- Confirm creation and scheduling only after the committed item is visible in refreshed planning
-  state, preserving overlap and unavailable-calendar warnings.
-- Move a local COOPER item to an exact future time with a required duration from Ask or Home, with
-  undo and a receipt built from refreshed committed state. External calendar items stay read-only.
-- Google Calendar and iCloud Calendar acceptance flows were manually verified on 2026-09-14;
-  the repeatable checklist and privacy-safe record live in `docs/LIVE_PROVIDER_ACCEPTANCE.md`.
-- Answer common focus, remaining-work, next-action, deadline, workload, and fit questions directly
-  from current COOPER state; use bounded read tools for longer-tail Ask questions.
-- Distinguish current commitments, unscheduled work, priority and workload uncertainty in
-  deterministic answers; a clear calendar is not proof that all open work fits.
-- Recover missed local blocks through a preview-first, stale-safe batch flow with one conflict-safe undo.
-- Review the next seven days in a read-only Home panel that writes no planning state.
-- Browse landing FAQs beside proposed Free/Plus choices. Plus and included AI are coming soon,
-  not active paid subscriptions. No API key is needed; model help stays off until Cooper-funded
-  AI is enabled, and manual entry plus built-in answers work without it.
-- Keep horizontal landing chapters from 900px regardless of window height. Section scrollbars
-  are hidden without disabling scrolling. Vertical wheel input drives horizontal travel,
-  including over FAQs. Shared FAQ/pricing rows align headers and content, and chapter
-  columns and cards adapt to the available CSS viewport when resizing or zooming.
-- Continue capturing, ranking, and scheduling without a Gemini key or a connected Google account.
-- Install the frontend as a responsive PWA with light and dark themes.
+<br>
 
-## Technology stack
+## What is Cooper?
 
-The approved boundary is one responsive web/PWA product with no native mobile app suite.
-Funded Gemini/Groq adapters and accounting are built but disabled; subscriptions and a GCP
-cutover are not current runtime capabilities.
+> **Ranked work, real times, one undo.**
 
-| Area                         | Technology                                                             |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| Backend                      | Python 3.12, FastAPI, Uvicorn                                          |
-| Validation and configuration | Pydantic Settings                                                      |
-| Persistence                  | SQLAlchemy, Alembic, SQLite, PostgreSQL                                |
-| Frontend                     | React 19, TypeScript, Vite                                             |
-| Authentication               | Firebase Authentication with Google or verified email/password sign-in |
-| Calendar and mail            | Google Calendar/Gmail REST APIs and iCloud CalDAV                      |
-| AI assistance                | Cooper-supplied Gemini with Groq fallback; disabled until funded       |
-| Delivery                     | Firebase Hosting for the frontend and Render for the API               |
+Cooper is a planner for one person. Most planners stop at storage: writing something down does not
+tell you what deserves the next hour, and a calendar does not tell you whether the work you agreed
+to actually fits.
 
-## Architecture
+Three questions come up every day, and scattered lists answer none of them:
 
-Cooper keeps the model, application state, and external services separate. The backend has one
-database writer and one scheduling pipeline.
+| The question                     | What Cooper does                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| **What deserves the next hour?** | A ranked list where every row can show why it sits where it does                           |
+| **When can I actually do it?**   | An exact-length block inside the hours you chose, around what is already booked            |
+| **What is going on today?**      | One screen with the current block, what is next, what is at risk, and what has no time yet |
 
-```mermaid
-flowchart LR
-    subgraph Frontend["React frontend"]
-        Form["Form.tsx<br/>Manual capture"] --> API["api.ts"]
-        Ask["Chat.tsx<br/>Ask mode"] --> API
-        API --> Routes["FastAPI routes"]
-        Routes --> Views["Home.tsx / Calendar.tsx"]
-    end
+Everything you add carries one of four colors:
 
-    subgraph Backend["Python backend"]
-        Routes --> Brain["brain.py<br/>Validated Action"]
-        Brain --> App["app.py<br/>Only database writer"]
-        App --> Planner["planner.py<br/>Rank and place"]
-        Sources["sources.py<br/>Busy intervals"] --> Planner
-        App --> Database[("SQLAlchemy database")]
-        Watcher["watcher.py<br/>Fixed Gmail sync"] --> Google["google.py<br/>Calendar and Gmail"]
-        MCP["mcp.py<br/>Bounded tools"] --> App
-        ICloud["icloud.py<br/>CalDAV reader"] --> Sources
-        App --> Google
-        Google --> Sources
-    end
+![Academics](https://img.shields.io/badge/Academics-4f46c8?style=flat-square)
+![Work](https://img.shields.io/badge/Work-0b6bd3?style=flat-square)
+![Organizations](https://img.shields.io/badge/Organizations-a85508?style=flat-square)
+![Personal](https://img.shields.io/badge/Personal-0f7285?style=flat-square)
 
-    Google --> CalendarAPI["Google Calendar API"]
-    Google --> GmailAPI["Gmail API"]
-    ICloud --> CalDAV["iCloud CalDAV"]
-    Brain -. optional .-> Gemini["Gemini"]
+The loop is short:
+
+1. **Capture.** A sentence or the form. Neither one calls a model.
+2. **Rank.** Deadline, importance, age, and effort set the order.
+3. **Place.** One continuous session at its real length, inside your hours.
+4. **Adjust.** Fix an estimate, move an item, or undo the last change.
+
+> [!NOTE]
+> Cooper stays small on purpose. It will not manage a team, write back to Google or iCloud, or guess
+> when a request could mean two things. It asks, then acts on exactly what you confirmed.
+
+> [!TIP]
+> Run it locally, or use the hosted beta with your own sign-in. Either way it is one installable web
+> app with light and dark themes.
+
+<br>
+
+## Quick Start
+
+You need four things: **Python 3.12**, **Node.js 22**, **uv**, and **npm**.
+
+1. Copy [`.env.example`](.env.example) to `.env` in the repository root. Set a fresh random
+   `COOPER_SHARED_KEY` of at least 24 characters. Keep `COOPER_AUTH_MODE=local` and
+   `COOPER_INCLUDED_AI_ENABLED=false`. Leave provider credentials empty. Never commit `.env`.
+
+2. From the repository root, install and start the backend:
+
+   ```bash
+   uv sync --frozen
+   uv run uvicorn cooper.app:app --reload --host 127.0.0.1 --port 8000
+   ```
+
+3. In a second terminal, starting from the repository root, start the frontend:
+
+   ```bash
+   cd frontend
+   npm ci
+   npm run dev
+   ```
+
+4. Open **http://127.0.0.1:5173/app**. Set your availability in Settings, then add a task in Manual
+   mode with an estimate. Check its scheduled block and try Undo. A task without an estimate stays
+   ranked but unscheduled.
+
+The development proxy attaches the root `.env` shared key to API requests, so you do not need a
+frontend environment file or a browser key. Keep the local API on `127.0.0.1`, never `0.0.0.0`,
+because that shared key separates your local copy from the network. It is not account
+authentication. The pilot uses the server timezone for every owner, and the template defaults to
+`Asia/Singapore`.
+
+<br>
+
+## Features
+
+- **Capture your way.** Structured fields or a plain sentence, plus built-in answers for common
+  planning questions. Optional model help handles broader phrasing when it is enabled.
+- **Make a realistic plan.** Breaks, deadlines, and daily limits all apply, and a priority
+  recommendation is never dressed up as a confirmed time slot.
+- **See one consistent day.** Home, Calendar, and planning answers read the same planning state, so
+  counts and risks never disagree.
+- **Use the calendars you already have.** Google Calendar and iCloud supply busy time, and Gmail
+  imports supported confirmations. If a calendar cannot be checked, capture still succeeds and
+  scheduling waits with a reason you can see.
+- **Recover without guesswork.** Preview recovery of missed blocks before applying it, and read a
+  weekly review of recent completions, unfinished work, and the next seven days.
+
+Cooper supplies the keys for included AI, so users do not configure their own. Model help stays off
+until Cooper-funded AI is enabled. The landing page marks Plus and included AI as coming soon, and
+the beta needs no paid subscription.
+
+<br>
+
+## Tech Stack
+
+| Area            | Technology and role                                                        |
+| --------------- | -------------------------------------------------------------------------- |
+| Backend         | Python 3.12, FastAPI, and Pydantic for requests and validation             |
+| Frontend        | React 19, TypeScript, and Vite for the responsive web/PWA                  |
+| Database        | SQLAlchemy and Alembic. SQLite locally, PostgreSQL for hosted accounts     |
+| Hosted identity | Firebase Authentication with Google or verified email/password sign-in     |
+| Connections     | Google Calendar/Gmail REST APIs and iCloud CalDAV                          |
+| Model transport | Gemini primary and Groq availability fallback, with server-side accounting |
+| Hosting         | Firebase Hosting for the frontend and Render for the API                   |
+
+The model proposes actions and application code validates and executes them. `cooper/app.py` is the
+only database writer, and ranking and scheduling stay deterministic.
+[Architecture](ARCHITECTURE.md) has the code maps and request flows.
+
+<br>
+
+## Development
+
+From the repository root:
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-### Backend boundaries
+From `frontend/`:
 
-- `brain.py` parses input and returns a validated `Action`. It never accesses the database.
-- `app.py` validates and executes every mutation, including events parsed from email.
-- `planner.py` ranks and places work without network or database I/O.
-- `sources.py` combines Cooper blocks, Google Calendar events, iCloud events, and reconciled Gmail
-  commitments into the busy intervals used by the planner.
-- `google.py` handles Google Calendar/Gmail reads and per-owner OAuth tokens; new Cooper blocks
-  are saved locally rather than written back to Google.
-- `icloud.py` reads iCloud calendars with encrypted owner credentials and never writes remotely.
-- `mcp.py` defines bounded tool schemas shared by Ask and the authenticated MCP endpoint.
-- `watcher.py` runs the fixed-interval Gmail sync and reports its last check through the app.
+```bash
+npm test -- --no-file-parallelism
+npm run format:check
+npm run build
+```
 
-### Frontend structure
+Read [AGENTS.md](AGENTS.md) before changing code. The [workflow](docs/WORKFLOW.md) covers Issues,
+branches, review, and release checks. Hosted configuration starts with
+[`render.env.example`](render.env.example), and
+[Architecture](ARCHITECTURE.md#authentication-and-hosting) explains the account and database
+boundaries.
 
-The React frontend is organized around the four primary product areas:
+<br>
 
-- `Home.tsx` presents the snapshot-backed Now, Next, Today, At Risk, and Upcoming command center.
-- `Form.tsx` captures structured items without parsing or network access.
-- `Chat.tsx` handles conversational input and text-only AI answers.
-- `Calendar.tsx` renders day, week, and month views.
-- `Nav.tsx` provides the responsive desktop rail and mobile navigation.
-- `Mascot.tsx` renders the Cooper mascot states used across the product.
-- `landing/` contains the public landing, authentication, Terms, and Privacy pages.
+## Documentation
 
-### Data model
+Pick the document that answers your question:
 
-Cooper uses three planning tables plus four funded-AI accounting tables:
+| Question                          | Read                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| What should Cooper do?            | [Product requirements](PRD.md) for scope, seven requirements, and behavior contracts                                                                         |
+| Where and how is it implemented?  | [Architecture](ARCHITECTURE.md) for code maps, data flows, planning, and persistence                                                                         |
+| What must a contributor preserve? | [AGENTS.md](AGENTS.md) for engineering rules and stop conditions                                                                                             |
+| How should the interface behave?  | [Design](docs/DESIGN.md) for layout, interactions, copy, and accessibility                                                                                   |
+| How does work reach a release?    | [Workflow](docs/WORKFLOW.md) for Issues, pull requests, evidence, and deployment                                                                             |
+| How are connections verified?     | [Live-provider acceptance](docs/LIVE_PROVIDER_ACCEPTANCE.md) for the checklist and dated records                                                             |
+| How is data recovered?            | [Recovery](docs/RECOVERY.md) for backup, restore, and incident procedures                                                                                    |
+| Why these product boundaries?     | [Web-first decision](docs/decisions/2026-09-30-web-first-product-boundary.md) and [included-AI decision](docs/decisions/2026-09-30-included-ai-providers.md) |
 
-- `item` stores tasks and events. A fixed time distinguishes an event from a task.
-- `setting` stores working hours, provider state, encrypted tokens, and watcher health.
-- `change` stores the snapshots required to undo the latest mutation.
-- `ai_allowance`, `ai_spend_envelope`, `ai_request`, and `ai_attempt` provide durable
-  admission, cash reservation, settlement or freeze, and replay receipts. Funded dispatch
-  remains disabled.
+Active work, priority, and release gates live in the
+[Cooper Project](https://github.com/users/alxxrzfyr/projects/1), not a separate Markdown backlog.
 
-SQLite is the local default. Hosted deployments use PostgreSQL through the same SQLAlchemy model.
-Supabase Postgres is the recommended beta database; Cloud SQL remains the single-provider alternative.
-Use a server-only Supabase pooler connection for runtime traffic. Firebase remains
-responsible for identity, and Supabase Auth and Supabase Storage are not used.
-
-### Security and privacy
-
-- Firebase ID tokens identify hosted users, and every query is scoped by the verified owner.
-- Google refresh tokens are encrypted before storage.
-- iCloud app-specific passwords are encrypted server-side and never returned to the browser or model.
-- Manual mode never calls a model; placement may read connected calendars to avoid conflicts.
-- Provider credentials stay server-side; users have no API-key setup.
-- Titles are sanitized before they reach a model.
-- Remote failures do not block local capture. If a connected calendar cannot be checked, placement
-  waits rather than guessing that its time is free. Local data remains the write source of truth.
-
-Cooper-funded Gemini/Groq replaces the old browser-key flow. Gemini is primary and Groq is
-fallback only for eligible availability failures within one logical allowance, call ceiling,
-and cost envelope. Accounting and provider adapters are implemented, but funded dispatch stays
-disabled until cash, model, price, and live-provider gates close.
-
-## Design principles
-
-Cooper follows a small set of product rules:
-
-1. The model proposes an action. Application code decides whether it is valid and executes it.
-2. The planner places work only within configured working hours.
-3. Ambiguous references produce a question instead of a guess.
-4. Green indicates a completed or added item. Red indicates a deleted item.
-5. Calendar integrations are additive. Cooper remains useful without them.
-
-## Project documentation
-
-Active work, priority, and release gates live in the private
-[Cooper Project](https://github.com/users/alxxrzfyr/projects/1). Durable product and engineering
-contracts remain in Git:
-
-- [`PRD.md`](PRD.md) defines the product requirements, current coverage, and non-goals.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) documents the current implementation and invariants.
-- [`AGENTS.md`](AGENTS.md) records contribution and engineering constraints.
-- [`docs/WORKFLOW.md`](docs/WORKFLOW.md) defines Issue, branch, pull request, release, and incident flow.
-- [`docs/RECOVERY.md`](docs/RECOVERY.md) documents backup, restore, and deployment recovery.
-- [`docs/DESIGN.md`](docs/DESIGN.md) defines the visual system and interaction rules.
-- [`docs/LIVE_PROVIDER_ACCEPTANCE.md`](docs/LIVE_PROVIDER_ACCEPTANCE.md) contains the repeatable
-  Google, Gmail, iCloud, and Cooper-local live acceptance record.
-- [`docs/decisions/2026-09-30-included-ai-providers.md`](docs/decisions/2026-09-30-included-ai-providers.md)
-  records included-AI provider order, fallback, accounting, and activation gates.
-- [`docs/decisions/2026-09-30-web-first-product-boundary.md`](docs/decisions/2026-09-30-web-first-product-boundary.md)
-  records the single responsive web/PWA boundary.
+<br>
 
 ## License
 
-## Local development without integrations
-
-Use Python 3.12 and Node.js 22, matching CI. Install `uv` and npm dependencies from
-the committed lockfiles. Copy `.env.example` to an untracked `.env` locally, then
-set a new random `COOPER_SHARED_KEY` of at least 24 characters. Leave Google and
-encryption settings empty for the no-provider path. Never commit `.env` or paste
-its values into issues or logs. The shared key is local isolation, not hosted auth.
-
-```bash
-uv sync --frozen
-uv run uvicorn cooper.app:app --reload --host 127.0.0.1 --port 8000
-```
-
-In another terminal:
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Open the local Vite URL, configure the same local shared key in Settings when
-requested, and use Manual capture with an estimated task. Set availability, plan
-the task, then undo. `/health` checks database access, not connected calendars or AI.
-No Gemini key, Firebase account, Google account or iCloud credentials are required
-for this local path. Do not bind to `0.0.0.0`.
-
-For verification, run the commands in `AGENTS.md`. HTTP fixture checks, browser
-inspection and connected-provider acceptance are separate gates. A working local
-setup does not prove hosted backup or deployment readiness.
-
-This repository is not currently distributed under an open-source license. All rights reserved.
-
-## Author
-
-Created and maintained by **Alex L. Berin**.
+Cooper is released under the [MIT License](LICENSE). Use it, fork it, and build on it. Created and
+maintained by **Alex L. Berin**.

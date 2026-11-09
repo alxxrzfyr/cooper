@@ -1,35 +1,28 @@
 # Web-first product boundary
 
-Date: 2026-09-30. Status: accepted owner direction.
+**Date:** 2026-09-30 · **Status:** Accepted owner direction
 
-## Context
+## Context and decision
 
-The owner asked for startup-level product refinement and clarified that native
-mobile development is unaffordable. "Multi-app" must not become multiple separately
-maintained products before Cooper's planning value is demonstrated.
+Native mobile development is unaffordable for this scope. Demonstrate Cooper's planning value
+before maintaining multiple products.
 
-## Decision
+Build **one responsive web/PWA**, one account, and the existing shared backend. The eventual
+subscription belongs to that product, not separate apps. Capture, planning, recovery, and review
+are bounded workflows inside Cooper, not autonomous services or agent dashboards.
 
-Build one Cooper product as a responsive web/PWA application, with one account,
-one subscription and the existing shared planning backend. No native mobile apps
-or separate productivity app suite in this scope. Assisted capture, planning,
-recovery and review are bounded workflows within Cooper, not new autonomous services.
+The owner clarified on 2026-10-01 that Cooper supplies Gemini and Groq keys and removes BYOK
+entirely. The [provider decision](2026-09-30-included-ai-providers.md) governs fallback and funded
+activation.
 
-The target hosted product provides Gemini with Groq availability fallback and removes
-BYOK entirely: Cooper supplies both provider keys, as clarified by the owner on
-2026-10-01. The existing [provider decision](2026-09-30-included-ai-providers.md)
-continues to govern that direction. Server-funded enablement still requires
-approved accounting, budgets and provider acceptance.
+## Consequences and limits
 
-## Consequences
+- Use responsive browser layout, accessibility, and the existing PWA shell. No native clients or
+  separate productivity app suite.
+- Installability does not promise offline data editing or reliable closed-app reminders.
+- Existing product rules remain until a deliberate change is reviewed.
+- This decision does **not** approve pricing, commercial tables, recurring tasks, infrastructure
+  spend, funded-AI activation, or deployment.
 
-Use browser-responsive layout, accessibility and the existing PWA shell. Do not
-promise offline data editing or reliable closed-app reminders merely because the
-site is installable. Keep current product rules until each deliberate change is
-reviewed. This decision does not approve pricing, commercial tables, recurring
-tasks, infrastructure spend or deployment.
-
-[`PRD.md`](../../PRD.md) defines current product coverage and
-[`ARCHITECTURE.md`](../../ARCHITECTURE.md) defines the implemented system. Neither this boundary
-nor those current documents imply approval for pricing, recurring tasks, commercial schema,
-infrastructure spend, or deployment.
+[PRD.md](../../PRD.md) records current coverage. [Architecture](../../ARCHITECTURE.md) records the
+implemented system. Neither turns this boundary into commercial or release approval.

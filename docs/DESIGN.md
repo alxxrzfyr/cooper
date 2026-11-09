@@ -1,196 +1,159 @@
 # Interface design
 
-The interface uses a small token set, rounded surfaces, soft elevation, and light or dark themes.
-Tokens live in `frontend/src/theme.css`.
+This document owns visual and interaction contracts. [PRD.md](../PRD.md) owns planning behavior.
+[Architecture](../ARCHITECTURE.md#planning-pipeline) explains its implementation. Use the relevant
+section rather than copying rules into feature notes.
 
-Home's "Rest of today" summary displays known estimated minutes and an explicit
-unknown-task count. Partial assessment is never a zero-work verdict. Candidates
-are unsaved and come from scheduling all open local tasks over seven days; the
-demand cohort includes only unscheduled work still due today. Unavailable calendars
-suppress slot and gap claims. Now recommendations show the earliest legal start.
-Estimate buttons open existing task details, retain failed drafts, and close after
-saving. Onboarding and availability settings display the fixed server timezone.
+## Visual system
 
-## Tokens
+Tokens live in `frontend/src/theme.css`. Use rounded surfaces, soft elevation, and light and dark
+themes. Preserve the owner-selected gradient Cooper wordmark and its light and dark variants on app
+and public pages.
 
-```text
-                light        dark
-background      #F2F2F7      #000000
-card            #FFFFFF      #1C1C1E
-raised          #E9E9EE      #2C2C2E
-text            #1C1C1E      #F2F2F7
-muted           #6B6B70      #98989E
-accent          #0A84FF      #0A84FF
-```
+| Token      | Light     | Dark      |
+| ---------- | --------- | --------- |
+| Background | `#F2F2F7` | `#000000` |
+| Card       | `#FFFFFF` | `#1C1C1E` |
+| Raised     | `#E9E9EE` | `#2C2C2E` |
+| Text       | `#1C1C1E` | `#F2F2F7` |
+| Muted      | `#6B6B70` | `#98989E` |
+| Accent     | `#0A84FF` | `#0A84FF` |
 
-Green `#30B15C`, amber `#FF9F0A`, and red `#FF3B30` are reserved for state. Category colours
-are purple, blue, orange, and teal.
+### Shape and color
 
-Rounded rectangles use native continuous corners: keep `border-radius` as the fallback and apply
-`corner-shape: squircle`. Use the shared 10, 14, 20, and 28px radius scale. Nested rounded
-rectangles are concentric: inner radius plus the gap between surfaces equals outer radius. Capsules
-use a radius equal to half their height and `corner-shape: round`; circles remain round. Do not turn
-semantic capsules or circles into squircles. The font stack starts with `ui-rounded`, followed by
-the available system rounded fonts. Use soft shadows and translucent surfaces instead of borders
-where the surrounding component already uses them.
+- Rounded rectangles use a `border-radius` fallback plus `corner-shape: squircle`, on the shared
+  10, 14, 20, and 28px scale. Nested surfaces are concentric, so inner radius plus the gap equals
+  outer radius.
+- Capsules use a half-height radius and `corner-shape: round`. Keep circles round.
+- Typography starts with `ui-rounded`, then available system rounded fonts. Use existing soft
+  shadows and translucency rather than adding borders to components that do not use them.
+- Categories are academics purple, work blue, organizations orange, and personal teal. No fifth
+  category.
+- Outcomes are green `#30B15C` for added or completed, red `#FF3B30` for removed or refused, blue
+  for answers, and amber `#FF9F0A` for inspection. State colors are not category colors.
 
-## Layout
+## Workspace layout and interactions
 
-The app renders both navigation variants. CSS selects the right one at 900px:
+Both navigation variants render, and CSS selects at 900px. Narrow screens use the top bar,
+scrolling content, composer, and bottom tabs. Wide screens use the left rail and hide the top bar.
+Keep responsive rules at the stylesheet end, without a viewport-width listener.
 
-- Narrow screens use a top bar, scrolling content, composer, and bottom tabs.
-- Wide screens use a left rail and hide the top bar.
+`Nav` owns its persisted open or collapsed preference. Change rail width once, not with a tween that
+reflows the workspace repeatedly. Retain the chevron transform animation and reduced-motion support.
+Constrain reading columns except calendar grids. Group related settings in cards with hairline row
+separators.
 
-The sidebar's open/collapsed state and stored preference belong to `Nav`, so a
-toggle does not rerender the workspace. Its width changes once; the chevron keeps
-its transform animation and reduced-motion support. Do not tween the rail width,
-which repeatedly reflows the main content.
+- Expose score reasons in a disclosure.
+- Derive day counts and density from all normalized commitments. Retain source identity and
+  read-only status without hiding external events.
+- Use canonical snapshot references for Now, Next, and risks instead of duplicating item cards.
+  Never label unchecked provider time free.
+- Show known estimated demand and unknown-task counts in Rest of today. Candidate slots are
+  unsaved, and partial assessment is not zero work. Show the earliest legal start for a
+  recommendation.
+- Estimate controls open existing details, preserve failed drafts, and close after saving.
+  Onboarding and availability settings disclose the server timezone.
+- Put Undo on mutation replies, not stacked toasts. Detail frames close on Escape or an outside
+  click. They are not confirmation dialogs.
+- Store light, dark, or system appearance in `localStorage`. Resolve system before applying CSS.
 
-Local headless Chromium measurements on 2026-10-01 used ten toggles at 1366×768.
-Scripting time fell from 419ms to 233ms at normal CPU speed, and from 2045ms to
-890ms under 4× throttling. An isolated width comparison produced 68 main-content
-resize callbacks with the tween versus 11 without it, including the initial
-observation. These are synthetic development-build measurements, not real-device
-frame-rate or production performance guarantees.
+## Conversation and voice
 
-Keep responsive rules at the end of the stylesheet. Their source order lets them override
-component defaults without a width listener.
+User messages appear right, and Cooper replies appear left with the appropriate outcome tone.
+Cooper is a cheerful, jolly otter: warm, lightly playful, concise, encouraging, and practical.
+Never guilt the person, become chatty, adopt another role, pretend to have feelings or
+capabilities, or claim a change without application evidence. One compact identity prompt serves
+parsing and answers. Voice does not grant tools or mutation permission.
 
-Use grouped cards with hairline row separators for settings and related values. Keep the content
-column constrained for reading, except for calendar grids that need the available width.
+Mutation replies show title, parsed fields, and the actual committed time in COOPER, retaining
+waiting, overlap, and provider warnings. Answers remain text-only. Conversation history is local
+to the browser in `localStorage`, capped at sixty turns.
 
-## Conversation
+Suggested Ask prompts map to bounded product intents. Render backend message, facts, and warnings
+from the shared snapshot. Do not invent a second browser recommendation.
 
-Chat is the input surface for sentence and question requests. User messages appear on the right;
-Cooper replies appear on the left with the reply tone and, when relevant, the mascot.
+## Public landing
 
-Cooper is a cheerful, jolly otter companion for the person's own tasks, events, and time. The
-voice is warm, encouraging, lightly playful, concise, and practical. It never guilts the person,
-becomes chatty, pretends to have feelings or capabilities, adopts another role, or claims an
-action happened unless the application reports it. One compact identity prompt serves both the
-action parser and answer path; voice never grants tools or permission to mutate state.
+Preserve chapter order, typography, artwork scale, inner feature designs, and existing motion. The
+plans chapter sits between product proof and the final signup invitation, using warm paper surfaces
+and forest-green actions. Changing a section canvas does not authorize redesigning its inner
+feature composition.
 
-Mutation replies include the parsed title and fields so the result can be checked in place. An
-answer remains text and cannot mutate data. A success reply names COOPER and reflects the refreshed
-committed state, including its actual time. Waiting, overlap, and provider-health warnings stay in
-the reply instead of being hidden by optimistic copy. Conversation history stays in `localStorage`,
-capped at sixty turns.
+### Scrolling and responsive layout
 
-Suggested Ask prompts are typed product questions, not generic chatbot starters. Their labels map
-to bounded planning intents and render the backend's message, facts, and warnings from the same
-snapshot used by Calendar. Do not compose a second recommendation in the browser.
+- Horizontal chapters begin at 900px, independent of height. Below that width, retain vertical flow.
+- Vertical wheel input drives smooth horizontal Lenis travel, including over FAQ disclosures. Do
+  not add nested-scroll bypass. Preserve existing RAF and entry effects.
+- Hide section scrollbars without disabling overflow, clipping text, or losing keyboard and touch
+  access.
+- Horizontal arrow navigation must not intercept links, buttons, or FAQ summaries. Authenticated
+  workspace scrolling is unchanged.
+- Use zero-minimum fractional tracks, flexible columns, and content-height cards or stages rather
+  than fixed desktop minimums. Do not shrink established heading and artwork sizes just to fit a
+  short viewport or require zoom for a readable layout.
+- Zoom uses the CSS viewport and existing 900px breakpoint, not a separate listener. Extreme short
+  heights must retain overflow access.
 
-## Landing plans and FAQs
+### FAQs and plans
 
-The `plans` chapter sits between product proof and the final signup invitation.
-It inherits the landing's warm paper, forest-green actions and existing typography;
-preserve the chapter order, illustration compositions and motion. The FAQ/pricing
-group uses flex auto margins to center safely when it fits. On desktop, shared
-subgrid rows align both headings, introductions and the FAQ/card starting edges;
-plan cards also share title, price, benefit and action rows. Expanded answers remain
-in normal flow rather than overlapping other questions. On narrower screens the
-columns become a single content-height stack, with fluid gutters. Plan cards
-stack below 560px. Native `details`/`summary` disclosures share `name="cooper-faq"`
-so only one answer opens at a time; all begin closed. A delegated summary-click
-fallback closes other answers where native named groups are unsupported. Preserve
-visible focus and native keyboard activation.
+- Center the FAQ and pricing group with flex auto margins so its top remains reachable when taller
+  than the viewport. Desktop subgrid rows align headings, introductions, and content edges. Plan
+  cards share title, price, benefit, and action rows.
+- Keep expanded answers in normal flow. Native `details` and `summary` use `name="cooper-faq"`,
+  begin closed, and allow one answer open. Preserve the delegated closing fallback for browsers
+  without named-group support, visible focus, and native keyboard behavior.
+- Narrow layouts stack with fluid gutters. Plan cards stack below 560px.
+- Free beta links to `/signup`. Plus is disabled and coming soon, not checkout. Prices, allowances,
+  and paid workflows are proposed. State that no user API key is needed and model help stays off
+  until Cooper-funded AI is enabled.
 
-Horizontal chapters retain the original 900px width breakpoint, independent of
-window height. Narrower screens retain vertical flow. Hide section scrollbars while
-preserving overflow access. Vertical wheel input drives smooth horizontal travel
-on desktop, including over FAQ answers; do not enable Lenis nested-scroll bypass.
-Do not clip content or remove keyboard/touch
-access. Arrow-key chapter navigation applies only in horizontal mode and must not
-intercept links, buttons or FAQ summaries. Authenticated-app scrolling is unchanged.
+### Connection and authentication artwork
 
-Desktop chapter columns use zero-minimum fractional tracks instead of fixed pixel
-minimums. Preserve the established heading sizes and artwork scale at 100% zoom;
-do not shrink all chapters or switch FAQ/pricing into smaller type merely because
-the viewport is short. Layout should reflow instead of requiring 110% zoom.
-Feature/proof cards and the closing stage grow with their content. Connected-source
-art uses content-sized grid slots: planned labels stay outside the calendar image,
-live sources occupy their own column, and the annotation and mascot share a flex
-row without overlapping. Each planned label owns its decorative arrow and reserved
-connector space; never combine independent label offsets with a fixed-coordinate
-SVG overlay. A named inline-size container reflows that diagram into two columns
-when its own content width is 560px or less. This does not change chapter navigation.
-Zoom
-changes the CSS viewport and uses the same 900px breakpoint, not a separate zoom
-listener. At extreme short heights, preserve overflow access rather than clipping
-text to force a fit. Real browser resize/zoom acceptance is still required.
+Connected-source art uses content-sized grid slots. Planned labels stay outside the calendar image,
+live sources occupy their own column, and annotation and mascot share a non-overlapping flex row.
+Each planned label owns its arrow and connector space. No fixed-coordinate SVG overlay. A named
+inline-size container switches the diagram to two columns at 560px of its own width, without
+changing chapter navigation.
 
-The Free beta CTA links to signup. Plus is a disabled coming-soon action, not a
-checkout. Prices, AI allowances, and paid workflows are labeled proposed; the FAQ
-states that no API key is needed and that model help stays off until Cooper-funded
-AI is enabled. Never turn proposed benefits into claims of shipped subscription functionality.
+Login and signup have separate visual compositions. Keep the login illustration centered with
+proportional panel insets at desktop and compact sizes. Do not impose login sizing on the signup
+collage.
 
-## Offline behavior
+## PWA and mobile
 
-Product-refinement contracts are in the
-[web-first decision](decisions/2026-09-30-web-first-product-boundary.md).
+The service worker (`frontend/public/sw.js`) precaches the shell, never API responses.
+Installability does not promise offline data editing or reliable closed-app reminders. The accepted
+scope remains [one responsive web/PWA](decisions/2026-09-30-web-first-product-boundary.md), not
+native clients or separate agent dashboards.
 
-One responsive web/PWA is the owner-approved boundary. No native app work, separate
-agent dashboards or viewport scaling. Real rendered widths, browser zoom, longest
-FAQ expansion and keyboard/touch overflow acceptance remain required.
-
-The PWA precaches the application shell. `frontend/public/sw.js` never caches API responses, so
-an offline view cannot present stale task data as current.
-
-Use `viewport-fit=cover` and the safe-area environment variables for devices with an inset. Keep
-composer text at 16px or larger so mobile browsers do not zoom the page on focus.
-
-## Mascot assets
-
-Source images may include a light background and ground shadow. Run `tools/mascot_cutout.py` to
-remove connected background pixels, fade the antialiased rim, trim the image, and centre it in a
-square canvas.
-
-```text
-assets-src/mascot/*.{webp,jpeg}          source images
-tools/mascot_cutout.py                   build script
-frontend/public/assets/mascot/*.webp     transparent images used by the app
-```
-
-The script keeps light pixels enclosed by the mascot's outline and removes only background pixels
-connected to the frame edge. It caps output at 512px and preserves alpha at the edge.
-
-Use the mascot where it communicates state: beside active work, in an empty state, for an
-ambiguous reference, or when the backend is unavailable. Do not add decorative mascot instances.
-
-## Public authentication visuals
-
-Login and signup use separate responsive compositions inside the public auth visual panel. The
-login illustration stays centered with a small inset from the panel edges so the mascot has room to
-breathe at desktop and compact viewport sizes. Keep that inset proportional when adjusting the
-illustration; the signup collage has its own layout and should not inherit the login sizing.
-
-## Interaction rules
-
-- Show score details in a disclosure instead of making users infer the ranking.
-- Derive badges and per-day density from every normalized commitment, regardless of source; retain
-  source identity for detail and editability without making external events visually disappear.
-- Put undo on the mutation reply instead of using stacked toasts.
-- Use a frame for requested detail, not for permission. Close it with Escape or an outside click.
-- Keep light, dark, and system appearance choices in `localStorage`. Resolve system to light or
-  dark before applying CSS.
-
-## Colour semantics
-
-Category colour identifies the kind of item:
-
-- Academics is purple.
-- Work is blue.
-- Organizations is orange.
-- Personal is teal.
-
-Reply and action colour identifies the outcome. Green means added or completed. Red means removed
-or refused. Blue means an answer. Amber means the user needs to inspect something.
+Use `viewport-fit=cover` and safe-area variables. Composer text stays at least 16px to avoid mobile
+focus zoom. Do not scale the entire viewport to simulate responsive layout.
 
 ## Copy and accessibility
 
-Use plain, specific labels such as "Put these in my calendar" and "Do this first". Errors state
-the next action.
+Use plain labels such as “Put these in my calendar” and “Do this first.” Errors state a next
+action. Use real buttons, labeled inputs, visible focus, and `aria-pressed` toggles. Decorative
+mascot images have empty alt text. Set image dimensions to prevent layout shifts and respect
+`prefers-reduced-motion`.
 
-Use real buttons, labelled inputs, visible focus styles, and `aria-pressed` on toggles. Give
-decorative mascot images an empty alt value. Respect `prefers-reduced-motion`, and set explicit
-image dimensions to prevent layout shifts.
+Before visual acceptance, check rendered widths, real browser resize and zoom, the longest FAQ
+answer, and keyboard and touch overflow. Passing DOM tests is not visual acceptance.
+
+## Mascot assets
+
+| Path                                   | Purpose                                                                                       |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `assets-src/mascot/*.{webp,jpeg}`      | Source art                                                                                    |
+| `tools/mascot_cutout.py`               | Removes edge-connected background, fades the rim, trims and centers, and caps output at 512px |
+| `frontend/public/assets/mascot/*.webp` | Transparent runtime images                                                                    |
+
+The cutout keeps light pixels enclosed by the outline and preserves alpha edges. Use the mascot to
+communicate active work, empty state, ambiguity, or backend failure, not as extra decoration.
+
+## Historical measurements
+
+On 2026-10-01, local headless Chromium measured ten rail toggles at 1366×768. Removing the width
+tween reduced scripting from 419ms to 233ms at normal CPU speed and 2045ms to 890ms at 4×
+throttling. An isolated comparison recorded 68 main-content resize callbacks with tweening versus
+11 without, including initial observation. These synthetic development-build results are not
+real-device frame-rate or production guarantees.

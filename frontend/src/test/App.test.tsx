@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import App, { initialAgentSteps } from "../App";
+import App from "../App";
 import type { CalendarEvent, Item, PlanningSnapshot, Ranked, Reply, View } from "../types";
 
 interface TestFirebaseUser {
@@ -225,14 +225,6 @@ function reply(overrides: Partial<Reply> = {}): Reply {
     ...overrides,
   };
 }
-
-test("Ask starts with only the first loading status active", () => {
-  const steps = initialAgentSteps();
-
-  expect(steps).toHaveLength(3);
-  expect(steps.map((step) => step.icon)).toEqual(["spark", "search", "write"]);
-  expect(steps.map((step) => step.status)).toEqual(["running", "pending", "pending"]);
-});
 
 /** Navigate from the dashboard to the conversation. */
 async function openChat(user = userEvent.setup()) {
@@ -1096,6 +1088,56 @@ describe("manual and ai", () => {
     await screen.findByText("Start with the report.");
 
     expect(bubbleTones()).toContain("bubble--answer");
+  });
+
+  test("Ask shows sequential progress while waiting, then replaces it with the answer", async () => {
+    stub({ view: view({ using_model: true }) });
+    let finish!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) =>
+      String(input).endsWith("/api/say") ? response : normalFetch(input, init),
+    );
+    render(<App />);
+    const user = await openAi();
+    const composer = screen.getByLabelText("Say something to Cooper");
+    await user.type(composer, "What should I work on next?");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.keyDown(composer, { key: "Enter" });
+      const trace = screen.getByRole("status", { name: "Agent execution trace" });
+      expect(within(trace).getAllByLabelText("In progress")).toHaveLength(1);
+      expect(within(trace).getAllByLabelText("Waiting")).toHaveLength(2);
+      expect(within(trace).queryByLabelText("Completed")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(650);
+      });
+      expect(within(trace).getAllByLabelText("Completed")).toHaveLength(1);
+      expect(within(trace).getAllByLabelText("In progress")).toHaveLength(1);
+      expect(within(trace).getAllByLabelText("Waiting")).toHaveLength(1);
+
+      await act(async () => {
+        finish(
+          new Response(
+            JSON.stringify(reply({ kind: "answered", message: "Start with the report." })),
+            {
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      });
+      expect(
+        screen.queryByRole("status", { name: "Agent execution trace" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Start with the report.")).toBeInTheDocument();
+      expect(composer).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("Ask still replies while another workspace mutation is in flight", async () => {
