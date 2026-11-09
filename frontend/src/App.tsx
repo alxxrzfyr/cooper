@@ -4,7 +4,6 @@ import "./theme.css";
 import { applyAppearance, type Appearance, readAppearance, saveAppearance } from "./appearance";
 import { api } from "./api";
 import { Calendar } from "./Calendar";
-import { AvailabilitySettings } from "./AvailabilitySettings";
 import {
   Chat,
   loadMode,
@@ -41,6 +40,7 @@ import {
   onboardingDone,
 } from "./Onboarding";
 import { Row } from "./Row";
+import { Settings, type BrowserPermission } from "./Settings";
 import { CalendarEventFrame, TaskFrame } from "./Frame";
 import {
   ApiError,
@@ -53,20 +53,6 @@ import {
   type ReplyKind,
   type View,
 } from "./types";
-
-/** Appearance choices shown in Settings. */
-const APPEARANCES: Array<{ id: Appearance; label: string }> = [
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
-  { id: "system", label: "System" },
-];
-
-/** Event sources planned but not yet wired up. Shown so people know what's coming, not to imply
- *  they can connect one today. */
-const COMING_SOON_SOURCES: Array<{ id: string; label: string }> = [
-  { id: "teams", label: "Microsoft Teams" },
-  { id: "classroom", label: "Google Classroom" },
-];
 
 const PUBLIC_AUTH_PATHS = new Set(["/", "/landing", "/login", "/signup"]);
 
@@ -177,7 +163,7 @@ function googleEventMessage(event: CalendarEvent, timeZone: string): string {
 }
 
 /** The three local phases are always truthful: none claims an external integration ran. */
-export function initialAgentSteps(): AgentStep[] {
+function initialAgentSteps(): AgentStep[] {
   return [
     {
       id: "understand",
@@ -203,20 +189,9 @@ export function initialAgentSteps(): AgentStep[] {
   ];
 }
 
-function formatChecked(value: string): string {
-  const checked = new Date(value);
-  if (Number.isNaN(checked.getTime())) return value;
-  return checked.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 function id(): string {
   return Math.random().toString(36).slice(2, 10);
 }
-
-type BrowserPermission = NotificationPermission | "unsupported";
 
 function browserPermission(): BrowserPermission {
   if (typeof window === "undefined" || !("Notification" in window)) {
@@ -451,7 +426,6 @@ export default function App() {
     !isWorkspacePath || (firebaseConfigured && !authPending && authState.kind !== "signed-in");
   const publicLandingSurface = showPublicRoutes && publicRoute === "landing";
   const workspaceVisible = canLoadProtectedData && isWorkspacePath;
-  const signedInEmail = signedInUser?.email ?? null;
 
   const navigate = useCallback((nextPath: string) => {
     const next = normalizePathname(nextPath);
@@ -998,7 +972,6 @@ export default function App() {
 
   const shortlist = view?.shortlist ?? [];
   const scheduled = view?.scheduled ?? [];
-  const hours = view?.hours;
   const loadingTab: Exclude<Tab, "chat"> | null = tab === "chat" ? null : tab;
   const guideProgress: OnboardingProgress = {
     hasItem:
@@ -1173,325 +1146,36 @@ export default function App() {
               />
             )}
 
-            {workspaceVisible && tab === "settings" && hours && view && (
-              <div className="scroll">
-                <h1 className="largetitle">
-                  Settings
-                  <span className="largetitle__sub">{view.timezone}</span>
-                </h1>
-
-                <section className="group">
-                  <div className="group__label">Appearance</div>
-                  <div className="inset">
-                    <div className="segmented" role="group" aria-label="Appearance">
-                      {APPEARANCES.map(({ id: choice, label }) => (
-                        <button
-                          key={choice}
-                          type="button"
-                          className="segment"
-                          aria-pressed={appearance === choice}
-                          onClick={() => chooseAppearance(choice)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="hint">
-                    Light unless you say otherwise. System follows whatever your machine is doing.
-                  </p>
-                </section>
-
-                {firebaseConfigured && (
-                  <section className="group">
-                    <div className="group__label">Account</div>
-                    <div className="inset">
-                      <div className="field">
-                        <span className="field__label">Signed in</span>
-                        <span className="tag">{signedInEmail ?? "Google account"}</span>
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          onClick={signOutOfFirebase}
-                        >
-                          Sign out
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                <section className="group">
-                  <div className="group__label">Guide</div>
-                  <button
-                    type="button"
-                    className="btn btn--quiet"
-                    onClick={() => {
-                      setTab("home");
-                      setGuideSessionDismissed(false);
-                      setGuideVisible(true);
-                    }}
-                  >
-                    Show getting-started guide
-                  </button>
-                </section>
-
-                <section className="group" data-tour="availability">
-                  <AvailabilitySettings
-                    hours={hours}
-                    busy={workspaceBusy}
-                    onSave={(next) => act(() => api.setHours(next))}
-                  />
-                  {view.source_health
-                    ?.filter((source) => source.status === "unavailable")
-                    .map((source) => (
-                      <p className="hint" key={source.source}>
-                        {source.source}:{" "}
-                        {source.message ??
-                          "Calendar unavailable. New tasks are saved and wait for a reliable availability check."}
-                      </p>
-                    ))}
-                </section>
-
-                <section className="group">
-                  <div className="group__label" data-tour="calendar-connections">
-                    Google Calendar + Gmail
-                  </div>
-                  <div className="inset">
-                    <div className="field">
-                      <span className="field__label">Account</span>
-                      <span className="tag">
-                        {view.calendar.connected
-                          ? (view.calendar.email ?? "Connected")
-                          : view.calendar.configured
-                            ? "Not connected"
-                            : "Not set up"}
-                      </span>
-                      {view.calendar.connected ? (
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          onClick={() => void act(() => api.disconnect())}
-                        >
-                          Disconnect
-                        </button>
-                      ) : view.calendar.configured ? (
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          disabled={workspaceBusy}
-                          onClick={() => void connectGoogle()}
-                        >
-                          Connect Google
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <p className="hint">
-                    {view.calendar.connected
-                      ? "Google events appear in Cooper and protect busy time. New work stays in Cooper's calendar."
-                      : view.calendar.configured
-                        ? "Not connected. Cooper is using its own calendar, which works on its own."
-                        : "Cooper has its own calendar and needs nothing to work. Connect Google Calendar + Gmail when you want both services included."}
-                  </p>
-                </section>
-
-                <section className="group">
-                  <div className="group__label">iCloud Calendar</div>
-                  {view.icloud.connected ? (
-                    <div className="inset">
-                      <div className="field">
-                        <span className="field__label">Account</span>
-                        <span className="tag">{view.icloud.email ?? "Connected"}</span>
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          disabled={workspaceBusy}
-                          onClick={() => void act(() => api.disconnectICloud())}
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <form
-                      className="inset"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void connectICloud();
-                      }}
-                    >
-                      <label className="field">
-                        <span className="field__label">Apple ID</span>
-                        <input
-                          type="email"
-                          autoComplete="username"
-                          value={icloudEmail}
-                          onChange={(event) => setIcloudEmail(event.target.value)}
-                          placeholder="you@icloud.com"
-                        />
-                      </label>
-                      <label className="field">
-                        <span className="field__label">App-specific password</span>
-                        <input
-                          type="password"
-                          autoComplete="current-password"
-                          value={icloudPassword}
-                          onChange={(event) => setIcloudPassword(event.target.value)}
-                          placeholder="xxxx-xxxx-xxxx-xxxx"
-                        />
-                      </label>
-                      <button
-                        type="submit"
-                        className="btn btn--quiet"
-                        disabled={workspaceBusy || !view.icloud.configured}
-                      >
-                        Connect iCloud
-                      </button>
-                    </form>
-                  )}
-                  <p className={`hint ${view.icloud.error ? "hint--error" : ""}`}>
-                    {view.icloud.error
-                      ? view.icloud.error
-                      : view.icloud.connected
-                        ? "Read-only iCloud events now block scheduling through CalDAV."
-                        : view.icloud.configured
-                          ? "Use an Apple app-specific password. Cooper keeps iCloud read-only."
-                          : "Server encryption is required before iCloud can be connected."}
-                  </p>
-                </section>
-
-                <section className="group">
-                  <div className="group__label">Gmail confirmations</div>
-                  <div className="inset">
-                    <div className="field">
-                      <span className="field__label">Status</span>
-                      <span className="tag">
-                        {view.gmail.connected
-                          ? "Connected"
-                          : view.gmail.configured
-                            ? "Not connected"
-                            : "Not configured"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn--quiet"
-                        disabled={workspaceBusy || !view.gmail.connected}
-                        onClick={() => void act(() => api.syncGoogle())}
-                      >
-                        {workspaceBusy ? "Syncing…" : "Sync now"}
-                      </button>
-                    </div>
-                    <div className="field">
-                      <span className="field__label">Last checked</span>
-                      <span className="tag">
-                        {view.gmail.last_checked
-                          ? formatChecked(view.gmail.last_checked)
-                          : "Not yet"}
-                      </span>
-                    </div>
-                    <div className="field">
-                      <span className="field__label">Recent messages</span>
-                      <span className="tag">
-                        {view.gmail.imported} imported · {view.gmail.skipped} skipped
-                      </span>
-                    </div>
-                  </div>
-                  <p className={`hint ${view.gmail.last_error ? "hint--error" : ""}`}>
-                    {view.gmail.last_error
-                      ? view.gmail.last_error
-                      : view.gmail.connected
-                        ? "Read-only confirmations from Luma, Meetup, and Eventbrite block scheduling."
-                        : view.gmail.configured
-                          ? "Connect Google Calendar + Gmail above to enable Gmail confirmations."
-                          : "Cooper works without Google. Connect both Google services to import known Gmail confirmations."}
-                  </p>
-                </section>
-
-                <section className="group">
-                  <div className="group__label">More sources</div>
-                  <div className="inset">
-                    {COMING_SOON_SOURCES.map((source) => (
-                      <div className="field" key={source.id}>
-                        <span className="field__label">{source.label}</span>
-                        <span className="tag">Coming soon</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="hint">Planned event sources. None of these connect yet.</p>
-                </section>
-
-                <section className="group">
-                  <div className="group__label">Included AI</div>
-                  <div className="inset">
-                    <div className="field">
-                      <span className="field__label">
-                        {canUseAi ? "Model help ready" : "Offline rules"}
-                      </span>
-                      <span className="tag">
-                        {view?.ai?.tier === "pilot_plus" ? "Plus pilot" : "Free"}
-                      </span>
-                    </div>
-                    {view?.ai && (
-                      <div className="field">
-                        <span className="field__label">Included requests remaining</span>
-                        <span>
-                          {view.ai.remaining_units} of {view.ai.limit_units}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <p className="hint">
-                    {view?.ai?.status === "exhausted"
-                      ? "Your included AI allowance is used up. Planning questions and Form still work."
-                      : canUseAi
-                        ? "Cooper supplies model access within your included allowance. Form never calls a model."
-                        : "Model help is unavailable. Planning questions and Form still work."}
-                  </p>
-                  {view?.ai?.reset_at && (
-                    <p className="hint">
-                      Allowance resets {new Date(view.ai.reset_at).toLocaleString()}.
-                    </p>
-                  )}
-                </section>
-
-                <section className="group">
-                  <div className="group__label">Notifications</div>
-                  <div className="inset">
-                    <div className="field">
-                      <span className="field__label">Browser alerts</span>
-                      <span className="tag">
-                        {browserAlerts === "unsupported"
-                          ? "Not available"
-                          : browserAlerts === "granted"
-                            ? "On"
-                            : browserAlerts === "denied"
-                              ? "Blocked"
-                              : "Off"}
-                      </span>
-                      {browserAlerts === "default" && (
-                        <button
-                          type="button"
-                          className="btn btn--quiet"
-                          onClick={() => void enableBrowserAlerts()}
-                        >
-                          Enable
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="hint">
-                    Cooper shows a small in-app notice for each change. Browser alerts appear only
-                    when this app is in the background.
-                  </p>
-                </section>
-
-                {turns.length > 0 && (
-                  <button type="button" className="btn btn--full" onClick={clearConversation}>
-                    Clear conversation
-                  </button>
-                )}
-              </div>
+            {workspaceVisible && tab === "settings" && view?.hours && (
+              <Settings
+                view={view}
+                busy={workspaceBusy}
+                appearance={appearance}
+                onAppearance={chooseAppearance}
+                account={
+                  firebaseConfigured
+                    ? { email: signedInUser?.email ?? null, onSignOut: signOutOfFirebase }
+                    : null
+                }
+                onShowGuide={() => {
+                  setTab("home");
+                  setGuideSessionDismissed(false);
+                  setGuideVisible(true);
+                }}
+                onAction={act}
+                onConnectGoogle={connectGoogle}
+                icloud={{
+                  email: icloudEmail,
+                  password: icloudPassword,
+                  onEmail: setIcloudEmail,
+                  onPassword: setIcloudPassword,
+                  onConnect: connectICloud,
+                }}
+                browserAlerts={browserAlerts}
+                onEnableAlerts={enableBrowserAlerts}
+                hasConversation={turns.length > 0}
+                onClearConversation={clearConversation}
+              />
             )}
           </>
         )}
