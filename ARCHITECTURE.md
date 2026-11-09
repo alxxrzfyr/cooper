@@ -1,403 +1,300 @@
 # Architecture
 
-The small set of files below does everything that exists today. Read them in this order and you
-will understand the whole app in about twenty minutes. Future integrations are marked explicitly;
-nothing below describes code that is not there.
+This is a map of what is actually built: code responsibilities, request flows, persistence, and
+safety boundaries. Product behavior belongs in [PRD.md](PRD.md). Contributor instructions are in
+[AGENTS.md](AGENTS.md). Release procedures are in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-The [included-AI provider ADR](docs/decisions/2026-09-30-included-ai-providers.md) selects
-server-funded Gemini primary and Groq fallback. BYOK removal, provider adapters, and durable
-accounting are implemented; funded dispatch remains disabled and hosting remains Render.
-Cash, evaluated model IDs, prices, and live-provider acceptance are activation gates. Any
-commercial schema or hosted cutover needs its own reviewed implementation and release evidence.
+## System at a glance
 
-The [web-first boundary](docs/decisions/2026-09-30-web-first-product-boundary.md) keeps one
-responsive web/PWA and one backend, without native clients or separate agent services. Capacity,
-guided recovery, weekly review, and funded-AI accounting are implemented. Subscriptions,
-reusable routines, Teams, Classroom, funded dispatch, and the GCP cutover remain inactive.
+One React web/PWA calls one FastAPI backend. `app.py` orchestrates all writes. Interpretation,
+planning, answer rendering, and provider transport do not own database mutations.
 
-## Backend, today
+```text
+React workspace → api.ts → app.py → database
+                             ├─ brain.py → validated Action
+                             ├─ planner.py → ranking, slots, snapshot
+                             ├─ answers.py → planning answer text
+                             └─ source readers → sources.py → commitments
 
-```
-cooper/
-  auth.py      Firebase ID-token verification for hosted mode
-  config.py    local/shared-key and hosted/Firebase settings
-  db.py        planning tables, AI accounting ledger, session helper and UTC column type
-  brain.py     sentence to validated Action, model transport and rule fallback
-  planner.py   ranking, placement and planning snapshot; pure, no I/O or model
-  google.py    Calendar and Gmail over REST; no SDK
-  icloud.py    read-only iCloud calendars over CalDAV
-  mcp.py       bounded tool schemas and MCP result shapes
-  sources.py   one normalization/busy-time pipe for every commitment source
-  watcher.py   one fixed Gmail sync timer
-  app.py       routes, orchestration and every database write
+Gmail timer → app.py → validated proposal → same writer
+Optional model calls → providers.py → Gemini / Groq
 ```
 
-## Backend, future
+Google Calendar and iCloud are read-only inputs. New blocks stay in Cooper. Teams and Classroom
+have no modules or connections today. Funded-AI adapters and accounting exist, but dispatch is
+disabled. Render remains the API host. A GCP cutover is not active.
 
-Microsoft Teams and Google Classroom remain separate future read-only integrations. Meetings
-would add busy intervals; assignments would add ranked tasks.
+## Code map
 
-```
-cooper/
-  microsoft.py Graph over REST; meetings when an Azure app is configured
-  classroom.py assignments when a Google Classroom grant is configured
-```
+Paths in these tables are relative to `cooper/` and `frontend/src/`, respectively.
 
-`sources.py` turns every commitment into one list of busy intervals the planner routes around.
-Today it combines Google Calendar, read-only iCloud calendars, Cooper's own blocks, and
-reconciled Gmail confirmations. It also normalizes those inputs into source-aware commitments and
-deduplicates only exact aliases or matching cross-source signatures. `planner.build_planning_snapshot`
-projects those commitments, ranked tasks, derived states, risks, counts, conflicts, and free time
-once. Calendar, navigation, Home's current schedule strip, and bounded Ask intents consume that
-projection instead of independently reconstructing the user's day.
-`watcher.py` reads Gmail on one fixed interval and reports its last check through the dashboard;
-it never writes directly. Requirement 6's form reuses the existing add path rather than adding a
-second writer.
+### Backend
 
-Guided recovery uses `POST /api/recovery/preview` before `POST /api/recovery/apply`. The preview
-fingerprint rejects stale state; apply records one `Change`, commits all-or-nothing, and exposes
-one undo that refuses when later edits conflict. It never creates a second write path.
+| File                   | Responsibility                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `app.py`               | Routes, owner checks, orchestration, mutations, undo, and AI accounting operations. Only writer. |
+| `brain.py`             | Rule and model interpretation, action validation, and prompt sanitization. No database access.   |
+| `planner.py`           | Pure ranking, placement, shared projection, task states, recovery previews, and weekly review.   |
+| `answers.py`           | Deterministic planning answers from a supplied snapshot. No I/O.                                 |
+| `sources.py`           | Source-aware commitments, conservative deduplication, and merged busy intervals.                 |
+| `google.py`            | Calendar and Gmail REST reads and OAuth transport. No SDK.                                       |
+| `icloud.py`            | Read-only CalDAV calendar access.                                                                |
+| `watcher.py`           | One fixed-interval Gmail sync timer. Delegates writes to the app.                                |
+| `providers.py`         | Explicit Gemini and Groq transport, typed failures, and usage. No storage.                       |
+| `mcp.py`               | Bounded tool schemas and MCP result shapes.                                                      |
+| `db.py`                | SQLAlchemy models, sessions, and the UTC column type.                                            |
+| `auth.py`, `config.py` | Firebase token verification and validated environment settings.                                  |
 
-`GET /api/review/week` and Home's This week panel derive a seven-day review from current planning
-state. The review is read-only: it records no plan, task mutation, or review state.
+### Frontend
 
-Every weekly boundary is a local date in the configured timezone. The past window is today minus
-six days through today and includes local task completions by `done_at`; dropped work has no
-completion timestamp and is excluded. Unfinished facts include overdue open tasks (`due < at`) and
-missed blocks (`end_at <= at`). The upcoming window is today through today plus six days and
-reports, per day, merged fixed minutes from local and connected calendars, scheduled open-task
-minutes, and open-task deadlines. Remote titles and attendees never appear.
+| File                                       | Responsibility                                                             |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `App.tsx`                                  | Account and workspace state, drafts, composer orchestration, and mutations |
+| `api.ts`, `types.ts`                       | Backend calls and response types                                           |
+| `runtime-config.ts`, `firebase.ts`         | Public runtime configuration and hosted sign-in                            |
+| `Home.tsx`                                 | Snapshot-backed Now, Next, Today, At Risk, Upcoming, and local moves       |
+| `RecoveryPanel.tsx`, `WeeklyReview.tsx`    | Preview and apply recovery plus read-only review                           |
+| `Form.tsx`, `Chat.tsx`                     | Structured Manual capture and the conversation                             |
+| `Calendar.tsx`, `Row.tsx`                  | Day, week, and month calendar views plus item rows with score details      |
+| `Settings.tsx`, `AvailabilitySettings.tsx` | Settings presentation and availability windows                             |
+| `Nav.tsx`                                  | Responsive navigation and its own persisted collapse preference            |
+| `Mascot.tsx`, `theme.css`                  | State illustrations and visual tokens                                      |
+| `landing/`                                 | Public landing, authentication, Terms, and Privacy pages                   |
 
-Deadline risks are upcoming open tasks that have neither a block ending by their deadline nor a
-slot in the shared seven-day projection. Reasons are `unknown_estimate`, `no_feasible_slot`, or
-`calendar_unchecked`; a failed connected calendar never becomes a fit claim. The response also
-reports unscheduled and unknown-estimate counts and whether source data is complete. It exposes no
-streak, score, or time-saved metric. Home opens the four-part review inline with no mutation
-controls; existing recovery and scheduling actions remain the only way to change planning state.
+Settings presentation lives outside `App.tsx`, while drafts and writes remain coordinated there.
+Layout, landing behavior, and visual acceptance belong in [docs/DESIGN.md](docs/DESIGN.md), not in
+the request or persistence layers.
 
-## Operational verification
+## Request flows
 
-The owner manually verified the Google Calendar and iCloud Calendar acceptance flows on
-2026-09-14. The repeatable checklist and the privacy-safe verification record are in
-`docs/LIVE_PROVIDER_ACCEPTANCE.md`; do not infer live provider readiness from transport mocks or
-unit tests alone.
+### Capture and mutations
 
-**`sources.py` is the load-bearing one.** Google events, Outlook meetings and events parsed out
-of email are all the same thing to the scheduler: `(start, end)` pairs that are already spoken
-for. `planner.place()` takes busy intervals and does not care where they came from. Build this
-before the second source exists, or the second source becomes a rewrite.
+1. Sentence capture enters `POST /api/say`, then `brain.read()` returns a validated, frozen
+   `Action`. Structured capture enters `POST /api/items` and constructs the action directly,
+   without a model.
+2. `app.py` runs the same validation and `_sanity_check` for both. Email proposals join this path
+   too. The watcher has no direct write shortcut.
+3. The app resolves the owner and target, checks connected availability when placing work, and
+   uses the pure planner for ranking and exact-length slots.
+4. The app commits local state and the undo record, refreshes the planning snapshot, and builds a
+   receipt from the committed item. Missing verification is an error, not a fabricated success.
+   Waiting, overlap, and source-health warnings remain in the receipt.
 
-Teams class assignments are the one exception. They are tasks with due dates, so they enter as
-items and go through `rank()`, not through `sources.py`.
+`find()` resolves exact ID, exact title, then unique substring. Multiple matches return 409. No
+match asks rather than choosing a near match. Local moves also check visible provider titles for
+ambiguity, reject unknown direct IDs, and refuse provider-owned targets.
 
-## Frontend, today
+### Read-only answers and tools
 
-```
-frontend/src/
-  App.tsx           one screen: banner, plan, setup, composer
-  Home.tsx          snapshot command center — Now, Next, Today, At Risk, Upcoming, local moves
-  Form.tsx          Manual mode as fields rather than a sentence — the built requirement 6
-  AvailabilitySettings.tsx weekday windows, overnight hours, breaks, and daily limits
-  Chat.tsx          the conversation, grouped into runs like a messages app
-  Calendar.tsx      day, week and month, coloured by category
-  Nav.tsx           top bar, bottom tabs, and the wide-screen rail; owns collapse preference
-  Row.tsx           a task or event, with its score breakdown
-  Mascot.tsx        Cooper, one name per file in public/assets/mascot
-  api.ts            the only place that calls the backend
-  types.ts          mirrors what app.py returns
-  theme.css         tokens, light and dark
-```
+Common planning intents are answered by `answers.answer_planning_intent` from the same snapshot
+used by the workspace. It distinguishes current from next, priority from placement, and
+unscheduled from due-today work. Workload answers merge calendar overlaps and report estimated and
+unknown unscheduled effort. Calendar occupancy is not an overall capacity verdict.
 
-The frontend can run in local mode with `X-Cooper-Key` or hosted mode with Firebase Google or verified email/password sign-in.
-Firebase sign-in only identifies the user; Google Calendar, Gmail, and iCloud access are separate
-Settings connections. Google uses OAuth, while iCloud uses an encrypted app-specific password.
+Broader Ask requests can enter a bounded model tool loop when model dispatch is enabled. Ask
+exposes read tools only, so it cannot apply a plan or refresh Gmail. `app.py` validates tool
+arguments and derives the owner from authentication. Credentials never enter tool arguments or
+results. The separately authenticated MCP endpoint (`POST /api/mcp`) can expose `apply_plan`. It
+still delegates to the same app writer. An AI answer itself writes nothing.
 
-The browser resolves its public configuration at startup: Firebase Hosting supplies the Firebase
-Web config through `/__/firebase/init.json`, while local Vite development keeps the browser on
-same-origin `/api` paths and attaches the backend key in the development proxy. A frontend
-environment file is therefore optional compatibility input, not part of the normal setup.
+### Correction, recovery, and review
 
-`Form.tsx` posts to `POST /api/items`, which builds an `Action` by hand, hands it to the same
-`add` the sentence path uses, and runs it through the public `validate` in `brain.py`. The form
-needs no model, but placement checks any calendars the user connected. A typed
-task is booked and undone in Cooper's calendar exactly like a parsed one, and `app.py` is still the
-only writer. Bulk verbs are `POST /api/bulk/match` (lists hits, writes nothing) and `POST
-/api/bulk` (acts on confirmed ids, one change row for the batch); `undo_last` has a `bulk` branch
-that restores every snapshot in a single step.
+| Endpoint                         | Contract                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `POST /api/bulk/match`           | List destructive-action matches without writing                           |
+| `POST /api/bulk`                 | Act on confirmed IDs and record one undoable batch                        |
+| `PATCH /api/items/{item_id}`     | Owner-checked edits, including estimates, with undo                       |
+| `POST /api/items/{item_id}/move` | Exact future start and duration through `reschedule`                      |
+| `POST /api/recovery/preview`     | Compute missed-block recovery and a state fingerprint                     |
+| `POST /api/recovery/apply`       | Reject stale fingerprints and commit all-or-nothing as one `Change`       |
+| `POST /api/undo`                 | Reverse the latest change. Recovery undo refuses conflicting later edits. |
+| `GET /api/review/week`           | Derive a read-only weekly review without saving review state              |
 
-`Home.tsx` renders one snapshot-backed agenda. `focus.now_id`, `focus.next_id`, and risk ids are
-references to that canonical task or commitment, not copies of it. Now recommends unscheduled work
-only when it fits the safe interval from the current moment to the next commitment; an incomplete
-snapshot suppresses free-time claims. Today mixes local and external commitments, while external
-rows expose details but no mutation controls. Upcoming keeps unscheduled work and future commitments
-reachable without cloning their cards into the focus or risk sections.
+The bulk API is built. Its shown-list conversation surface is not yet wired into Ask. Home and Ask
+local moves share `app.py::reschedule` and return times from refreshed committed state.
 
-An editable local commitment can be moved from Home with an exact start and duration through
-`POST /api/items/{id}/move`. Ask parses the same bounded move shape. Both enter
-`app.py::reschedule`, use
-the existing-item writer and undo record, refresh the planning snapshot, and return the timing found
-in committed state. No frontend-only move state becomes authoritative.
+## Planning pipeline
 
-## Data
+### Sources and shared snapshot
 
-Three planning tables hold product state; four additional tables hold funded-AI accounting.
+`sources.py` combines local blocks, Google events, iCloud events, and reconciled Gmail
+confirmations. It retains source identity and editability and deduplicates only exact aliases or
+matching cross-source signatures. Busy time is a list of `(start, end)` intervals. The planner does
+not need to know which service supplied it. Future assignments would instead enter ranking as
+due-dated items.
 
-**`item`** — a task _or_ an event. The only difference is whether the time is fixed, so they
-share a table. Splitting them into `task` and `scheduled_block` is what made the previous
-version sprawl.
+`planner.build_planning_snapshot()` projects commitments, ranked tasks, derived states, risks,
+counts, conflicts, free time, and source health once. Calendar, navigation, Home, and common Ask
+intents consume that projection. Home's focus and risk IDs reference canonical items rather than
+copying them into competing cards. External commitments retain details but no mutation controls.
 
-```
-id kind title notes minutes importance due category
-start_at end_at google_event_id
-status pinned created_at done_at
+Task workflow is derived, not another stored lifecycle. Open items resolve to `not_started`,
+`scheduled`, `in_progress`, `blocked`, `overdue`, or `missed_block`. Terminal database statuses
+resolve to `completed` or `dropped`.
+
+### Ranking
+
+```text
+score = 0.60 × due + 0.20 × importance + 0.10 × age + 0.10 × quick
 ```
 
-Owned external columns:
+- `due`: zero without a deadline, ramps over 14 days, reaches one when overdue.
+- `importance`: the 1–5 value normalized to 0–1.
+- `age`: waiting time capped at three weeks.
+- `quick`: shorter work scores higher. No estimate uses 0.5.
 
-```
-owner_id      who this belongs to; one value today, cheap now and brutal later
-source        where it came from: "me" or the read-only Gmail bridge
-source_ref    the provider event reference, so a move or cancellation finds it again
-```
+Pinned items sort first, then score, creation time, and ID. Each row exposes the terms. Tune the
+weights to change ranking. Do not add a model reranker.
 
-`google_event_id` and `source_ref` are not the same thing and must not be merged.
-`google_event_id` identifies a legacy event Cooper previously wrote. Cooper no longer creates or
-deletes such blocks. `source_ref` identifies an event Cooper read. A linked Google copy is hidden
-only when its title, time, and description still match the Cooper item; changed copies remain
-visible and busy.
+### Placement and capacity
 
-**`setting`** — `(owner_id, key)` value. Working hours, the encrypted Google token, durable OAuth
-nonce, Gmail watcher health, and the watcher's last-checked marker.
+`place()` uses greedy earliest fit in ranked order. It expands chosen weekday availability into
+UTC windows, including overnight and 24-hour windows. Busy intervals subtract from those windows.
+They never create availability. Each block is one continuous exact-duration session, starts no
+sooner than 15 minutes from now, and finishes by its deadline. Existing local tasks count toward
+daily block and minute limits. Breaks and limits are configurable. Unknown estimates are skipped,
+never assigned an invented half-hour block.
 
-**`change`** — `owner_id`, `label`, `item_id`, `before`. Enough to undo the last thing, pruned to
-twenty rows per owner. Not an audit log.
+`project_open_tasks()` supplies both the seven-day scheduler and the snapshot. An unsaved task is
+a Now candidate only when the projection places it at the earliest legal start. Active commitments
+take precedence. A missing saved block alone does not mean placement failed.
 
-**`ai_allowance`**, **`ai_spend_envelope`**, **`ai_request`**, and **`ai_attempt`** provide
-durable admission, cash reservation, settlement or freeze, and replay receipts. They do not
-enable dispatch by themselves.
+`planning.capacity` covers unscheduled local tasks due between the sampled time and next local
+midnight. Candidates are filtered from the full seven-day projection, so pinned future work can
+consume today's slots. Overdue work, missed blocks, and other backlog are separate cohorts.
+Unknown estimates yield an explicit count and partial assessment. A source failure returns no
+candidates or open-window metric. Gap minutes describe time, not a feasibility verdict.
 
-### Databases
+Duration-fit answers run a pure synthetic `place()` call against commitments, scheduled tasks, and
+hours, bounded with `until` at local midnight. This is an unsaved standalone probe, not a
+reservation or a backlog priority guarantee. Narrower, future, and mixed horizons ask for a
+supported today question. Projections and probes call no model and write no planning state.
 
-SQLite remains the local default, via SQLAlchemy. Hosted mode uses PostgreSQL by setting
-`COOPER_DATABASE_URL`; Supabase Postgres is the recommended beta provider and Cloud SQL remains
-the single-provider Google Cloud alternative. Use a server-only Supabase pooler connection for
-runtime traffic and keep the connection string out of the browser. Alembic owns schema upgrades
-for both; `create_all` only makes a fresh local database convenient. Write no database-specific
-SQL from here on.
+Estimate edits use the existing PATCH and undo path. The frontend refreshes the snapshot, retains
+failed drafts, and closes details after a successful save. All owners use the configured server
+timezone in this pilot. Owner-selectable timezone persistence is outside scope.
 
-Supabase is storage only in this architecture. Supabase Auth is not used: Firebase Auth identifies
-the person and FastAPI verifies the Firebase ID token. Supabase Storage is not used: Cooper stores
-tasks, events, settings, and undo state in PostgreSQL, and has no file-upload requirement.
+### Weekly review
 
-## The flow
+All boundaries are local dates in the configured timezone:
 
-```
-you type                              email arrives
-   ↓                                       ↓
-POST /api/say                         watcher.py, on a timer
-   ↓                                       ↓
-brain.read()                          known sender?  no → stop
-   ↓                                       ↓
-Action(verb=…)                        brain parses it → proposed event
-   ↓                                       ↓
-_sanity_check()   ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘  same gate, no exceptions
-   ↓
-app.run()             the only code that writes
-   ↓
-planner.rank()        pure scoring
-planner.place()       pure fitting, inside chosen availability, around complete source reads
-   ↓
-Cooper item time      saved locally; no provider write
-```
+- **Past:** today minus six days through today. Count local completions by `done_at`. Dropped items
+  have no completion timestamp and are excluded.
+- **Unfinished:** overdue open tasks (`due < at`) and missed blocks (`end_at <= at`).
+- **Upcoming:** today through today plus six days. Per day, report merged fixed minutes, scheduled
+  open-task minutes, and open-task deadlines.
+- **Deadline risks:** upcoming open tasks without a block ending by the deadline or a slot in the
+  shared projection. Reasons are `unknown_estimate`, `no_feasible_slot`, or `calendar_unchecked`.
 
-Ask can also enter a bounded Gemini function-calling loop. The Ask path exposes only read tools;
-it cannot apply a plan or refresh Gmail. `app.py` validates tool arguments and derives the owner
-from authentication; provider credentials never enter tool arguments or results. A separate
-authenticated `apply_plan` tool can save a plan. `app.py` remains the only database writer.
+The response reports unscheduled and unknown-estimate counts and data completeness, without remote
+titles, attendees, streaks, scores, or time-saved metrics. Home renders it inline without mutation
+controls. Scheduling and recovery remain separate actions.
 
-High-frequency planning questions take a narrower path before the model loop. A bounded intent is
-answered deterministically from the current planning snapshot, including provider availability but
-never provider titles in a model prompt. Create and schedule mutations refresh that same snapshot
-after commit and generate a receipt from the state found there. If the item cannot be verified, the
-route reports an error instead of fabricating confirmation; overlap, waiting, and source-health
-warnings remain attached to the receipt.
+## Persistence
 
-`answer_planning_intent` labels current and upcoming commitments separately,
-includes unscheduled tasks in remaining-work answers, and distinguishes priority
-from safe placement. Workload answers merge overlapping calendar intervals and
-report estimated and unknown unscheduled effort without treating those tasks as
-all due today. Calendar occupancy alone is not an overall capacity verdict. These
-renderer changes introduce no schema, model call, provider read or mutation path.
+All models live in `cooper/db.py`. Three tables hold planning state. Four hold funded-AI accounting.
 
-`project_open_tasks()` supplies both the seven-day scheduler and the planning
-snapshot. Home recommends an unsaved task only when that projection places it at
-the earliest legal start (15 minutes after the snapshot). Active commitments still
-take precedence. Candidate task rows say an unsaved slot is available; absence of
-a saved block alone does not mean placement failed.
+| Table               | Contents                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `item`              | Tasks and fixed events with owner, source, title, notes, estimate, importance, deadline, category, placement, status, and times |
+| `setting`           | `(owner_id, key)` values for hours, encrypted credentials, OAuth nonce, and watcher health or last check                        |
+| `change`            | Owner, label, item, and before-snapshot for undo. Pruned to twenty rows per owner, not a product audit log                      |
+| `ai_allowance`      | Durable logical-request admission and allowance                                                                                 |
+| `ai_spend_envelope` | Spending limits and cash reservations                                                                                           |
+| `ai_request`        | Logical request state and replay receipt                                                                                        |
+| `ai_attempt`        | Provider attempts, usage, and settlement or freeze state                                                                        |
 
-`planning.capacity` reports unscheduled local tasks with deadlines between the
-sampled time and next local midnight. Candidates come from the full seven-day
-projection, so pinned future work can consume today's slots. Overdue work, missed
-blocks and other backlog are separate cohorts. Unknown estimates have an explicit
-count and partial-assessment warning. Source failure returns no candidates or
-open-window metric. Gap minutes are descriptive, not a feasibility verdict.
+`google_event_id` links a legacy Google copy Cooper once wrote. `source_ref` identifies something
+Cooper read. Never merge them. A linked Google copy is hidden only while title, time, and
+description still match the local item. Changed copies remain visible and busy. Local edits do not
+create or delete provider copies.
 
-Duration-fit answers use a pure synthetic `place()` call against the snapshot's
-commitments, scheduled tasks and hours, bounded by local midnight with `until`.
-The answer is an unsaved standalone candidate, not a reservation or backlog
-priority guarantee. Narrower, future and mixed horizons ask for a supported today
-question. Assessment and probes call no model and write no planning data. The
-existing owner-checked PATCH saves estimates and records undo; the UI refreshes
-the snapshot and retains failed drafts. Setup displays the server timezone. The pilot
-intentionally uses that configured server timezone for every owner; owner-selectable
-timezone persistence is outside the current scope.
+Use `Utc` for timestamps, including remote ones. It converts on write and re-tags on read because
+SQLite drops offsets. The earlier 3pm-to-11pm display bug is why this is a type, not a convention.
+Every row carries ownership. Queries and mutations are owner-scoped.
 
-The landing's `plans` chapter pairs native FAQ disclosures with Free/Plus proposal
-cards. Horizontal chapter navigation retains the original 900px width breakpoint,
-independent of window height; narrower windows retain vertical flow. Section
-scrollbars are hidden without disabling overflow access, and the native named FAQ group
-allows one expanded answer. Shared subgrid rows align the FAQ/pricing headings and
-content edges; flex auto margins center the group without losing its top when it
-outgrows a short viewport. Flexible chapter columns and content-sized cards replace
-fixed desktop minimums. Vertical wheel gestures continue driving horizontal Lenis
-travel over disclosures, without nested-scroll bypass; the original RAF and entry
-effects remain unchanged. Narrow layouts stack through the existing width breakpoint.
-The beta CTA routes to `/signup`; the Plus button is disabled. There is
-no billing endpoint, entitlement enforcement or included-AI activation behind it.
+SQLite is the local default. Hosted mode uses `COOPER_DATABASE_URL` with PostgreSQL. Alembic owns
+versioned upgrades. `create_all` only conveniences a fresh local database. Use SQLAlchemy, not new
+database-specific SQL. `_add_new_columns()` is the documented legacy exception.
 
-Local rescheduling uses the same rule: `brain.py` can propose a validated `move` action but cannot
-write it. `app.py` resolves the target across visible local and provider commitments, preserves a
-409 for ambiguity (including a local/provider title collision), rejects unknown direct ids, and
-refuses exact provider targets as read-only. A successful receipt is generated only after the moved
-local item is found at its committed start and end in a fresh snapshot.
+## Authentication and hosting
 
-The important part of that diagram is the join. An event parsed out of an email is a _proposal_
-and goes through the same validation as a sentence you typed. There is no second write path.
+| Concern       | Local                                                    | Hosted beta                                                          |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------------------------- |
+| Identity      | One configured owner with `X-Cooper-Key`                 | Firebase ID token verified by `auth.py`. The owner is the UID.       |
+| Browser setup | Same-origin API paths. Vite attaches the root `.env` key | Firebase Web config from `/__/firebase/init.json`                    |
+| Database      | SQLite                                                   | PostgreSQL. Supabase Postgres recommended, Cloud SQL an alternative. |
+| Binding       | `127.0.0.1` only                                         | Existing authenticated Render container configuration                |
 
-## The rules the code enforces
+The shared key is local isolation, not account authentication. CORS is pinned to one origin.
+Middleware returns authentication failures rather than raising them into a 500. `/health` checks
+database access, not provider health. OAuth callback and internal sync have their own checks. They
+are not ordinary shared-key or bearer routes.
 
-**The model proposes; `app.py` decides.** `brain.py` returns a frozen `Action` and has no
-database access. `_sanity_check` rejects an add with no title, a reference with nothing to
-reference, and an event that ends before it starts. Wrong model output becomes a question, not a
-mutation.
+Hosted accounts use Google sign-in or verified email/password. Calendar and Gmail consent is a
+separate owner-bound OAuth grant. iCloud uses an encrypted app-specific password. Google callback
+protection combines signed owner-bound state, an HttpOnly browser cookie, and a durable one-use
+nonce for replay rejection across instances. Callback status is rendered as escaped text.
 
-**Nothing is booked outside your availability.** `planner.place()` expands weekday windows into
-UTC intervals, including overnight and 24-hour windows. Existing local tasks count toward daily
-block and minute limits. Busy intervals from `sources.py` subtract from candidates; they never
-add to them. A slot must fit the exact requested duration and finish before its deadline.
+Hosted abuse limits are in-process per UID: 120 API requests per minute and five Google sync or
+iCloud connection attempts per minute. Rejection returns 429 and `Retry-After`. These limits protect
+the current single-worker API, not multiple replicas. Shared edge limits would need deliberate
+work.
 
-**Unsure means ask.** `find()` in `app.py` resolves by exact id, exact title, then unique
-substring. Two matches raise a 409 listing them. Zero matches returns a question. It never
-picks the closest. Move resolution extends that ambiguity check across local rows and visible
-provider commitments before writing. Bulk verbs return the list for confirmation rather than acting.
+Firebase Hosting serves the frontend. Render serves the API. A server-only Supabase pooler
+connection is recommended for runtime traffic. Firebase remains the identity provider, so neither
+Supabase Auth nor Supabase Storage is used. There is no file-upload requirement.
 
-**Times are UTC in the database.** The `Utc` column type converts on write and re-tags on read.
-SQLite drops offsets, and without this a 3pm appointment displayed at 11pm and every due date
-slid a day. It is a type rather than a convention so no future query can forget. Incoming remote
-events carry their own offsets and must go through the same type.
+[`render.env.example`](render.env.example) lists hosted settings. The existing container applies
+Alembic migrations before serving. There is no separate migration service. Deployment and rollback
+procedures are in [Workflow](docs/WORKFLOW.md). Database recovery is in [Recovery](docs/RECOVERY.md).
+A hosting configuration is not approval to spend or deploy.
 
-**A failed connected calendar read cannot create a false free slot.** The item is captured and
-ranked, but waits unscheduled with a reason until availability can be checked. With no calendars
-connected, local scheduling proceeds normally. The watcher reports its own health separately.
+## Privacy and secrets
 
-**The watcher says when it last ran.** Its last-checked time is on the dashboard. It is the only
-part of Cooper that can fail while nobody is watching, so it is the only part that has to report
-that it is alive.
+- Encrypt Google refresh tokens and iCloud app-specific passwords with Fernet before storage.
+  Never return the iCloud password to the browser or a model.
+- Never log credentials, prompts, email bodies, message IDs, or private content. Request logging
+  uses bounded metadata rather than raw URLs, bodies, or identities.
+- Model input is limited to permitted user words and titles plus anonymous availability data.
+  Provider calendar contents, attendees, and other people's addresses are excluded.
+- Pass model-bound text through `brain.sanitize_for_prompt()`. Stored titles remain data, not
+  instructions. Line breaks and role markers must not become prompt structure.
+- Gmail uses a deterministic known-sender parser in memory. Do not retain or log bodies. Restricted
+  Gmail access has published-app review and security-assessment obligations. The project's public
+  multi-user plan requires the paid annual assessment. Do not widen scope or request send.
+- Failed connected reads leave captures ranked but unscheduled with a reason. With no calendars
+  connected, local scheduling works normally. Watcher health stays separate and visibly reports
+  its last check.
 
-**Read-only means read-only.** Google Calendar, iCloud, and the watcher provide commitments.
-Cooper writes new items and moves only to its own database and calendar, preserves legacy Google
-copies, and directs provider-owned move attempts back to their source calendar.
+## Included-AI accounting
 
-## Scoring
+The [provider decision](docs/decisions/2026-09-30-included-ai-providers.md) owns provider order and
+activation gates. Cooper supplies server-side Gemini primary and Groq fallback credentials. BYOK
+is removed from onboarding and Settings. The API rejects `gemini_api_key` without echoing it.
 
-In `planner.py`, weights summing to 1:
+Both attempts share one logical allowance, call ceiling, and cost envelope. Fallback is only for
+eligible availability failures, never safety refusal, ambiguity, invalid actions or credentials,
+exhausted allowance or spend, or a committed mutation.
 
-```
-score = 0.60·due + 0.20·importance + 0.10·age + 0.10·quick
-```
+The four accounting tables conditionally admit a logical request, reserve cash before dispatch,
+and settle or freeze based on provider usage. A mutation and its replay receipt commit in one
+transaction. The ledger does not itself enable dispatch. `COOPER_INCLUDED_AI_ENABLED=false`
+remains the default until approved cash, evaluated pinned models, prices, and live acceptance exist.
 
-- `due` — 0 with no deadline, ramps over 14 days, 1.0 once overdue
-- `importance` — the existing 1–5 value normalized to 0–1
-- `age` — how long it has been waiting, capped at three weeks
-- `quick` — shorter scores higher, because finishing beats starting; no estimate sits at 0.5
+Operator functions `provision_ai_pilot`, `abandon_ai_request`, `reconcile_ai_attempt`, and
+`review_ai_envelopes` are not exposed over HTTP. Accounting concurrency evidence is SQLite-only.
+Do not infer PostgreSQL concurrency acceptance from it.
 
-Pinned items sort first regardless. Tuning these numbers is the intended way to disagree with
-the ranking, and each row shows its own breakdown so you can see which term is responsible.
+## Compatibility and deliberate omissions
 
-Teams and Classroom assignments do not arrive yet. Their future ranking needs its own review.
+Temporary top-level schedule fields remain because frontend and backend can deploy independently.
+Their removal has not started. The normalized snapshot is the shared planning contract.
 
-Task workflow is also derived rather than stored as another mutable lifecycle. Open work resolves
-to `not_started`, `scheduled`, `in_progress`, `blocked`, `overdue`, or `missed_block` from its dates,
-placement, and source health; terminal database statuses resolve to `completed` or `dropped`.
+Do not add speculative outboxes, job systems, circuit breakers, a general quota governor, mutation
+ledger, reranker, layered `core/services/adapters` framework, import contract, or WAL tuning. The
+required funded-AI ledger is not a general-purpose infrastructure template. `watcher.py` remains one
+timer and loop, without tiered backoff, dead letters, or a second consumer.
 
-## Placement
-
-Greedy, earliest fit, in ranked order. A block keeps the exact requested duration as one
-continuous session. Breaks, maximum blocks, and daily task minutes are configurable; placement
-starts no sooner than 15 minutes from now. A task with no estimate is skipped rather than guessed
-at. A connected calendar must be available before any new slot is committed.
-
-That last sentence is why errands work without new code: `buy milk` has no estimate, so it is
-ranked and shown but never given a block.
-
-## Security
-
-Local mode is one user on one machine, protected only by a shared key. That is only safe on
-localhost, so:
-
-- bind `127.0.0.1`
-- every route except `/health` and the OAuth callback needs `X-Cooper-Key`
-- CORS pinned to one origin
-- Google refresh tokens and iCloud app-specific passwords are encrypted with Fernet before storage
-- the refusal is _returned_ from middleware, not raised — exception handlers do not run for
-  middleware, so raising would surface as a 500
-
-The shared key is one user's front door, not authentication. Do not extend it into a pretend
-version of one.
-
-Hosted mode uses Firebase Authentication with open email/password registration or Google sign-in.
-The browser sends `Authorization: Bearer <Firebase ID token>`, `auth.py` verifies it lazily with
-Firebase Admin, and `app.py` scopes every query and change by the verified UID. A separate
-owner-bound Google OAuth grant supplies Calendar and Gmail access. Signed state proves the callback's
-server origin and owner, while an HttpOnly browser cookie binds completion to the browser that began
-the flow. The durable one-use nonce preserves replay rejection across server instances because
-Firebase cannot attach a bearer token to Google's redirect.
-The public callback renders status values as escaped text; output encoding stays separate from
-signed-state and nonce validation.
-
-Hosted requests have a short in-process abuse limit per verified UID: 120 requests per minute,
-with five Google sync or iCloud connection attempts per minute. A limit returns 429 with
-`Retry-After`. This protects the current single-worker API, not multiple replicas; a scaled
-deployment needs a shared edge limit.
-
-BYOK is removed: the API rejects `gemini_api_key` without echoing it, and Settings and
-onboarding have no key setup. Cooper supplies server-side Gemini primary and Groq fallback
-credentials through `cooper/providers.py`, a urllib transport with no storage access.
-
-Fallback is limited to eligible availability failures. Both attempts share one logical
-allowance, call ceiling, and cost envelope. Safety refusals, invalid actions, ambiguity,
-invalid credentials, exhausted allowance, and exhausted spend never trigger fallback. A
-committed mutation is never replayed.
-
-The four accounting tables admit a logical request with a conditional allowance update,
-reserve cash before each dispatch, settle or freeze from provider usage, and commit a mutation
-with its replay receipt in one transaction. Funded dispatch is disabled by default until cash,
-evaluated model IDs, prices, and live-provider acceptance are approved. Operator functions
-`provision_ai_pilot`, `abandon_ai_request`, `reconcile_ai_attempt`, and
-`review_ai_envelopes` are never exposed over HTTP. Concurrency evidence is SQLite-only.
-
-**Gmail is a restricted scope.** Reading mail is among the heaviest permissions Google grants.
-Free in testing mode for a single developer; a published multi-user app requires a paid annual
-third-party security assessment. Ask for the narrowest read scope that works, never request
-send, and never log a message id or a body.
-
-## What is deliberately absent
-
-No outbox, no job scheduler, no circuit breaker, no quota governor, no mutation ledger, no
-reranker, no layered `core`/`services`/`adapters` split, no import contract, no WAL tuning. The
-previous version had every one of them. Each was defensible in isolation and together they made
-a personal calendar app impossible to hold in your head.
-
-`watcher.py` is a timer and a loop, and it is the only concession on this list. It is not the
-beginning of a job system. If it grows a retry policy with backoff tiers, a dead letter path, or
-a second consumer, that is the old version returning and it should be deleted.
+Automated tests, browser checks, and connected-provider acceptance are distinct evidence. Consult
+[the dated acceptance record](docs/LIVE_PROVIDER_ACCEPTANCE.md) before claiming provider readiness.
