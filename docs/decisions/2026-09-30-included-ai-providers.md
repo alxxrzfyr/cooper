@@ -1,62 +1,47 @@
 # Included AI provider order
 
-Date: 2026-09-30.
+**Date:** 2026-09-30 · **Status:** Accepted
 
-Status: Accepted. Provider order, BYOK removal, adapters, and durable accounting are implemented.
-Funded dispatch is disabled and has not passed live provider acceptance. This decision does not
-approve a specific model or spend amount.
-
-## Context
-
-Cooper supplies both provider keys and has removed BYOK from Settings, onboarding, and request
-payloads. There is no optional user-key route, provider selector, or key-setup step. Local and
-manual use remain independent of both providers.
+This decision selects provider order and credential ownership, not a model or spend amount.
+Adapters, BYOK removal, and durable accounting are implemented. Funded dispatch remains disabled
+and has not passed live acceptance.
+[Architecture](../../ARCHITECTURE.md#included-ai-accounting) owns implementation details.
 
 ## Decision
 
-Use Gemini first. Switch to Groq only for eligible availability failures and within
-the same request allowance, call limit and cost budget. If neither is usable, retain
-the rule parser, manual capture and deterministic planning answers. If rules cannot
-understand the request, ask for clarification; do not fabricate an action.
+Cooper supplies both server-side keys: **Gemini primary, Groq availability fallback**. There is no
+user API key, provider selector, or key-setup flow. If neither provider is usable, retain manual
+capture, the rule parser, and deterministic planning answers. Ask when rules cannot understand a
+request.
 
-Do not use fallback to bypass safety refusals, ambiguity, invalid actions, invalid
-credentials, exhausted user allowance or Cooper's global spending limit. Never
-replay the application writer after a mutation has committed.
+Both attempts share one logical allowance, call ceiling, and cost envelope. Account for every
+attempt even when a successful logical request consumes one allowance unit. Fallback must never:
 
-Keep both credentials server-side. Both providers receive only permitted sanitized
-user words/titles and anonymous availability data. Switching does not authorize
-sharing calendar contents, adding write tools, widening OAuth scopes or logging prompts.
+- Bypass safety refusal, ambiguity, invalid action or credentials, exhausted allowance, or spend
+  limits.
+- Replay the writer after a mutation commits.
+- Widen input beyond permitted sanitized user words and titles plus anonymous availability data.
+- Share provider calendar contents, add write tools, widen OAuth scopes, or log prompts.
 
-Free and Plus may receive bounded included assistance only through server-authoritative
-allowances. Users never configure an API key. Cooper pays provider charges, so funded dispatch
-requires separately approved cash envelopes, evaluated model IDs, prices, and live acceptance.
+Free and Plus included assistance, if activated, uses server-authoritative allowances. Cooper pays
+the provider costs. A proposed plan is not an active paid entitlement.
 
-`cooper/providers.py` contains the two explicit adapters. `ai_allowance`,
-`ai_spend_envelope`, `ai_request`, and `ai_attempt` provide durable admission, cash
-reservation, settlement or freeze, and replay receipts. A mutation commit and its receipt share
-one transaction. The adapters and ledger are implemented, but
-`COOPER_INCLUDED_AI_ENABLED=false` keeps funded dispatch off.
+## Activation gates
 
-## Alternatives considered
+Keep `COOPER_INCLUDED_AI_ENABLED=false` until all of these have separate approval and evidence:
 
-- Gemini only has fewer integration/disclosure requirements but no second availability
-  path. The owner explicitly requested a backup.
-- User-selectable providers or optional BYOK retain a second credential path that
-  the owner explicitly removed from the target product.
-- A generic model router adds unnecessary policy for two named providers. Use small,
-  explicit request/response adapters instead.
+1. Cash envelopes and user allowances.
+2. Evaluated, pinned Gemini and Groq model IDs and reviewed prices.
+3. Live-provider acceptance, separate from mocked transport tests.
+4. Privacy disclosures and model, tool, and schema compatibility covering both providers.
 
-## Consequences
+The four accounting tables provide admission, pre-dispatch reservation, settlement or freeze, and
+replay receipts. A mutation and its receipt commit together. Their presence does not satisfy the
+activation gates by itself.
 
-Normalize typed failures, usage, and responses from two APIs. Account for every attempt even
-when one successful logical request consumes one allowance unit. Both attempts share that
-logical allowance, call ceiling, and cost envelope.
+## Alternatives and trade-offs
 
-Safety refusals, invalid actions, ambiguity, invalid credentials, exhausted allowance, and
-exhausted spend never trigger fallback. A committed mutation is never replayed. Both providers
-receive only permitted sanitized user words or titles and anonymous availability data; fallback
-does not widen model input, OAuth scope, tools, or logging.
-
-Funded activation remains gated on an approved cash envelope, evaluated and pinned Gemini/Groq
-model IDs and prices, and live provider acceptance. Privacy disclosures and model/tool/schema
-compatibility must cover both providers before the flag can be enabled.
+- **Gemini only:** simpler, but lacks the backup explicitly requested by the owner.
+- **Selectable providers or BYOK:** retains the second credential path the owner removed.
+- **Generic router:** unnecessary policy for two named providers. Use explicit adapters with
+  normalized typed failures, responses, and usage instead.
